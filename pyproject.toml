@@ -1,0 +1,63 @@
+[project]
+name = "veritool-rl"
+version = "0.0.1"
+description = "面向小型工具智能体的可验证课程式后训练方法 (Verifier-Guided Curriculum Post-Training for Small Tool-Using Agents)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# 轻量核心依赖 (本地开发/编排即可安装)。
+# 训练与评测的重依赖放入下方 optional-dependencies，按需在服务器安装。
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# 训练重依赖: 在 gpu-4090 上安装 (torch 需匹配 CUDA)。
+train = [
+    "torch>=2.3",
+    "transformers>=4.44",
+    "trl>=0.9",
+    "peft>=0.12",
+    "accelerate>=0.33",
+    "datasets>=2.20",
+    "bitsandbytes>=0.43",
+]
+# 评测: BFCL / tau2-bench 通常从各自仓库安装，此处仅占位。
+eval = [
+    # "bfcl-eval",        # 见 https://gorilla.cs.berkeley.edu/leaderboard.html
+    # "tau2-bench",       # 见 https://github.com/sierra-research/tau2-bench
+]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/veritool_rl"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["veritool_rl"]
+strict = true
+ignore_missing_imports = true

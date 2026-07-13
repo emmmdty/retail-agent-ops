@@ -1,0 +1,20 @@
+# VeriTool-RL 轨迹数据构造示例配置 (占位)
+sources:
+  bfcl:
+    subset: [simple, parallel, multiple, irrelevance]   # 单轮 / 格式鲁棒性
+  toolsandbox:
+    include_minefield: true                             # 多步状态 + 错误恢复
+  tau2:
+    domain: retail                                      # 只选一个多轮领域, 避免维护多个 user simulator
+
+success_trajectories:
+  from_reference: true
+  from_rule_planner: true
+  from_local_rollout: true        # 仅纳入 verify 通过的 rollout
+
+failure_trajectories:             # H2: 失败偏好数据
+  types: [wrong_tool, wrong_args, missing_info, policy_violation, redundant_loop, failed_recovery]
+
+schema_perturbation:              # H4: 工具 schema 扰动
+  enabled: true
+  ops: [rename, rewrite_desc, shuffle_params, insert_distractor]

@@ -1,0 +1,28 @@
+# VeriTool-RL SFT 示例配置 (占位, 数值需按实验调整)
+experiment: sft_qwen3_1_7b_curriculum
+
+model:
+  name: Qwen/Qwen3-1.7B          # 先用 1.7B 打通闭环, 再决定是否升到 4B
+  load_in_4bit: true             # QLoRA
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+
+data:
+  train_path: data/trajectories/train.jsonl
+  eval_path: data/trajectories/dev.jsonl
+  curriculum: [single_call, stateful_multi_step, multi_turn]   # H1: 渐进难度
+
+training:
+  epochs: 3
+  batch_size: 4
+  grad_accum: 8
+  lr: 2.0e-4
+  max_seq_len: 4096
+  bf16: true
+
+eval:
+  benchmarks: [bfcl, toolsandbox]
