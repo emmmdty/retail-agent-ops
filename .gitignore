@@ -3,13 +3,12 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-dist/
-build/
+/dist/
+/build/
 
 # ---- 虚拟环境 / uv ----
 .venv/
 venv/
-env/
 # 注意: uv.lock 需纳入版本控制 (见 AGENTS.md), 不要忽略
 
 # ---- 缓存 ----
@@ -36,20 +35,22 @@ logs/
 *.log
 
 # ---- 实验追踪 ----
-wandb/
-mlruns/
-outputs/
+/wandb/
+/mlruns/
+/outputs/
 
-# ---- 数据 / 模型 / checkpoint (留在服务器, 不进 git) ----
-data/
-datasets/
-models/
-checkpoints/
-weights/
-pretrained/
-hub/
-.cache/
-cache/
+# ---- 数据 / 模型 / checkpoint 产物 (仅忽略仓库根下的产物目录, 避免误伤同名源码包如 src/veritool_rl/data/) ----
+/data/
+/datasets/
+/models/
+/checkpoints/
+/weights/
+/pretrained/
+/hub/
+/.cache/
+/cache/
+
+# ---- 权重文件 (任意位置, 不进 git) ----
 *.bin
 *.safetensors
 *.gguf
