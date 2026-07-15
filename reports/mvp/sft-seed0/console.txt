@@ -1,0 +1,281 @@
+
+Generating train split: 0 examples [00:00, ? examples/s]
+Generating train split: 128 examples [00:00, 290.48 examples/s]
+Generating train split: 128 examples [00:00, 289.87 examples/s]
+
+Generating validation split: 0 examples [00:00, ? examples/s]
+Generating validation split: 32 examples [00:00, 2420.69 examples/s]
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]
+Loading weights:   1%|          | 2/311 [00:00<00:29, 10.50it/s]/data/TJK/internship-projects/veritool-rl/.venv/lib/python3.11/site-packages/bitsandbytes/backends/cuda/ops.py:213: FutureWarning: _check_is_size will be removed in a future PyTorch release along with guard_size_oblivious.     Use _check(i >= 0) instead.
+  torch._check_is_size(blocksize)
+
+Loading weights:   7%|▋         | 23/311 [00:00<00:03, 95.28it/s]
+Loading weights:  25%|██▌       | 79/311 [00:00<00:00, 269.81it/s]
+Loading weights:  42%|████▏     | 130/311 [00:00<00:00, 353.08it/s]
+Loading weights:  60%|█████▉    | 186/311 [00:00<00:00, 419.64it/s]
+Loading weights:  78%|███████▊  | 243/311 [00:00<00:00, 465.92it/s]
+Loading weights:  96%|█████████▌| 299/311 [00:00<00:00, 493.77it/s]
+Loading weights: 100%|██████████| 311/311 [00:00<00:00, 379.58it/s]
+
+Tokenizing train dataset:   0%|          | 0/128 [00:00<?, ? examples/s]
+Tokenizing train dataset:  66%|██████▌   | 84/128 [00:00<00:00, 820.72 examples/s]
+Tokenizing train dataset: 100%|██████████| 128/128 [00:00<00:00, 685.46 examples/s]
+
+Building labels for train dataset:   0%|          | 0/128 [00:00<?, ? examples/s]
+Building labels for train dataset: 100%|██████████| 128/128 [00:00<00:00, 2026.57 examples/s]
+
+Truncating train dataset:   0%|          | 0/128 [00:00<?, ? examples/s]
+Truncating train dataset: 100%|██████████| 128/128 [00:00<00:00, 2602.33 examples/s]
+
+Tokenizing eval dataset:   0%|          | 0/32 [00:00<?, ? examples/s]
+Tokenizing eval dataset: 100%|██████████| 32/32 [00:00<00:00, 622.12 examples/s]
+
+Building labels for eval dataset:   0%|          | 0/32 [00:00<?, ? examples/s]
+Building labels for eval dataset: 100%|██████████| 32/32 [00:00<00:00, 1624.95 examples/s]
+
+Truncating eval dataset:   0%|          | 0/32 [00:00<?, ? examples/s]
+Truncating eval dataset: 100%|██████████| 32/32 [00:00<00:00, 2014.95 examples/s]
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+
+  0%|          | 0/24 [00:00<?, ?it/s]
+  4%|▍         | 1/24 [00:04<01:38,  4.27s/it]
+
+
+  4%|▍         | 1/24 [00:04<01:38,  4.27s/it]
+  8%|▊         | 2/24 [00:06<01:11,  3.24s/it]
+
+
+  8%|▊         | 2/24 [00:06<01:11,  3.24s/it]
+ 12%|█▎        | 3/24 [00:09<01:04,  3.09s/it]
+
+
+ 12%|█▎        | 3/24 [00:09<01:04,  3.09s/it]
+ 17%|█▋        | 4/24 [00:12<00:59,  2.96s/it]
+
+
+ 17%|█▋        | 4/24 [00:12<00:59,  2.96s/it]
+ 21%|██        | 5/24 [00:14<00:53,  2.81s/it]
+
+
+ 21%|██        | 5/24 [00:14<00:53,  2.81s/it]
+ 25%|██▌       | 6/24 [00:17<00:50,  2.78s/it]
+
+
+ 25%|██▌       | 6/24 [00:17<00:50,  2.78s/it]
+ 29%|██▉       | 7/24 [00:20<00:47,  2.79s/it]
+
+
+ 29%|██▉       | 7/24 [00:20<00:47,  2.79s/it]
+ 33%|███▎      | 8/24 [00:23<00:45,  2.84s/it]
+
+
+ 33%|███▎      | 8/24 [00:23<00:45,  2.84s/it]{'loss': '0.3411', 'grad_norm': '4.062', 'learning_rate': '0', 'entropy': '0.02305', 'num_tokens': '8081', 'mean_token_accuracy': '0.95', 'epoch': '0.125'}
+{'loss': '0.3579', 'grad_norm': '4.938', 'learning_rate': '6.667e-05', 'entropy': '0.02444', 'num_tokens': '1.588e+04', 'mean_token_accuracy': '0.9446', 'epoch': '0.25'}
+{'loss': '0.277', 'grad_norm': '2.812', 'learning_rate': '0.0001333', 'entropy': '0.01867', 'num_tokens': '2.414e+04', 'mean_token_accuracy': '0.9597', 'epoch': '0.375'}
+{'loss': '0.06339', 'grad_norm': '3.547', 'learning_rate': '0.0002', 'entropy': '0.0164', 'num_tokens': '3.242e+04', 'mean_token_accuracy': '0.9782', 'epoch': '0.5'}
+{'loss': '0.0006034', 'grad_norm': '0.07861', 'learning_rate': '0.0001905', 'entropy': '0.003734', 'num_tokens': '4.061e+04', 'mean_token_accuracy': '1', 'epoch': '0.625'}
+{'loss': '0.004012', 'grad_norm': '0.5977', 'learning_rate': '0.000181', 'entropy': '0.01177', 'num_tokens': '4.911e+04', 'mean_token_accuracy': '1', 'epoch': '0.75'}
+{'loss': '0.003765', 'grad_norm': '0.3418', 'learning_rate': '0.0001714', 'entropy': '0.011', 'num_tokens': '5.673e+04', 'mean_token_accuracy': '1', 'epoch': '0.875'}
+{'loss': '0.002055', 'grad_norm': '0.5898', 'learning_rate': '0.0001619', 'entropy': '0.006501', 'num_tokens': '6.46e+04', 'mean_token_accuracy': '0.9992', 'epoch': '1'}
+
+
+  0%|          | 0/16 [00:00<?, ?it/s]
+
+ 19%|█▉        | 3/16 [00:00<00:00, 18.00it/s]
+
+ 31%|███▏      | 5/16 [00:00<00:00, 14.49it/s]
+
+ 44%|████▍     | 7/16 [00:00<00:00, 13.34it/s]
+
+ 56%|█████▋    | 9/16 [00:00<00:00, 12.81it/s]
+
+ 69%|██████▉   | 11/16 [00:00<00:00, 12.53it/s]
+
+ 81%|████████▏ | 13/16 [00:01<00:00, 12.34it/s]
+
+ 94%|█████████▍| 15/16 [00:01<00:00, 12.19it/s]
+
+
+
+
+
+ 33%|███▎      | 8/24 [00:24<00:45,  2.84s/it]
+
+100%|██████████| 16/16 [00:01<00:00, 12.19it/s]
+
+
+ 38%|███▊      | 9/24 [00:27<00:48,  3.24s/it]
+
+
+ 38%|███▊      | 9/24 [00:27<00:48,  3.24s/it]
+ 42%|████▏     | 10/24 [00:30<00:43,  3.08s/it]
+
+
+ 42%|████▏     | 10/24 [00:30<00:43,  3.08s/it]
+ 46%|████▌     | 11/24 [00:33<00:39,  3.01s/it]
+
+
+ 46%|████▌     | 11/24 [00:33<00:39,  3.01s/it]
+ 50%|█████     | 12/24 [00:35<00:34,  2.85s/it]
+
+
+ 50%|█████     | 12/24 [00:35<00:34,  2.85s/it]
+ 54%|█████▍    | 13/24 [00:38<00:30,  2.76s/it]
+
+
+ 54%|█████▍    | 13/24 [00:38<00:30,  2.76s/it]
+ 58%|█████▊    | 14/24 [00:40<00:26,  2.69s/it]
+
+
+ 58%|█████▊    | 14/24 [00:40<00:26,  2.69s/it]
+ 62%|██████▎   | 15/24 [00:43<00:24,  2.69s/it]
+
+
+ 62%|██████▎   | 15/24 [00:43<00:24,  2.69s/it]
+ 67%|██████▋   | 16/24 [00:45<00:21,  2.64s/it]
+
+
+ 67%|██████▋   | 16/24 [00:45<00:21,  2.64s/it]{'eval_loss': '0.006477', 'eval_runtime': '1.342', 'eval_samples_per_second': '23.85', 'eval_steps_per_second': '11.92', 'eval_entropy': '0.003578', 'eval_num_tokens': '6.46e+04', 'eval_mean_token_accuracy': '0.9995', 'epoch': '1'}
+{'loss': '0.0003226', 'grad_norm': '0.01166', 'learning_rate': '0.0001524', 'entropy': '0.002896', 'num_tokens': '7.248e+04', 'mean_token_accuracy': '1', 'epoch': '1.125'}
+{'loss': '0.0002743', 'grad_norm': '0.03638', 'learning_rate': '0.0001429', 'entropy': '0.002533', 'num_tokens': '8.077e+04', 'mean_token_accuracy': '1', 'epoch': '1.25'}
+{'loss': '0.0002363', 'grad_norm': '0.005035', 'learning_rate': '0.0001333', 'entropy': '0.002375', 'num_tokens': '8.95e+04', 'mean_token_accuracy': '1', 'epoch': '1.375'}
+{'loss': '0.0002571', 'grad_norm': '0.005707', 'learning_rate': '0.0001238', 'entropy': '0.002486', 'num_tokens': '9.763e+04', 'mean_token_accuracy': '1', 'epoch': '1.5'}
+{'loss': '0.0002642', 'grad_norm': '0.006714', 'learning_rate': '0.0001143', 'entropy': '0.00242', 'num_tokens': '1.052e+05', 'mean_token_accuracy': '1', 'epoch': '1.625'}
+{'loss': '0.0002961', 'grad_norm': '0.008118', 'learning_rate': '0.0001048', 'entropy': '0.002696', 'num_tokens': '1.132e+05', 'mean_token_accuracy': '1', 'epoch': '1.75'}
+{'loss': '0.0002992', 'grad_norm': '0.00824', 'learning_rate': '9.524e-05', 'entropy': '0.002674', 'num_tokens': '1.214e+05', 'mean_token_accuracy': '1', 'epoch': '1.875'}
+{'loss': '0.0003258', 'grad_norm': '0.009888', 'learning_rate': '8.571e-05', 'entropy': '0.002839', 'num_tokens': '1.292e+05', 'mean_token_accuracy': '1', 'epoch': '2'}
+
+
+  0%|          | 0/16 [00:00<?, ?it/s]
+
+ 19%|█▉        | 3/16 [00:00<00:00, 18.40it/s]
+
+ 31%|███▏      | 5/16 [00:00<00:00, 14.77it/s]
+
+ 44%|████▍     | 7/16 [00:00<00:00, 13.61it/s]
+
+ 56%|█████▋    | 9/16 [00:00<00:00, 13.05it/s]
+
+ 69%|██████▉   | 11/16 [00:00<00:00, 12.77it/s]
+
+ 81%|████████▏ | 13/16 [00:00<00:00, 12.60it/s]
+
+ 94%|█████████▍| 15/16 [00:01<00:00, 12.47it/s]
+
+
+
+
+
+ 67%|██████▋   | 16/24 [00:47<00:21,  2.64s/it]
+
+100%|██████████| 16/16 [00:01<00:00, 12.47it/s]
+
+
+ 71%|███████   | 17/24 [00:49<00:21,  3.06s/it]
+
+
+ 71%|███████   | 17/24 [00:49<00:21,  3.06s/it]
+ 75%|███████▌  | 18/24 [00:52<00:18,  3.04s/it]
+
+
+ 75%|███████▌  | 18/24 [00:52<00:18,  3.04s/it]
+ 79%|███████▉  | 19/24 [00:55<00:14,  2.87s/it]
+
+
+ 79%|███████▉  | 19/24 [00:55<00:14,  2.87s/it]
+ 83%|████████▎ | 20/24 [00:57<00:11,  2.75s/it]
+
+
+ 83%|████████▎ | 20/24 [00:57<00:11,  2.75s/it]
+ 88%|████████▊ | 21/24 [01:00<00:07,  2.66s/it]
+
+
+ 88%|████████▊ | 21/24 [01:00<00:07,  2.66s/it]
+ 92%|█████████▏| 22/24 [01:02<00:05,  2.61s/it]
+
+
+ 92%|█████████▏| 22/24 [01:02<00:05,  2.61s/it]
+ 96%|█████████▌| 23/24 [01:05<00:02,  2.63s/it]
+
+
+ 96%|█████████▌| 23/24 [01:05<00:02,  2.63s/it]
+100%|██████████| 24/24 [01:08<00:00,  2.60s/it]
+
+
+100%|██████████| 24/24 [01:08<00:00,  2.60s/it]{'eval_loss': '0.006185', 'eval_runtime': '1.313', 'eval_samples_per_second': '24.37', 'eval_steps_per_second': '12.19', 'eval_entropy': '0.003377', 'eval_num_tokens': '1.292e+05', 'eval_mean_token_accuracy': '0.9989', 'epoch': '2'}
+{'loss': '0.0003294', 'grad_norm': '0.009521', 'learning_rate': '7.619e-05', 'entropy': '0.002853', 'num_tokens': '1.372e+05', 'mean_token_accuracy': '1', 'epoch': '2.125'}
+{'loss': '0.0003587', 'grad_norm': '0.01135', 'learning_rate': '6.667e-05', 'entropy': '0.00301', 'num_tokens': '1.452e+05', 'mean_token_accuracy': '1', 'epoch': '2.25'}
+{'loss': '0.0003529', 'grad_norm': '0.01099', 'learning_rate': '5.714e-05', 'entropy': '0.002991', 'num_tokens': '1.534e+05', 'mean_token_accuracy': '1', 'epoch': '2.375'}
+{'loss': '0.0003426', 'grad_norm': '0.01129', 'learning_rate': '4.762e-05', 'entropy': '0.002924', 'num_tokens': '1.61e+05', 'mean_token_accuracy': '1', 'epoch': '2.5'}
+{'loss': '0.0003324', 'grad_norm': '0.009827', 'learning_rate': '3.81e-05', 'entropy': '0.002904', 'num_tokens': '1.693e+05', 'mean_token_accuracy': '1', 'epoch': '2.625'}
+{'loss': '0.0003454', 'grad_norm': '0.01062', 'learning_rate': '2.857e-05', 'entropy': '0.002964', 'num_tokens': '1.776e+05', 'mean_token_accuracy': '1', 'epoch': '2.75'}
+{'loss': '0.0003077', 'grad_norm': '0.00885', 'learning_rate': '1.905e-05', 'entropy': '0.002713', 'num_tokens': '1.855e+05', 'mean_token_accuracy': '1', 'epoch': '2.875'}
+{'loss': '0.000342', 'grad_norm': '0.0108', 'learning_rate': '9.524e-06', 'entropy': '0.002943', 'num_tokens': '1.938e+05', 'mean_token_accuracy': '1', 'epoch': '3'}
+
+
+  0%|          | 0/16 [00:00<?, ?it/s]
+
+ 19%|█▉        | 3/16 [00:00<00:00, 18.28it/s]
+
+ 31%|███▏      | 5/16 [00:00<00:00, 14.81it/s]
+
+ 44%|████▍     | 7/16 [00:00<00:00, 13.65it/s]
+
+ 56%|█████▋    | 9/16 [00:00<00:00, 13.10it/s]
+
+ 69%|██████▉   | 11/16 [00:00<00:00, 12.82it/s]
+
+ 81%|████████▏ | 13/16 [00:00<00:00, 12.63it/s]
+
+ 94%|█████████▍| 15/16 [00:01<00:00, 12.53it/s]
+
+
+
+
+
+100%|██████████| 24/24 [01:09<00:00,  2.60s/it]
+
+100%|██████████| 16/16 [00:01<00:00, 12.53it/s]
+
+
+
+
+100%|██████████| 24/24 [01:09<00:00,  2.60s/it]
+100%|██████████| 24/24 [01:09<00:00,  2.90s/it]
+{'eval_loss': '0.006778', 'eval_runtime': '1.31', 'eval_samples_per_second': '24.43', 'eval_steps_per_second': '12.22', 'eval_entropy': '0.003363', 'eval_num_tokens': '1.938e+05', 'eval_mean_token_accuracy': '0.9989', 'epoch': '3'}
+{'train_runtime': '69.6', 'train_samples_per_second': '5.518', 'train_steps_per_second': '0.345', 'train_loss': '0.04395', 'epoch': '3'}
+
+  0%|          | 0/16 [00:00<?, ?it/s]
+ 19%|█▉        | 3/16 [00:00<00:00, 18.48it/s]
+ 31%|███▏      | 5/16 [00:00<00:00, 14.83it/s]
+ 44%|████▍     | 7/16 [00:00<00:00, 13.67it/s]
+ 56%|█████▋    | 9/16 [00:00<00:00, 13.13it/s]
+ 69%|██████▉   | 11/16 [00:00<00:00, 12.82it/s]
+ 81%|████████▏ | 13/16 [00:00<00:00, 12.62it/s]
+ 94%|█████████▍| 15/16 [00:01<00:00, 12.53it/s]
+100%|██████████| 16/16 [00:01<00:00, 13.12it/s]
+	Command being timed: "env CUDA_VISIBLE_DEVICES=0 TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 UV_CACHE_DIR=/data/TJK/uv-cache /home/TJK/.local/bin/uv run --frozen python scripts/train_sft.py --config configs/mvp_sft_qwen3_1_7b.yaml --seed 0 --output_dir reports/mvp/sft-seed0"
+	User time (seconds): 85.39
+	System time (seconds): 2.42
+	Percent of CPU this job got: 105%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:23.47
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 5125596
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 39
+	Minor (reclaiming a frame) page faults: 854426
+	Voluntary context switches: 2051
+	Involuntary context switches: 564
+	Swaps: 0
+	File system inputs: 7440
+	File system outputs: 298776
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

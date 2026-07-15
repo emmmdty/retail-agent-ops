@@ -1,0 +1,9 @@
+bootstrap_samples: 1000
+environment: mini_retail
+policy:
+  adapter_path: reports/mvp/sft-seed0/adapter
+  max_new_tokens: 256
+  model_name: models/Qwen3-1.7B
+  type: qwen
+seed: 0
+split: test

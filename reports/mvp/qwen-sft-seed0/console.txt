@@ -1,0 +1,38 @@
+
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]
+Loading weights:   0%|          | 1/311 [00:00<00:33,  9.20it/s]
+Loading weights:   1%|          | 2/311 [00:00<00:34,  8.98it/s]/data/TJK/internship-projects/veritool-rl/.venv/lib/python3.11/site-packages/bitsandbytes/backends/cuda/ops.py:213: FutureWarning: _check_is_size will be removed in a future PyTorch release along with guard_size_oblivious.     Use _check(i >= 0) instead.
+  torch._check_is_size(blocksize)
+
+Loading weights:   8%|▊         | 26/311 [00:00<00:02, 106.35it/s]
+Loading weights:  26%|██▌       | 81/311 [00:00<00:00, 268.74it/s]
+Loading weights:  41%|████      | 127/311 [00:00<00:00, 333.28it/s]
+Loading weights:  58%|█████▊    | 181/311 [00:00<00:00, 397.80it/s]
+Loading weights:  76%|███████▌  | 235/311 [00:00<00:00, 441.32it/s]
+Loading weights:  92%|█████████▏| 287/311 [00:00<00:00, 463.23it/s]
+Loading weights: 100%|██████████| 311/311 [00:00<00:00, 352.74it/s]
+/data/TJK/internship-projects/veritool-rl/.venv/lib/python3.11/site-packages/bitsandbytes/backends/cuda/ops.py:468: FutureWarning: _check_is_size will be removed in a future PyTorch release along with guard_size_oblivious.     Use _check(i >= 0) instead.
+  torch._check_is_size(blocksize)
+	Command being timed: "env CUDA_VISIBLE_DEVICES=0 TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 UV_CACHE_DIR=/data/TJK/uv-cache /home/TJK/.local/bin/uv run --frozen python scripts/evaluate.py --config configs/mvp_eval_qwen_sft.yaml --seed 0 --output_dir reports/mvp/qwen-sft-seed0"
+	User time (seconds): 122.33
+	System time (seconds): 1.94
+	Percent of CPU this job got: 104%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:58.59
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 5006764
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 8
+	Minor (reclaiming a frame) page faults: 592012
+	Voluntary context switches: 1838
+	Involuntary context switches: 1032
+	Swaps: 0
+	File system inputs: 2184
+	File system outputs: 256
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

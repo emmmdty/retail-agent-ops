@@ -1,0 +1,27 @@
+adapter_dir: reports/mvp/sft-seed0/adapter
+data:
+  eval_path: data/mvp/seed0/sft/dev.jsonl
+  train_path: data/mvp/seed0/sft/train.jsonl
+lora:
+  alpha: 32
+  dropout: 0.05
+  r: 16
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+model:
+  load_in_4bit: true
+  name: models/Qwen3-1.7B
+output_dir: reports/mvp/sft-seed0
+seed: 0
+training:
+  assistant_only_loss: true
+  batch_size: 2
+  bf16: true
+  epochs: 3
+  grad_accum: 8
+  gradient_checkpointing: true
+  lr: 0.0002
+  max_seq_len: 1024
