@@ -1,7 +1,8 @@
 """偏好优化 (DPO/SimPO) 训练入口。
 
 示例:
-    python scripts/train_preference.py --config configs/sft.example.yaml --seed 0 --output_dir reports/dpo/run0
+    python scripts/train_preference.py
+    --config configs/sft.example.yaml --seed 0 --output_dir reports/dpo/run0
 """
 from __future__ import annotations
 

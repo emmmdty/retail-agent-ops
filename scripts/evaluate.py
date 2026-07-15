@@ -1,7 +1,8 @@
 """评测入口。
 
 示例:
-    python scripts/evaluate.py --config configs/sft.example.yaml --seed 0 --output_dir reports/eval/run0
+    python scripts/evaluate.py
+    --config configs/sft.example.yaml --seed 0 --output_dir reports/eval/run0
 """
 from __future__ import annotations
 

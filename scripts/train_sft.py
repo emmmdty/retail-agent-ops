@@ -1,7 +1,8 @@
 """SFT 训练入口。
 
 示例:
-    python scripts/train_sft.py --config configs/sft.example.yaml --seed 0 --output_dir reports/sft/run0
+    python scripts/train_sft.py
+    --config configs/sft.example.yaml --seed 0 --output_dir reports/sft/run0
 """
 from __future__ import annotations
 

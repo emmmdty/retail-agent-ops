@@ -41,6 +41,6 @@ class Trajectory:
         raise NotImplementedError
 
     @classmethod
-    def from_jsonl(cls, line: str) -> "Trajectory":
+    def from_jsonl(cls, line: str) -> Trajectory:
         """从一行 JSON 反序列化 (占位, 待实现)。"""
         raise NotImplementedError

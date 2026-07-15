@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 # 训练重依赖: 在 gpu-4090 上安装 (torch 需匹配 CUDA)。
 train = [
-    "torch>=2.3",
+    "torch==2.13.0",
     "transformers>=4.44",
     "trl>=0.9",
     "peft>=0.12",

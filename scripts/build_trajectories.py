@@ -1,7 +1,8 @@
 """构造训练轨迹数据集。
 
 示例:
-    python scripts/build_trajectories.py --config configs/data.example.yaml --seed 0 --output_dir data/trajectories
+    python scripts/build_trajectories.py
+    --config configs/data.example.yaml --seed 0 --output_dir data/trajectories
 """
 from __future__ import annotations
 

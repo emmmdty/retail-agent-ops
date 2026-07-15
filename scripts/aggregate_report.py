@@ -1,7 +1,8 @@
 """聚合 reports/ 下多次运行, 生成汇总表与图表。
 
 示例:
-    python scripts/aggregate_report.py --config configs/sft.example.yaml --seed 0 --output_dir reports/summary
+    python scripts/aggregate_report.py
+    --config configs/sft.example.yaml --seed 0 --output_dir reports/summary
 """
 from __future__ import annotations
 
