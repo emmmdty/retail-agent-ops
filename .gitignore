@@ -54,6 +54,10 @@ logs/
 /reports/**/adapter/
 /reports/**/checkpoints/
 
+# BFCL 官方 score / 失败明细嵌入原始 prompt、schema 和 possible answer，不进 git
+/reports/bfcl/**/official_scores/
+/reports/bfcl/**/failures.jsonl
+
 # ---- 权重文件 (任意位置, 不进 git) ----
 *.bin
 *.safetensors

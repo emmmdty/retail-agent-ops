@@ -50,6 +50,24 @@ def test_git_ignores_report_adapters_and_checkpoints() -> None:
         assert result.returncode == 0, f"未忽略训练大产物路径: {path}"
 
 
+def test_git_ignores_bfcl_outputs_that_embed_raw_benchmark_data() -> None:
+    paths = [
+        "reports/bfcl/qwen3-1.7b-base-seed0/failures.jsonl",
+        (
+            "reports/bfcl/qwen3-1.7b-base-seed0/official_scores/"
+            "Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
+        ),
+    ]
+
+    for path in paths:
+        result = subprocess.run(
+            ["git", "check-ignore", "-q", path],
+            cwd=ROOT,
+            check=False,
+        )
+        assert result.returncode == 0, f"未忽略含 BFCL 原始数据的产物: {path}"
+
+
 def test_all_config_file_references_are_project_relative() -> None:
     path_keys = {
         "model_name",

@@ -117,7 +117,7 @@ class TransformersBackend:
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
         )
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         model: Any = AutoModelForCausalLM.from_pretrained(
@@ -126,6 +126,7 @@ class TransformersBackend:
             dtype=torch.bfloat16,
             device_map={"": "cuda:0"},
             low_cpu_mem_usage=True,
+            local_files_only=True,
         )
         if adapter_path is not None:
             path = Path(adapter_path)
@@ -133,7 +134,11 @@ class TransformersBackend:
                 raise FileNotFoundError(path)
             from peft import PeftModel
 
-            model = PeftModel.from_pretrained(model, str(path))
+            model = PeftModel.from_pretrained(
+                model,
+                str(path),
+                local_files_only=True,
+            )
         model.eval()
         return cls(model, tokenizer)
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -98,3 +100,51 @@ def test_transformers_backend_requires_local_model_directory(
 
     with pytest.raises(FileNotFoundError, match="models/Qwen3-1.7B"):
         TransformersBackend.from_pretrained("models/Qwen3-1.7B", None)
+
+
+def test_transformers_backend_forces_local_files_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from veritool_rl.agent.qwen import TransformersBackend
+
+    tokenizer_kwargs: dict[str, Any] = {}
+    model_kwargs: dict[str, Any] = {}
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "eos"
+
+    class FakeModel:
+        def eval(self) -> None:
+            return None
+
+    class FakeAutoTokenizer:
+        @classmethod
+        def from_pretrained(cls, path: Path, **kwargs: Any) -> FakeTokenizer:
+            del cls, path
+            tokenizer_kwargs.update(kwargs)
+            return FakeTokenizer()
+
+    class FakeAutoModel:
+        @classmethod
+        def from_pretrained(cls, path: Path, **kwargs: Any) -> FakeModel:
+            del cls, path
+            model_kwargs.update(kwargs)
+            return FakeModel()
+
+    transformers = ModuleType("transformers")
+    transformers.AutoTokenizer = FakeAutoTokenizer  # type: ignore[attr-defined]
+    transformers.AutoModelForCausalLM = FakeAutoModel  # type: ignore[attr-defined]
+    transformers.BitsAndBytesConfig = lambda **kwargs: kwargs  # type: ignore[attr-defined]
+    torch = ModuleType("torch")
+    torch.bfloat16 = object()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+
+    TransformersBackend.from_pretrained(str(model_path), None)
+
+    assert tokenizer_kwargs["local_files_only"] is True
+    assert model_kwargs["local_files_only"] is True
