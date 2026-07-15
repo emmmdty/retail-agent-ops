@@ -3,65 +3,97 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
 
-def test_official_bfcl_ast_evaluator_accepts_correct_and_rejects_wrong(
+def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
     tmp_path: Path,
 ) -> None:
     python = Path("tools/bfcl_eval/.venv/bin/python")
     assert python.is_file(), "请先运行 uv sync --project tools/bfcl_eval --frozen"
-    script = r"""
-import json
-from bfcl_eval.constants.enums import Language, ReturnFormat
-from bfcl_eval.eval_checker.ast_eval.ast_checker import ast_checker
-from bfcl_eval.model_handler.local_inference.qwen_fc import QwenFCHandler
-
-handler = QwenFCHandler(
-    model_name="Qwen/Qwen3-1.7B",
-    temperature=0,
-    registry_name="Qwen/Qwen3-1.7B-FC",
-    is_fc_model=True,
-)
-functions = [{
-    "name": "lookup",
-    "description": "Look up one value.",
-    "parameters": {
-        "type": "dict",
-        "properties": {"value": {"type": "integer"}},
-        "required": ["value"],
-    },
-}]
-possible = [{"lookup": {"value": [1]}}]
-
-def evaluate(value):
-    raw = f'<tool_call>\n{{"name":"lookup","arguments":{{"value":{value}}}}}\n</tool_call>'
-    decoded = handler.decode_ast(raw, ReturnFormat.PYTHON, False)
-    return ast_checker(
-        functions,
-        decoded,
-        possible,
-        Language.PYTHON,
-        "simple_python",
-        "Qwen/Qwen3-1.7B-FC",
+    model_dir = tmp_path / "results/Qwen_Qwen3-1.7B-FC/non_live"
+    model_dir.mkdir(parents=True)
+    rows = [
+        {
+            "id": "simple_python_0",
+            "result": (
+                '<tool_call>\n{"name":"calculate_triangle_area","arguments":'
+                '{"base":10,"height":5,"unit":"units"}}\n</tool_call>'
+            ),
+        },
+        {
+            "id": "simple_python_1",
+            "result": (
+                '<tool_call>\n{"name":"math.factorial","arguments":{"number":6}}'
+                "\n</tool_call>"
+            ),
+        },
+    ]
+    result_path = model_dir / "BFCL_v4_simple_python_result.json"
+    result_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "bfcl_commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+                "seed": 0,
+                "tasks": [
+                    {"category": "simple_python", "task_id": "simple_python_0"},
+                    {"category": "simple_python", "task_id": "simple_python_1"},
+                ],
+            }
+        ),
+        encoding="utf-8",
     )
 
-print(json.dumps({"correct": evaluate(1), "wrong": evaluate(2)}))
-"""
-    env = os.environ.copy()
-    env["BFCL_PROJECT_ROOT"] = str(tmp_path)
-
+    command = [
+        str(python),
+        "scripts/run_bfcl_official_ast.py",
+        "--bfcl-repo",
+        "data/external_repos/gorilla/berkeley-function-call-leaderboard",
+        "--expected-commit",
+        "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        "--manifest",
+        str(manifest_path),
+        "--model",
+        "Qwen/Qwen3-1.7B-FC",
+        "--test-category",
+        "simple_python",
+        "--result-dir",
+        str(tmp_path / "results"),
+        "--score-dir",
+        str(tmp_path / "scores"),
+    ]
     completed = subprocess.run(
-        [str(python), "-c", script],
+        command,
         check=True,
         capture_output=True,
         text=True,
-        env=env,
     )
 
-    result = json.loads(completed.stdout)
-    assert result["correct"]["valid"] is True
-    assert result["wrong"]["valid"] is False
-    assert result["wrong"]["error_type"]
+    score_path = (
+        tmp_path
+        / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
+    )
+    score_rows = [
+        json.loads(line) for line in score_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert score_rows[0] == {"accuracy": 0.5, "correct_count": 1, "total_count": 2}
+    assert score_rows[1]["id"] == "simple_python_1"
+    assert score_rows[1]["model_name"] == "Qwen_Qwen3-1.7B-FC"
+    assert score_rows[1]["valid"] is False
+    assert score_rows[1]["error_type"] == "value_error:others"
+    assert "official_ast_checker_sha256=" in completed.stdout
+
+    rows[1]["id"] = "simple_python_2"
+    result_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    rejected = subprocess.run(command, check=False, capture_output=True, text=True)
+    assert rejected.returncode != 0
+    assert "Result task IDs do not match frozen manifest" in rejected.stderr

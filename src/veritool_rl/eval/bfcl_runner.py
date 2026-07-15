@@ -55,6 +55,11 @@ class BfclGenerationRecord(StrictModel):
 def build_official_evaluator_command(
     *,
     python: Path,
+    evaluator_script: Path,
+    bfcl_repo: Path,
+    expected_commit: str,
+    manifest_path: Path,
+    task_ids: tuple[str, ...],
     model_name: str,
     categories: tuple[str, ...],
     result_dir: Path,
@@ -63,8 +68,14 @@ def build_official_evaluator_command(
     """构造固定 BFCL 官方 AST evaluator 的独立进程命令。"""
     return [
         str(python),
-        "-m",
-        "bfcl_eval.eval_checker.eval_runner",
+        str(evaluator_script),
+        "--bfcl-repo",
+        str(bfcl_repo),
+        "--expected-commit",
+        expected_commit,
+        "--manifest",
+        str(manifest_path),
+        *[part for task_id in task_ids for part in ("--task-id", task_id)],
         "--model",
         model_name,
         "--test-category",
@@ -73,7 +84,6 @@ def build_official_evaluator_command(
         str(result_dir),
         "--score-dir",
         str(score_dir),
-        "--partial-eval",
     ]
 
 
@@ -89,7 +99,15 @@ def verify_bfcl_checkout(repo: Path, expected_commit: str) -> dict[str, Any]:
     if status.strip():
         msg = f"BFCL checkout 存在修改:\n{status}"
         raise ValueError(msg)
-    return {"commit": actual_commit, "worktree_clean": True}
+    checker_path = repo / "bfcl_eval/eval_checker/ast_eval/ast_checker.py"
+    if not checker_path.is_file():
+        raise FileNotFoundError(checker_path)
+    return {
+        "commit": actual_commit,
+        "worktree_clean": True,
+        "ast_checker_path": str(checker_path),
+        "ast_checker_sha256": sha256_file(checker_path),
+    }
 
 
 def resolve_manifest_task_answers(
@@ -184,6 +202,11 @@ def validate_offline_single_gpu_environment() -> str:
 def run_official_evaluator(
     *,
     python: Path,
+    evaluator_script: Path,
+    bfcl_repo: Path,
+    expected_commit: str,
+    manifest_path: Path,
+    task_ids: tuple[str, ...],
     project_root: Path,
     model_name: str,
     categories: tuple[str, ...],
@@ -194,23 +217,35 @@ def run_official_evaluator(
     if not python.is_file():
         raise FileNotFoundError(python)
     python = python.resolve()
+    if not evaluator_script.is_file():
+        raise FileNotFoundError(evaluator_script)
+    evaluator_script = evaluator_script.resolve()
+    if not bfcl_repo.is_dir():
+        raise FileNotFoundError(bfcl_repo)
+    bfcl_repo = bfcl_repo.resolve()
+    if not manifest_path.is_file():
+        raise FileNotFoundError(manifest_path)
+    manifest_path = manifest_path.resolve()
     project_root.mkdir(parents=True, exist_ok=True)
     result_dir.mkdir(parents=True, exist_ok=True)
     score_dir.mkdir(parents=True, exist_ok=True)
     command = build_official_evaluator_command(
         python=python,
+        evaluator_script=evaluator_script,
+        bfcl_repo=bfcl_repo,
+        expected_commit=expected_commit,
+        manifest_path=manifest_path,
+        task_ids=task_ids,
         model_name=model_name,
         categories=categories,
         result_dir=result_dir.resolve(),
         score_dir=score_dir.resolve(),
     )
-    env = os.environ.copy()
-    env["BFCL_PROJECT_ROOT"] = str(project_root.resolve())
     started = time.perf_counter()
     completed = subprocess.run(
         command,
         cwd=project_root,
-        env=env,
+        env=os.environ.copy(),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

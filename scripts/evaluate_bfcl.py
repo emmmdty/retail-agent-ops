@@ -122,6 +122,11 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
 
     evaluator_command, evaluator_output, evaluator_seconds = run_official_evaluator(
         python=Path(parsed["official_python"]),
+        evaluator_script=Path("scripts/run_bfcl_official_ast.py"),
+        bfcl_repo=bfcl_repo,
+        expected_commit=parsed["bfcl_commit"],
+        manifest_path=manifest_path,
+        task_ids=tuple(cast(list[str] | None, parsed["task_ids"]) or []),
         project_root=Path(parsed["official_project_root"]),
         model_name=parsed["bfcl_model_name"],
         categories=categories,

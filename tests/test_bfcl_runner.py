@@ -136,11 +136,19 @@ def test_build_official_evaluator_command_uses_fixed_process_boundary(
     from veritool_rl.eval.bfcl_runner import build_official_evaluator_command
 
     python = tmp_path / "tools/bfcl_eval/.venv/bin/python"
+    evaluator_script = (tmp_path / "scripts/run_bfcl_official_ast.py").resolve()
+    bfcl_repo = (tmp_path / "bfcl").resolve()
+    manifest_path = (tmp_path / "manifest.json").resolve()
     result_dir = (tmp_path / "results").resolve()
     score_dir = (tmp_path / "scores").resolve()
 
     command = build_official_evaluator_command(
         python=python,
+        evaluator_script=evaluator_script,
+        bfcl_repo=bfcl_repo,
+        expected_commit="6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        manifest_path=manifest_path,
+        task_ids=("simple_python_0", "multiple_0"),
         model_name="Qwen/Qwen3-1.7B-FC",
         categories=("simple_python", "multiple"),
         result_dir=result_dir,
@@ -149,8 +157,17 @@ def test_build_official_evaluator_command_uses_fixed_process_boundary(
 
     assert command == [
         str(python),
-        "-m",
-        "bfcl_eval.eval_checker.eval_runner",
+        str(evaluator_script),
+        "--bfcl-repo",
+        str(bfcl_repo),
+        "--expected-commit",
+        "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        "--manifest",
+        str(manifest_path),
+        "--task-id",
+        "simple_python_0",
+        "--task-id",
+        "multiple_0",
         "--model",
         "Qwen/Qwen3-1.7B-FC",
         "--test-category",
@@ -160,7 +177,6 @@ def test_build_official_evaluator_command_uses_fixed_process_boundary(
         str(result_dir),
         "--score-dir",
         str(score_dir),
-        "--partial-eval",
     ]
 
 
@@ -248,10 +264,18 @@ def test_run_official_evaluator_creates_isolated_project_root(
     python = Path("tools/bfcl_eval/.venv/bin/python")
     python.parent.mkdir(parents=True)
     python.write_text("", encoding="utf-8")
+    evaluator_script = tmp_path / "scripts/run_bfcl_official_ast.py"
+    evaluator_script.parent.mkdir(parents=True)
+    evaluator_script.write_text("", encoding="utf-8")
+    bfcl_repo = tmp_path / "bfcl"
+    bfcl_repo.mkdir()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
     project_root = tmp_path / "new-runtime"
 
     def fake_run(command: list[str], **kwargs: Any) -> SimpleNamespace:
         assert Path(command[0]).is_absolute()
+        assert Path(command[1]).is_absolute()
         assert project_root.is_dir()
         assert kwargs["cwd"] == project_root
         return SimpleNamespace(returncode=0, stdout="official ok")
@@ -260,6 +284,11 @@ def test_run_official_evaluator_creates_isolated_project_root(
 
     _, output, _ = run_official_evaluator(
         python=python,
+        evaluator_script=evaluator_script,
+        bfcl_repo=bfcl_repo,
+        expected_commit="6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        manifest_path=manifest_path,
+        task_ids=("simple_python_0",),
         project_root=project_root,
         model_name="Qwen/Qwen3-1.7B-FC",
         categories=("simple_python",),

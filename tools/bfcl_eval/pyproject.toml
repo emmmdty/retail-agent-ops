@@ -3,16 +3,4 @@ name = "veritool-bfcl-evaluator"
 version = "0.0.1"
 description = "Isolated official BFCL evaluator environment for VeriTool-RL"
 requires-python = ">=3.11,<3.12"
-dependencies = [
-    "bfcl-eval",
-    # qwen-agent imports soundfile at module import time but does not declare it.
-    "soundfile>=0.13",
-]
-
-[tool.uv.sources]
-bfcl-eval = { path = "../../data/external_repos/gorilla/berkeley-function-call-leaderboard" }
-
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
-default = true
+dependencies = []
