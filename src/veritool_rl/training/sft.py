@@ -94,7 +94,8 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     from datasets import load_dataset
     from peft import LoraConfig
     from transformers import AutoTokenizer, BitsAndBytesConfig
-    from trl import SFTConfig, SFTTrainer
+    from trl.trainer.sft_config import SFTConfig
+    from trl.trainer.sft_trainer import SFTTrainer
 
     dataset = load_dataset(
         "json",
@@ -106,7 +107,8 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     tokenizer = AutoTokenizer.from_pretrained(resolved.model.name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    quantization = BitsAndBytesConfig(
+    bitsandbytes_config: Any = BitsAndBytesConfig
+    quantization = bitsandbytes_config(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16,
