@@ -60,10 +60,9 @@ ssh gpu-4090 'cd /data/TJK/internship-projects/veritool-rl && UV_CACHE_DIR=/data
 
 ### 2.3 当前开发阶段
 
-- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁。
-- **待实现**: `trajectory` 序列化与重放、具体 `ToolEnv`、verifier/reward、评测器、轨迹生成、SFT/偏好训练和报告脚本; 当前多数模块仍含 `NotImplementedError`。
-- **尚未生成**: 项目自己的 `train/dev` 轨迹 JSONL、固定模型权重清单和训练 checkpoint。不得把“外部数据已下载”描述成“训练数据已完成”。
-- **当前优先级**: 先打通确定性小环境的 task → action → observation → verifier → trajectory → replay → metrics 闭环, 再做 1.7B 基线与小规模 QLoRA-SFT 前后对照; 完整 ToolSandbox/BFCL/tau2、DPO/GRPO 和消融随后推进。
+- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性 task → action → observation → verifier → trajectory → replay → metrics 闭环；Qwen3 policy、QLoRA-SFT 与训练前后配对代码。
+- **待运行**: 在单张空闲 4090 上生成 Qwen3-1.7B 基线、小规模 QLoRA adapter 和训练后复评；只填写实际运行得到的指标。
+- **后续范围**: 完整 ToolSandbox/BFCL/tau2 adapter、失败轨迹偏好优化、GRPO、奖励校准与 H1–H4 消融，不得把 MiniRetail 基础设施成绩描述成真实 benchmark 成绩。
 
 ## 3. Coding Agent 协作协议 (每个开发任务固定 8 步)
 

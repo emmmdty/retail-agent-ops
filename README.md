@@ -1,27 +1,67 @@
 # VeriTool-RL
 
 **Verifier-Guided Curriculum Post-Training for Small Tool-Using Agents**
-面向小型工具智能体的可验证课程式后训练方法
 
-面向 1.5B–4B 级开源模型, 用「成功轨迹 SFT + 失败轨迹偏好优化 + 校准的可验证奖励 + schema 扰动」研究**课程顺序、奖励设计与工具鲁棒性**对多轮工具任务成功率与稳定性的影响。在 BFCL / ToolSandbox / 单个 tau2 领域上做因果消融。
+面向小型工具智能体的可验证课程式后训练方法。
 
-> **状态**: 🚧 已初始化 (标准骨架, 接口签名就绪, 核心逻辑待按 `SPEC.md` 分步实现)。研究级 L1/L2, 不宣称生产上线。
+当前已实现 MiniRetail 最小可行闭环：确定性任务生成、Hermes tool call、结构化
+observation、final-state/policy verifier、版本化 trajectory、精确 replay、指标、
+Qwen3-1.7B 推理适配、4-bit QLoRA-SFT 和训练前后配对汇总。研究级 L1/L2，
+不宣称生产上线。
+
+> 当前证据：Oracle 本地闭环可运行；Qwen3 基线、QLoRA 和训练后评测需按
+> `CLAUDE.md` 的单卡确认门在 `gpu-4090` 执行。未运行前不填写模型成绩。
 
 ## 文档
 
-- **[`SPEC.md`](./SPEC.md)** — 项目规格 (single source of truth): 问题、假设 H1–H4、数据、基线、评测、消融、里程碑。
-- **[`CLAUDE.md`](./CLAUDE.md)** — coding agent 协作协议、命令、必须人工手写的核心模块。
+- [`SPEC.md`](./SPEC.md)：研究问题、假设、评测与非-Toy 验收门。
+- [`CLAUDE.md`](./CLAUDE.md)：环境快照、服务器边界与执行规则。
+- [`docs/adr/0002-mini-retail-mvp.md`](./docs/adr/0002-mini-retail-mvp.md)：MVP 架构决策。
 
-## 快速开始
+## 本地闭环
 
 ```bash
-uv sync --extra dev          # 创建环境 (提交生成的 uv.lock)
-uv run pytest                # 结构 smoke 测试
+uv sync --extra dev
+
+# 生成 128/32/32 的任务、Oracle 轨迹和 TRL SFT 数据，并逐条重放验证
+uv run --frozen python scripts/build_trajectories.py \
+  --config configs/mvp_data.yaml --seed 0 --output_dir data/mvp/seed0
+
+# Oracle 基础设施验收
+uv run --frozen python scripts/evaluate.py \
+  --config configs/mvp_eval_oracle.yaml --seed 0 \
+  --output_dir reports/mvp/oracle-seed0
+
+uv run --frozen pytest -q
+uv run --frozen ruff check .
+uv run --frozen mypy
 ```
 
-训练重依赖 (torch/trl/peft) 请在 **gpu-4090** 服务器上 `uv sync --extra train`; 本地只做开发与轻量评测。
+## 单卡 Qwen3 前后对照
 
-## 环境
+以下命令只在 `gpu-4090` 上、经用户确认具体 GPU 后执行：
 
-- Python 3.11 · uv · 训练机 4× RTX 4090 (24GB)
-- 遵循工作区 [`../AGENTS.md`](../AGENTS.md) 统一开发规则。
+```bash
+# 训练前基线
+uv run --frozen python scripts/evaluate.py \
+  --config configs/mvp_eval_qwen_base.yaml --seed 0 \
+  --output_dir reports/mvp/qwen-base-seed0
+
+# 4-bit QLoRA-SFT
+uv run --frozen python scripts/train_sft.py \
+  --config configs/mvp_sft_qwen3_1_7b.yaml --seed 0 \
+  --output_dir reports/mvp/sft-seed0
+
+# 挂载 adapter 后以相同配置复评
+uv run --frozen python scripts/evaluate.py \
+  --config configs/mvp_eval_qwen_sft.yaml --seed 0 \
+  --output_dir reports/mvp/qwen-sft-seed0
+
+# 按 task_id 配对汇总改善、退化和指标差值
+uv run --frozen python scripts/aggregate_report.py \
+  --config configs/mvp_compare.yaml --seed 0 \
+  --output_dir reports/mvp/comparison-seed0
+```
+
+模型权重、adapter、checkpoint 和 `data/` 不进入 git；运行记录保留冻结配置、
+日志、逐任务 trajectory、失败清单和 `metrics.json`。

@@ -1,4 +1,4 @@
-# 可直接运行的 Qwen3-1.7B 单卡 QLoRA-SFT 示例。
+# Qwen3-1.7B 单卡 4-bit QLoRA-SFT。
 model:
   name: Qwen/Qwen3-1.7B
   load_in_4bit: true

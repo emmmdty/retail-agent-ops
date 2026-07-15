@@ -25,7 +25,7 @@ def build_arg_parser(description: str) -> argparse.ArgumentParser:
 
 
 def load_config(path: Path) -> dict[str, Any]:
-    """加载 YAML 配置 (占位: 后续可加入 schema 校验)。"""
+    """加载 YAML，并校验顶层为字符串 key 的 mapping。"""
     import yaml
 
     with open(path, encoding="utf-8") as f:

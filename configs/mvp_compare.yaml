@@ -1,0 +1,3 @@
+# 训练前后逐任务配对汇总。
+baseline_dir: reports/mvp/qwen-base-seed0
+adapter_dir: reports/mvp/qwen-sft-seed0

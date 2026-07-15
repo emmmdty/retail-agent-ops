@@ -9,6 +9,9 @@ reports/<experiment>/<run_id>/
 ├── config.yaml     # 本次运行冻结配置
 ├── metrics.json    # 关键指标 (含均值/方差或置信区间)
 ├── log.txt         # 运行日志
+├── trajectories.jsonl # 逐任务可重放证据 (评测运行)
+├── failures.jsonl  # 失败任务摘要 (评测运行)
+├── comparison.jsonl # 训练前后逐任务配对 (汇总运行)
 └── figures/        # 图表 (消融对照、鲁棒性曲线、成本-质量 Pareto)
 ```
 
