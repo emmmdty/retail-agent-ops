@@ -9,14 +9,18 @@ observation、final-state/policy verifier、版本化 trajectory、精确 replay
 Qwen3-1.7B 推理适配、4-bit QLoRA-SFT 和训练前后配对汇总。研究级 L1/L2，
 不宣称生产上线。
 
-> 当前证据：Oracle 本地闭环可运行；Qwen3 基线、QLoRA 和训练后评测需按
-> `CLAUDE.md` 的单卡确认门在 `gpu-4090` 执行。未运行前不填写模型成绩。
+> 当前 MiniRetail seed-0 证据：Qwen3-1.7B Base 成功 16/32（50%），128/32
+> 小规模 QLoRA-SFT 后成功 32/32（100%）；16 条改善、0 条退化，配对 success
+> delta 的 bootstrap 95% CI 为 [0.3125, 0.6875]。这是确定性合成 MVP 结果，
+> 不是 BFCL、ToolSandbox 或 tau2 成绩。
 
 ## 文档
 
 - [`SPEC.md`](./SPEC.md)：研究问题、假设、评测与非-Toy 验收门。
 - [`CLAUDE.md`](./CLAUDE.md)：环境快照、服务器边界与执行规则。
 - [`docs/adr/0002-mini-retail-mvp.md`](./docs/adr/0002-mini-retail-mvp.md)：MVP 架构决策。
+- [`reports/mvp/comparison-seed0/report.md`](./reports/mvp/comparison-seed0/report.md)：
+  单卡训练前后指标、命令、资源与失败轨迹分析。
 
 ## 本地闭环
 

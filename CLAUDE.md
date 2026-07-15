@@ -63,8 +63,8 @@ ssh gpu-4090 'cd /data/TJK/internship-projects/veritool-rl && UV_CACHE_DIR=/data
 
 ### 2.3 当前开发阶段
 
-- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性 task → action → observation → verifier → trajectory → replay → metrics 闭环；Qwen3 policy、QLoRA-SFT 与训练前后配对代码。
-- **待运行**: 在单张空闲 4090 上生成 Qwen3-1.7B 基线、小规模 QLoRA adapter 和训练后复评；只填写实际运行得到的指标。
+- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性 task → action → observation → verifier → trajectory → replay → metrics 闭环；Qwen3 policy、QLoRA-SFT 与训练前后配对代码；物理 GPU 0 上的 Qwen3-1.7B 单卡 seed-0 实验。Base 成功 16/32，小规模 QLoRA-SFT 后成功 32/32，16 条改善、0 条退化，配对 success delta 的 bootstrap 95% CI 为 [0.3125, 0.6875]。完整证据见 `reports/mvp/comparison-seed0/report.md`。
+- **待运行**: 真实 BFCL/ToolSandbox/tau2 adapter、多 seed 重复、失败轨迹偏好优化、奖励校准与消融；MiniRetail 单 seed 结果不得外推。
 - **后续范围**: 完整 ToolSandbox/BFCL/tau2 adapter、失败轨迹偏好优化、GRPO、奖励校准与 H1–H4 消融，不得把 MiniRetail 基础设施成绩描述成真实 benchmark 成绩。
 
 ## 3. Coding Agent 协作协议 (每个开发任务固定 8 步)
