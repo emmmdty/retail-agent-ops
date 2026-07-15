@@ -16,3 +16,9 @@ reports/<experiment>/<run_id>/
 ```
 
 结果优先写入此处, 便于回传、聚合与复核。权重 / checkpoint / 大文件不进 git (见 `.gitignore`)。
+
+BFCL 运行额外保留 `manifest.json`、`raw_generations.jsonl`、官方 result/score、
+`metrics.json`、`failures.jsonl`、`run.log` 和 `report.md`。其中官方 score 与
+`failures.jsonl` 含原始 prompt、function schema 和 possible answer，只在本地及
+远程审计目录保留并由 `.gitignore` 排除；模型权重和独立 evaluator `.venv` 同样
+不进入 git。

@@ -59,13 +59,15 @@ ssh gpu-4090 'cd /data/TJK/internship-projects/veritool-rl && UV_CACHE_DIR=/data
 - 离线归档位于 `data/downloads/external_repos-20260715.tar.zst`, 网络不稳定时优先从本地上传并解压, 不在服务器重复拉取大仓库。
 - `data/`、模型权重与 checkpoint 均被 git 忽略。Qwen3-1.7B 已于 2026-07-15 从 ModelScope 的 `Qwen/Qwen3-1.7B` 下载到共享模型目录；项目配置只使用相对软链接 `models/Qwen3-1.7B`。
 - 本次权重 SHA-256：分片 1 为 `169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5`，分片 2 为 `912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9`；重新下载后必须复核。
+- BFCL V4 固定单轮 manifest 为 `manifests/bfcl_v4_single_turn_seed0.json`，SHA-256 为 `a74a3748d3af289e8d3f808930b99b6eb5cb9c7d84ba678ff627c762e9448da9`；四类各 50 条，按 seed 0 的稳定 SHA-256 排序选择。
+- BFCL 官方 AST checker 路径为固定 Gorilla checkout 中的 `bfcl_eval/eval_checker/ast_eval/ast_checker.py`，本次 SHA-256 为 `2aae7a68461a8f76c0be3894c8901b66b56967a1989d3ab066051e3fb97f1538`。评分使用独立、无第三方依赖的 uv 进程边界，不安装 BFCL 的 vLLM/sglang 可选依赖。
 - ToolSandbox 固定 `transformers==4.41.2`, 与项目主训练环境的 `transformers 5.13.1` 冲突。不得把完整 ToolSandbox 直接安装进主环境; 真实适配应使用隔离的 uv 环境或进程边界。
 
 ### 2.3 当前开发阶段
 
-- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性 task → action → observation → verifier → trajectory → replay → metrics 闭环；Qwen3 policy、QLoRA-SFT 与训练前后配对代码；物理 GPU 0 上的 Qwen3-1.7B 单卡 seed-0 实验。Base 成功 16/32，小规模 QLoRA-SFT 后成功 32/32，16 条改善、0 条退化，配对 success delta 的 bootstrap 95% CI 为 [0.3125, 0.6875]。完整证据见 `reports/mvp/comparison-seed0/report.md`。
-- **待运行**: 真实 BFCL/ToolSandbox/tau2 adapter、多 seed 重复、失败轨迹偏好优化、奖励校准与消融；MiniRetail 单 seed 结果不得外推。
-- **后续范围**: 完整 ToolSandbox/BFCL/tau2 adapter、失败轨迹偏好优化、GRPO、奖励校准与 H1–H4 消融，不得把 MiniRetail 基础设施成绩描述成真实 benchmark 成绩。
+- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性闭环与 Qwen3-1.7B Base/QLoRA-SFT seed-0 实验；BFCL V4 固定 200 条单轮 AST 子集的 Qwen3-1.7B 离线 4-bit 零样本基线。BFCL 官方 AST accuracy 为 0.815（163/200），四类分别为 0.82/0.90/0.76/0.78，完整证据见 `reports/bfcl/qwen3-1.7b-base-seed0/report.md`。
+- **待运行**: ToolSandbox/tau2 adapter、BFCL 后训练对照、多 seed 重复、失败轨迹偏好优化、奖励校准与消融。
+- **结论边界**: 正式表述只能是“Qwen3-1.7B 在 BFCL V4 固定 200 条单轮 AST 子集上的零样本结果”；不得称为 BFCL 官方全量成绩或排行榜成绩，也不得外推到多轮、ToolSandbox、tau2、SFT、偏好优化或 GRPO。
 
 ## 3. Coding Agent 协作协议 (每个开发任务固定 8 步)
 
@@ -136,6 +138,12 @@ uv run mypy                                # 类型检查
 uv run python scripts/build_trajectories.py --config configs/data.example.yaml --seed 0 --output_dir data/trajectories
 uv run python scripts/train_sft.py         --config configs/sft.example.yaml  --seed 0 --output_dir reports/sft/run0
 uv run python scripts/evaluate.py          --config configs/sft.example.yaml  --seed 0 --output_dir reports/eval/run0
+
+# BFCL 固定 200 条单轮零样本基线（仅远程单卡）
+TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 CUDA_VISIBLE_DEVICES=<physical_gpu> \
+uv run --frozen --extra train python scripts/evaluate_bfcl.py \
+  --config configs/bfcl_v4_single_turn_seed0.yaml --seed 0 \
+  --output_dir reports/bfcl/qwen3-1.7b-base-seed0
 ```
 
 ## 8. 本地 ⇄ gpu-4090 同步与执行

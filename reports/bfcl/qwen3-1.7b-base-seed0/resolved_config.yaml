@@ -1,0 +1,29 @@
+benchmark: bfcl_v4_single_turn
+bfcl_commit: 6ea57973c7a6097fd7c5915698c54c17c5b1b6c8
+bfcl_data_root: data/external_repos/gorilla/berkeley-function-call-leaderboard/bfcl_eval/data
+bfcl_repo: data/external_repos/gorilla/berkeley-function-call-leaderboard
+manifest_filename: bfcl_v4_single_turn_seed0.json
+manifest_path: manifests/bfcl_v4_single_turn_seed0.json
+official_eval:
+  categories:
+  - simple_python
+  - multiple
+  - parallel
+  - parallel_multiple
+  project_root: data/bfcl_eval_runtime/qwen3-1.7b-base-seed0
+  python: tools/bfcl_eval/.venv/bin/python
+policy:
+  bfcl_model_name: Qwen/Qwen3-1.7B-FC
+  compute_dtype: bfloat16
+  do_sample: false
+  enable_thinking: false
+  max_new_tokens: 512
+  model_name: models/Qwen3-1.7B
+  quantization: nf4
+  type: qwen
+quotas:
+  multiple: 50
+  parallel: 50
+  parallel_multiple: 50
+  simple_python: 50
+seed: 0

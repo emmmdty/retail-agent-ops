@@ -82,6 +82,12 @@
 7. 有无 per-turn reward calibration;
 8. 有无 schema perturbation augmentation。
 
+**当前已验证基线（2026-07-15）**：Qwen3-1.7B 在 BFCL V4 固定 200 条单轮
+AST 子集上的 seed-0 零样本官方 AST accuracy 为 0.815（163/200）。四类各
+50 条，`simple_python` / `multiple` / `parallel` / `parallel_multiple` 分别为
+0.82 / 0.90 / 0.76 / 0.78。这不是 BFCL 官方全量成绩或排行榜成绩，不能替代
+后续 BFCL 后训练对照或多轮基准。
+
 ## 9. 训练数据
 
 - **成功轨迹**: 基准参考轨迹 + 规则规划器 + 验证通过的本地模型 rollout;
