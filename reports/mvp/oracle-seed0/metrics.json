@@ -1,0 +1,1 @@
+{"argument_accuracy":1.0,"average_input_tokens":0.0,"average_latency_ms":0.0,"average_output_tokens":0.0,"average_tool_calls":1.75,"average_turns":1.75,"final_state_success":1.0,"format_error_rate":0.0,"invalid_call_rate":0.0,"policy_violation_rate":0.0,"recovery_success":1.0,"task_count":32,"task_success":1.0,"task_success_ci95":[1.0,1.0],"tool_selection_accuracy":1.0}

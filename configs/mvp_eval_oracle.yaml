@@ -1,0 +1,6 @@
+# 本地基础设施验收：Oracle 必须达到 100% 成功且可重放。
+environment: mini_retail
+split: test
+bootstrap_samples: 1000
+policy:
+  type: oracle
