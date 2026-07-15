@@ -1,0 +1,9 @@
+# Qwen3-1.7B 单任务 4-bit 离线加载与生成 smoke。
+environment: mini_retail
+split: test
+task_limit: 1
+bootstrap_samples: 1000
+policy:
+  type: qwen
+  model_name: models/Qwen3-1.7B
+  max_new_tokens: 256

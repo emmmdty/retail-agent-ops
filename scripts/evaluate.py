@@ -29,6 +29,12 @@ def main() -> None:
         raise ValueError(msg)
     policy_factory = _build_policy_factory(policy_config)
     tasks = build_mvp_task_splits(args.seed)[split]
+    task_limit = config.get("task_limit")
+    if task_limit is not None:
+        if not isinstance(task_limit, int) or isinstance(task_limit, bool) or task_limit < 1:
+            msg = "task_limit 必须是正整数"
+            raise ValueError(msg)
+        tasks = tasks[:task_limit]
     evaluator = Evaluator(tasks, MiniRetailEnv, policy_factory, config)
     evaluator.run(seed=args.seed, output_dir=args.output_dir)
 

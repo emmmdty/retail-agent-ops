@@ -50,6 +50,10 @@ logs/
 /.cache/
 /cache/
 
+# ---- 训练运行目录中的 adapter / checkpoint（报告指标保留，权重与训练状态不进 git） ----
+/reports/**/adapter/
+/reports/**/checkpoints/
+
 # ---- 权重文件 (任意位置, 不进 git) ----
 *.bin
 *.safetensors

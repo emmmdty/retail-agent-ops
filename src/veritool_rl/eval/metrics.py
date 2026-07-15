@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
@@ -34,6 +35,8 @@ def compute_metrics(
     attempted = 0
     invalid = 0
     format_errors = 0
+    schema_valid = 0
+    executable = 0
     correct_tools = 0
     tool_denominator = 0
     correct_arguments = 0
@@ -56,6 +59,12 @@ def compute_metrics(
             is_attempt = step.tool_call is not None or step.parse_error is not None
             attempted += int(is_attempt)
             format_errors += int(step.parse_error is not None)
+            schema_valid += int(step.tool_call is not None)
+            executable += int(
+                step.tool_call is not None
+                and step.observation is not None
+                and step.observation.error_code not in _INVALID_CODES
+            )
             invalid += int(
                 step.parse_error is not None
                 or (
@@ -69,6 +78,11 @@ def compute_metrics(
         for trajectory in trajectories
         if trajectory.task.scenario is TaskScenario.REFUND_RECOVERY
     ]
+    failure_types = Counter(
+        failure_type
+        for trajectory in trajectories
+        if (failure_type := _failure_type(trajectory)) is not None
+    )
     ci_low, ci_high = _bootstrap_ci(successes, bootstrap_samples, seed)
     return {
         "task_count": count,
@@ -76,6 +90,13 @@ def compute_metrics(
         "task_success_ci95": [ci_low, ci_high],
         "final_state_success": _mean(final_successes),
         "policy_violation_rate": _mean(policy_violations),
+        "policy_violation_count": sum(bool(trajectory.violations) for trajectory in trajectories),
+        "schema_valid_count": schema_valid,
+        "schema_valid_rate": schema_valid / attempted if attempted else 0.0,
+        "executable_count": executable,
+        "executable_rate": executable / attempted if attempted else 0.0,
+        "invalid_output_count": format_errors,
+        "invalid_call_count": invalid,
         "invalid_call_rate": invalid / attempted if attempted else 0.0,
         "format_error_rate": format_errors / sum(len(t.steps) for t in trajectories),
         "tool_selection_accuracy": correct_tools / tool_denominator if tool_denominator else 0.0,
@@ -96,7 +117,30 @@ def compute_metrics(
         "average_latency_ms": _mean(
             [float(sum(step.latency_ms for step in t.steps)) for t in trajectories]
         ),
+        "verifier_reward": _mean(
+            [float(sum(step.reward.total for step in t.steps)) for t in trajectories]
+        ),
+        "failure_type_distribution": dict(sorted(failure_types.items())),
     }
+
+
+def _failure_type(trajectory: Trajectory) -> str | None:
+    if trajectory.success:
+        return None
+    if trajectory.violations:
+        return "policy_violation"
+    if any(step.parse_error is not None for step in trajectory.steps):
+        return "invalid_output"
+    if any(
+        step.observation is not None and step.observation.error_code in _INVALID_CODES
+        for step in trajectory.steps
+    ):
+        return "invalid_tool_call"
+    if trajectory.termination.value == "step_limit":
+        return "step_limit"
+    if trajectory.termination.value == "final_response":
+        return "premature_final_response"
+    return "verifier_failure"
 
 
 def _bootstrap_ci(
@@ -121,6 +165,13 @@ def _empty_metrics() -> dict[str, Any]:
         "task_success_ci95": [0.0, 0.0],
         "final_state_success": 0.0,
         "policy_violation_rate": 0.0,
+        "policy_violation_count": 0,
+        "schema_valid_count": 0,
+        "schema_valid_rate": 0.0,
+        "executable_count": 0,
+        "executable_rate": 0.0,
+        "invalid_output_count": 0,
+        "invalid_call_count": 0,
         "invalid_call_rate": 0.0,
         "format_error_rate": 0.0,
         "tool_selection_accuracy": 0.0,
@@ -131,4 +182,6 @@ def _empty_metrics() -> dict[str, Any]:
         "average_input_tokens": 0.0,
         "average_output_tokens": 0.0,
         "average_latency_ms": 0.0,
+        "verifier_reward": 0.0,
+        "failure_type_distribution": {},
     }

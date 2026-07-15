@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,8 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     from trl.trainer.sft_config import SFTConfig
     from trl.trainer.sft_trainer import SFTTrainer
 
+    torch.cuda.reset_peak_memory_stats()
+    started_at = time.perf_counter()
     dataset = load_dataset(
         "json",
         data_files={
@@ -174,9 +177,14 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     eval_metrics = trainer.evaluate()
     trainer.save_model(str(resolved.adapter_dir))
     tokenizer.save_pretrained(str(resolved.adapter_dir))
+    torch.cuda.synchronize()
     metrics = {
         "train": _json_metrics(train_result.metrics),
         "eval": _json_metrics(eval_metrics),
+        "resources": _cuda_resource_metrics(
+            torch.cuda,
+            wall_time_seconds=time.perf_counter() - started_at,
+        ),
     }
     _require_finite_losses(metrics)
     write_json(output_dir / "metrics.json", metrics)
@@ -192,6 +200,15 @@ def _json_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     return {
         key: float(value) if isinstance(value, (int, float)) else value
         for key, value in metrics.items()
+    }
+
+
+def _cuda_resource_metrics(cuda: Any, wall_time_seconds: float) -> dict[str, Any]:
+    return {
+        "wall_time_seconds": wall_time_seconds,
+        "logical_device": f"cuda:{cuda.current_device()}",
+        "cuda_peak_allocated_bytes": int(cuda.max_memory_allocated()),
+        "cuda_peak_reserved_bytes": int(cuda.max_memory_reserved()),
     }
 
 

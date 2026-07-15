@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,29 @@ def test_sft_configs_use_local_model_symlink(config_name: str) -> None:
     config = _load_config(config_name)
 
     assert config["model"]["name"] == MODEL_PATH
+
+
+def test_smoke_config_limits_one_local_qwen_task() -> None:
+    config = _load_config("mvp_eval_qwen_smoke.yaml")
+
+    assert config["task_limit"] == 1
+    assert config["policy"]["model_name"] == MODEL_PATH
+
+
+def test_git_ignores_report_adapters_and_checkpoints() -> None:
+    paths = [
+        "reports/mvp/sft-seed0/adapter/adapter_config.json",
+        "reports/mvp/sft-seed0/adapter/tokenizer.json",
+        "reports/mvp/sft-seed0/checkpoints/checkpoint-1/trainer_state.json",
+    ]
+
+    for path in paths:
+        result = subprocess.run(
+            ["git", "check-ignore", "-q", path],
+            cwd=ROOT,
+            check=False,
+        )
+        assert result.returncode == 0, f"未忽略训练大产物路径: {path}"
 
 
 def test_all_config_file_references_are_project_relative() -> None:

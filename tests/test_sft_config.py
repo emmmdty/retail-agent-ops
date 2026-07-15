@@ -98,3 +98,27 @@ def test_resolve_sft_config_rejects_non_project_relative_paths(
 
     with pytest.raises(ValidationError, match="项目相对路径"):
         resolve_sft_config(config, seed=0, output_dir=tmp_path / "run")
+
+
+def test_cuda_resource_metrics_report_wall_time_and_peak_memory() -> None:
+    from veritool_rl.training.sft import _cuda_resource_metrics
+
+    class FakeCuda:
+        @staticmethod
+        def current_device() -> int:
+            return 0
+
+        @staticmethod
+        def max_memory_allocated() -> int:
+            return 123
+
+        @staticmethod
+        def max_memory_reserved() -> int:
+            return 456
+
+    assert _cuda_resource_metrics(FakeCuda(), wall_time_seconds=12.5) == {
+        "wall_time_seconds": 12.5,
+        "logical_device": "cuda:0",
+        "cuda_peak_allocated_bytes": 123,
+        "cuda_peak_reserved_bytes": 456,
+    }

@@ -106,3 +106,79 @@ def test_evaluate_cli_writes_oracle_metrics(tmp_path: Path) -> None:
     assert (output_dir / "failures.jsonl").read_text(encoding="utf-8") == ""
     assert (output_dir / "config.yaml").exists()
     assert (output_dir / "log.txt").exists()
+
+
+def test_evaluate_cli_respects_task_limit(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    config = tmp_path / "eval.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "environment": "mini_retail",
+                "split": "test",
+                "task_limit": 1,
+                "policy": {"type": "oracle"},
+                "bootstrap_samples": 20,
+            },
+            allow_unicode=True,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "eval"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/evaluate.py"),
+            "--config",
+            str(config),
+            "--seed",
+            "0",
+            "--output_dir",
+            str(output_dir),
+        ],
+        cwd=root,
+        check=True,
+    )
+
+    metrics = json.loads((output_dir / "metrics.json").read_text(encoding="utf-8"))
+    trajectories = (output_dir / "trajectories.jsonl").read_text(encoding="utf-8").splitlines()
+    assert metrics["task_count"] == 1
+    assert len(trajectories) == 1
+
+
+def test_evaluate_cli_rejects_non_positive_task_limit(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    config = tmp_path / "eval.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "environment": "mini_retail",
+                "split": "test",
+                "task_limit": 0,
+                "policy": {"type": "oracle"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/evaluate.py"),
+            "--config",
+            str(config),
+            "--seed",
+            "0",
+            "--output_dir",
+            str(tmp_path / "eval"),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "task_limit 必须是正整数" in result.stderr
