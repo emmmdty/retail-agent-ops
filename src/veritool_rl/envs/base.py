@@ -1,71 +1,81 @@
-"""工具环境抽象接口。
+"""确定性工具环境的公共接口。"""
 
-统一封装 BFCL / ToolSandbox / tau2 等评测环境, 向 Agent 暴露一致的接口。
-所有方法均为占位, 核心逻辑待按 SPEC.md「必须实现的工具」一节实现。
-"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any
 
+from pydantic import Field, field_validator
 
-@dataclass
-class ToolSchema:
+from veritool_rl.trajectory.schema import (
+    Observation,
+    StrictModel,
+    TaskSpec,
+    validate_json_value,
+)
+
+
+class ToolSchema(StrictModel):
     """工具的 JSON schema 描述。"""
 
-    name: str
-    description: str
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
     parameters: dict[str, Any]
 
+    _validate_parameters = field_validator("parameters")(validate_json_value)
 
-@dataclass
-class Observation:
-    """执行工具后的结构化观测。"""
-
-    ok: bool
-    content: Any
-    error: str | None = None
+    def to_transformers(self) -> dict[str, Any]:
+        """转换为 Transformers chat template 接受的函数格式。"""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
 
 
 class ToolEnv(ABC):
-    """有状态工具环境的统一适配器接口。
+    """单个冻结任务对应的有状态确定性环境。"""
 
-    实现类负责把某个具体基准 (BFCL / ToolSandbox / tau2) 适配到该接口,
-    使训练与评测代码与具体环境解耦。
-    """
+    @property
+    @abstractmethod
+    def task(self) -> TaskSpec:
+        """返回创建该环境的任务规格。"""
+        raise NotImplementedError
 
     @abstractmethod
     def list_tools(self) -> list[ToolSchema]:
-        """返回当前可用工具及其 JSON schema。"""
+        """返回当前向 policy 展示的工具 schema。"""
         raise NotImplementedError
 
     @abstractmethod
     def execute_tool(self, name: str, arguments: dict[str, Any]) -> Observation:
-        """执行工具并返回结构化 observation。"""
+        """执行一次工具调用；模型错误应返回 observation 而不是抛异常。"""
         raise NotImplementedError
 
     @abstractmethod
     def get_state(self) -> dict[str, Any]:
-        """返回当前环境可见状态 (用于回放与 verifier)。"""
+        """返回当前状态的深拷贝。"""
         raise NotImplementedError
 
     @abstractmethod
     def verify_milestone(self) -> float:
-        """计算中间里程碑得分。"""
+        """返回已完成预期调用的比例。"""
         raise NotImplementedError
 
     @abstractmethod
     def verify_final_state(self) -> float:
-        """根据目标状态计算确定性成功奖励。"""
+        """返回确定性最终成功分数 0 或 1。"""
         raise NotImplementedError
 
     @abstractmethod
     def check_policy(self) -> list[str]:
-        """识别越权、顺序错误与 minefield, 返回违规项列表 (空表示合规)。"""
+        """返回按首次出现顺序去重的违规代码。"""
         raise NotImplementedError
 
     @abstractmethod
     def perturb_schema(self, seed: int) -> None:
-        """对工具名称/描述/参数顺序/无关工具做扰动 (用于 H4 鲁棒性实验)。"""
+        """确定性施加改名、描述、参数顺序和 distractor 扰动。"""
         raise NotImplementedError

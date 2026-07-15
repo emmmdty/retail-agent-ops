@@ -1,5 +1,23 @@
-"""统一轨迹表示: 训练与评测的核心数据单位。"""
+"""统一轨迹表示。"""
 
-from veritool_rl.trajectory.schema import Step, Trajectory
+from veritool_rl.trajectory.schema import (
+    Observation,
+    RewardBreakdown,
+    Step,
+    TaskScenario,
+    TaskSpec,
+    TerminationReason,
+    ToolCall,
+    Trajectory,
+)
 
-__all__ = ["Step", "Trajectory"]
+__all__ = [
+    "Observation",
+    "RewardBreakdown",
+    "Step",
+    "TaskScenario",
+    "TaskSpec",
+    "TerminationReason",
+    "ToolCall",
+    "Trajectory",
+]
