@@ -6,9 +6,10 @@ import math
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from veritool_rl.artifacts import write_json, write_yaml
+from veritool_rl.paths import validate_project_relative_path
 
 
 class ConfigModel(BaseModel):
@@ -18,8 +19,14 @@ class ConfigModel(BaseModel):
 
 
 class ModelSettings(ConfigModel):
-    name: str = "Qwen/Qwen3-1.7B"
+    name: str = "models/Qwen3-1.7B"
     load_in_4bit: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        validate_project_relative_path(value, "model.name")
+        return value
 
 
 class LoraSettings(ConfigModel):
@@ -34,6 +41,12 @@ class LoraSettings(ConfigModel):
 class DataSettings(ConfigModel):
     train_path: Path
     eval_path: Path
+
+    @field_validator("train_path", "eval_path")
+    @classmethod
+    def validate_data_path(cls, value: Path) -> Path:
+        validate_project_relative_path(value, "data path")
+        return value
 
 
 class TrainingSettings(ConfigModel):
@@ -87,6 +100,9 @@ def resolve_sft_config(
 def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, Any]:
     """执行 QLoRA-SFT，保存可重载 adapter、配置和有限指标。"""
     resolved = resolve_sft_config(config, seed, output_dir)
+    model_path = Path(resolved.model.name)
+    if not model_path.is_dir():
+        raise FileNotFoundError(model_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(output_dir / "config.yaml", resolved.model_dump(mode="json"))
 
@@ -104,7 +120,7 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
             "validation": str(resolved.data.eval_path),
         },
     )
-    tokenizer = AutoTokenizer.from_pretrained(resolved.model.name)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     bitsandbytes_config: Any = BitsAndBytesConfig
@@ -146,7 +162,7 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         model_init_kwargs={"dtype": torch.bfloat16, "device_map": {"": "cuda:0"}},
     )
     trainer = SFTTrainer(
-        model=resolved.model.name,
+        model=str(model_path),
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],

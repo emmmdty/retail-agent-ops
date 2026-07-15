@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from veritool_rl.agent.parser import parse_qwen_response
 from veritool_rl.agent.policy import PolicyOutput
 from veritool_rl.envs.base import ToolSchema
+from veritool_rl.paths import validate_project_relative_path
 from veritool_rl.trajectory.schema import StrictModel
 
 
@@ -74,6 +75,7 @@ class QwenPolicy:
         if not isinstance(model_name, str) or not model_name:
             msg = "policy.model_name 必须是非空字符串"
             raise ValueError(msg)
+        validate_project_relative_path(model_name, "policy.model_name")
         max_new_tokens = config.get("max_new_tokens", 256)
         if not isinstance(max_new_tokens, int) or max_new_tokens < 1:
             msg = "policy.max_new_tokens 必须是正整数"
@@ -82,6 +84,8 @@ class QwenPolicy:
         if adapter_value is not None and not isinstance(adapter_value, str):
             msg = "policy.adapter_path 必须是路径字符串"
             raise ValueError(msg)
+        if adapter_value is not None:
+            validate_project_relative_path(adapter_value, "policy.adapter_path")
         backend = TransformersBackend.from_pretrained(model_name, adapter_value)
         return cls(backend, model_name, max_new_tokens, adapter_value)
 
@@ -99,6 +103,10 @@ class TransformersBackend:
         model_name: str,
         adapter_path: str | None,
     ) -> TransformersBackend:
+        model_path = Path(model_name)
+        if not model_path.is_dir():
+            raise FileNotFoundError(model_path)
+
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -109,11 +117,11 @@ class TransformersBackend:
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
         )
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         model: Any = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            model_path,
             quantization_config=quantization,
             dtype=torch.bfloat16,
             device_map={"": "cuda:0"},
@@ -121,7 +129,7 @@ class TransformersBackend:
         )
         if adapter_path is not None:
             path = Path(adapter_path)
-            if not path.exists():
+            if not path.is_dir():
                 raise FileNotFoundError(path)
             from peft import PeftModel
 

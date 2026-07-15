@@ -7,15 +7,19 @@ from pathlib import Path
 import pytest
 
 
-def test_resolve_sft_config_locks_mvp_defaults(tmp_path: Path) -> None:
+def test_resolve_sft_config_locks_mvp_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from veritool_rl.training.sft import resolve_sft_config
 
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "dev.jsonl"
+    monkeypatch.chdir(tmp_path)
+    train_path = Path("train.jsonl")
+    eval_path = Path("dev.jsonl")
     train_path.write_text("{}\n", encoding="utf-8")
     eval_path.write_text("{}\n", encoding="utf-8")
     config = {
-        "model": {"name": "Qwen/Qwen3-1.7B", "load_in_4bit": True},
+        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
         "lora": {
             "r": 16,
             "alpha": 32,
@@ -36,25 +40,61 @@ def test_resolve_sft_config_locks_mvp_defaults(tmp_path: Path) -> None:
 
     resolved = resolve_sft_config(config, seed=7, output_dir=tmp_path / "run")
 
-    assert resolved.model.name == "Qwen/Qwen3-1.7B"
+    assert resolved.model.name == "models/Qwen3-1.7B"
     assert resolved.training.max_seq_len == 1024
     assert resolved.training.assistant_only_loss is True
     assert resolved.seed == 7
     assert resolved.adapter_dir == tmp_path / "run/adapter"
 
 
-def test_resolve_sft_config_rejects_missing_dataset(tmp_path: Path) -> None:
+def test_resolve_sft_config_rejects_missing_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from veritool_rl.training.sft import resolve_sft_config
 
+    monkeypatch.chdir(tmp_path)
     config = {
-        "model": {"name": "Qwen/Qwen3-1.7B", "load_in_4bit": True},
+        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
         "lora": {"target_modules": ["q_proj"]},
         "data": {
-            "train_path": str(tmp_path / "missing-train.jsonl"),
-            "eval_path": str(tmp_path / "missing-dev.jsonl"),
+            "train_path": "missing-train.jsonl",
+            "eval_path": "missing-dev.jsonl",
         },
         "training": {},
     }
 
     with pytest.raises(FileNotFoundError, match="missing-train"):
+        resolve_sft_config(config, seed=0, output_dir=tmp_path / "run")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("model", "/data/TJK/models/Qwen3-1.7B"),
+        ("train_path", "/data/TJK/data/train.jsonl"),
+        ("eval_path", "../shared/dev.jsonl"),
+    ],
+)
+def test_resolve_sft_config_rejects_non_project_relative_paths(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    from pydantic import ValidationError
+
+    from veritool_rl.training.sft import resolve_sft_config
+
+    config = {
+        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "lora": {"target_modules": ["q_proj"]},
+        "data": {"train_path": "train.jsonl", "eval_path": "dev.jsonl"},
+        "training": {},
+    }
+    if field == "model":
+        config["model"]["name"] = value
+    else:
+        config["data"][field] = value
+
+    with pytest.raises(ValidationError, match="项目相对路径"):
         resolve_sft_config(config, seed=0, output_dir=tmp_path / "run")

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 def test_qwen_policy_passes_tools_and_records_usage() -> None:
@@ -33,7 +36,7 @@ def test_qwen_policy_passes_tools_and_records_usage() -> None:
             )
 
     backend = FakeBackend()
-    policy = QwenPolicy(backend=backend, model_name="Qwen/Qwen3-1.7B")
+    policy = QwenPolicy(backend=backend, model_name="models/Qwen3-1.7B")
     task = build_mvp_task_splits(seed=0)["test"][0]
     tools = MiniRetailEnv(task).list_tools()
 
@@ -60,7 +63,38 @@ def test_qwen_policy_preserves_parser_error_and_usage() -> None:
             del messages, tools, max_new_tokens
             return GeneratedText(text="<tool_call>bad</tool_call>", output_tokens=3)
 
-    output = QwenPolicy(InvalidBackend(), "Qwen/Qwen3-1.7B").respond([], [])
+    output = QwenPolicy(InvalidBackend(), "models/Qwen3-1.7B").respond([], [])
 
     assert output.parse_error == "invalid_tool_call_json"
     assert output.output_tokens == 3
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("model_name", "/data/TJK/models/Qwen3-1.7B"),
+        ("adapter_path", "../other-run/adapter"),
+    ],
+)
+def test_qwen_policy_config_rejects_non_project_relative_paths(
+    field: str,
+    value: str,
+) -> None:
+    from veritool_rl.agent.qwen import QwenPolicy
+
+    config = {"model_name": "models/Qwen3-1.7B", field: value}
+
+    with pytest.raises(ValueError, match="项目相对路径"):
+        QwenPolicy.from_config(config)
+
+
+def test_transformers_backend_requires_local_model_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from veritool_rl.agent.qwen import TransformersBackend
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="models/Qwen3-1.7B"):
+        TransformersBackend.from_pretrained("models/Qwen3-1.7B", None)

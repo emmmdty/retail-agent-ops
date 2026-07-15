@@ -39,6 +39,19 @@ uv run --frozen mypy
 
 ## 单卡 Qwen3 前后对照
 
+模型由 ModelScope 下载到服务器共享目录，再通过项目内相对软链接加载。仓库配置
+只引用 `models/Qwen3-1.7B`，不使用服务器绝对模型路径或 Hub ID：
+
+```bash
+cd /data/TJK
+UV_CACHE_DIR=uv-cache /home/TJK/.local/bin/uvx --from modelscope \
+  modelscope download --model Qwen/Qwen3-1.7B \
+  --local_dir models/Qwen3-1.7B
+cd internship-projects/veritool-rl
+mkdir -p models
+ln -s ../../../models/Qwen3-1.7B models/Qwen3-1.7B
+```
+
 以下命令只在 `gpu-4090` 上、经用户确认具体 GPU 后执行：
 
 ```bash

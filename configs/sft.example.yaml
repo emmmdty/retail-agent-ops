@@ -1,6 +1,6 @@
 # 可直接运行的 Qwen3-1.7B 单卡 QLoRA-SFT 示例。
 model:
-  name: Qwen/Qwen3-1.7B
+  name: models/Qwen3-1.7B
   load_in_4bit: true
 
 lora:

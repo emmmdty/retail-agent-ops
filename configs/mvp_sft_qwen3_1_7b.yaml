@@ -1,6 +1,6 @@
 # Qwen3-1.7B 单卡 4-bit QLoRA-SFT。
 model:
-  name: Qwen/Qwen3-1.7B
+  name: models/Qwen3-1.7B
   load_in_4bit: true
 
 lora:

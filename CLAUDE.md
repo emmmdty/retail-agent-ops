@@ -32,6 +32,8 @@
 | 远程仓库 | `/data/TJK/internship-projects/veritool-rl` |
 | 远程 uv | `/home/TJK/.local/bin/uv` (`uv 0.11.8`) |
 | 远程 uv 缓存 | `UV_CACHE_DIR=/data/TJK/uv-cache` |
+| Qwen3-1.7B 共享模型 | `/data/TJK/models/Qwen3-1.7B` |
+| 项目内模型引用 | `models/Qwen3-1.7B` (相对软链接) |
 | 外部 benchmark 源码 | `data/external_repos/` (本地与远程均已准备) |
 
 - 远程 uv 管理的 Python 为 `3.11.15`。
@@ -55,7 +57,8 @@ ssh gpu-4090 'cd /data/TJK/internship-projects/veritool-rl && UV_CACHE_DIR=/data
 | AppWorld | `a072b7a86e7c1d5b1d7175659d750ebb9b79f10a` |
 
 - 离线归档位于 `data/downloads/external_repos-20260715.tar.zst`, 网络不稳定时优先从本地上传并解压, 不在服务器重复拉取大仓库。
-- `data/`、模型权重与 checkpoint 均被 git 忽略。模型权重尚未在项目清单中固定, 使用前先检查本地/远程缓存; 缺失时优先镜像下载或本地下载后 `rsync`。
+- `data/`、模型权重与 checkpoint 均被 git 忽略。Qwen3-1.7B 已于 2026-07-15 从 ModelScope 的 `Qwen/Qwen3-1.7B` 下载到共享模型目录；项目配置只使用相对软链接 `models/Qwen3-1.7B`。
+- 本次权重 SHA-256：分片 1 为 `169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5`，分片 2 为 `912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9`；重新下载后必须复核。
 - ToolSandbox 固定 `transformers==4.41.2`, 与项目主训练环境的 `transformers 5.13.1` 冲突。不得把完整 ToolSandbox 直接安装进主环境; 真实适配应使用隔离的 uv 环境或进程边界。
 
 ### 2.3 当前开发阶段
