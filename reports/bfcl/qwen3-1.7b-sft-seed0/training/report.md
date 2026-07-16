@@ -65,3 +65,37 @@ TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 \
 模型、派生训练数据、adapter、checkpoint 和独立 evaluator 环境不进入 git。
 训练结果只支持随后固定 200 条单轮 AST holdout 的一次配对评测，不能外推为
 官方 BFCL 训练、官方全量成绩、排行榜成绩或独立分布泛化结果。
+
+## 数据、评测与验收命令
+
+以下实验命令均从远程目录 `/data/TJK/internship-projects/veritool-rl` 执行；
+Base 完整性校验通过，因此没有重跑 Base。
+
+```bash
+# 构造 train/dev、验证 800 个 target 并审计 token 长度
+UV_CACHE_DIR=/data/TJK/uv-cache TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 \
+/home/TJK/.local/bin/uv run --frozen --extra train \
+  python scripts/build_bfcl_sft_data.py \
+  --config configs/bfcl_v4_sft_data_seed0.yaml --seed 0 \
+  --output_dir data/bfcl/sft-seed0
+
+# 唯一一次固定 200 条 SFT 推理与官方 AST 评分，物理 GPU 2
+UV_CACHE_DIR=/data/TJK/uv-cache CUDA_VISIBLE_DEVICES=2 \
+TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 \
+/home/TJK/.local/bin/uv run --frozen --extra train \
+  python scripts/evaluate_bfcl.py \
+  --config configs/bfcl_v4_single_turn_sft_seed0.yaml --seed 0 \
+  --output_dir reports/bfcl/qwen3-1.7b-sft-seed0
+
+# 严格 task_id 配对与 seed 0、10,000 次 bootstrap
+UV_CACHE_DIR=/data/TJK/uv-cache /home/TJK/.local/bin/uv run --frozen \
+  python scripts/aggregate_bfcl_report.py \
+  --config configs/bfcl_v4_base_vs_sft_seed0.yaml --seed 0 \
+  --output_dir reports/bfcl/qwen3-1.7b-base-vs-sft-seed0
+
+# 本地使用 uv；远程将 uv 替换为显式 /home/TJK/.local/bin/uv，且设置缓存目录
+uv run --frozen pytest -q
+uv run --frozen ruff check .
+uv run --frozen mypy
+git diff --check
+```
