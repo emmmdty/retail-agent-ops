@@ -203,6 +203,16 @@ def reload_adapter_offline(model_path: Path, adapter_path: Path) -> dict[str, An
     }
 
 
+def pretokenized_sft_runtime_options() -> dict[str, Any]:
+    """返回显式 labels 数据对应的 TRL 运行时选项。"""
+    return {
+        "assistant_only_loss": False,
+        "completion_only_loss": False,
+        "dataset_kwargs": {"skip_prepare_dataset": True},
+        "max_length": None,
+    }
+
+
 def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, Any]:
     """执行 QLoRA-SFT，保存可重载 adapter、配置和有限指标。"""
     resolved = resolve_sft_config(config, seed, output_dir)
@@ -279,12 +289,9 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         per_device_eval_batch_size=resolved.training.batch_size,
         gradient_accumulation_steps=resolved.training.grad_accum,
         learning_rate=resolved.training.lr,
-        max_length=None,
         max_steps=resolved.training.max_steps or -1,
         bf16=resolved.training.bf16,
         gradient_checkpointing=resolved.training.gradient_checkpointing,
-        assistant_only_loss=True,
-        completion_only_loss=False,
         packing=False,
         eval_strategy="no" if resolved.training.smoke else "epoch",
         save_strategy="no",
@@ -294,12 +301,12 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         report_to="none",
         seed=seed,
         data_seed=seed,
-        dataset_kwargs={"skip_prepare_dataset": True},
         model_init_kwargs={
             "dtype": torch.bfloat16,
             "device_map": {"": "cuda:0"},
             "local_files_only": True,
         },
+        **pretokenized_sft_runtime_options(),
     )
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
@@ -339,6 +346,7 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
             ),
             "max_seq_len": resolved.training.max_seq_len,
             "trainer_truncation_enabled": False,
+            "loss_mask_source": "pretokenized_explicit_labels",
         },
         "resources": _cuda_resource_metrics(
             torch.cuda,

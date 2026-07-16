@@ -232,3 +232,16 @@ def test_reload_adapter_offline_uses_base_and_saved_adapter(
     assert evidence["model_path"] == str(model_path)
     assert evidence["adapter_path"] == str(adapter_path)
     assert evidence["local_files_only"] is True
+
+
+def test_pretokenized_runtime_uses_explicit_labels_not_trl_auto_mask() -> None:
+    from veritool_rl.training.sft import pretokenized_sft_runtime_options
+
+    options = pretokenized_sft_runtime_options()
+
+    assert options == {
+        "assistant_only_loss": False,
+        "completion_only_loss": False,
+        "dataset_kwargs": {"skip_prepare_dataset": True},
+        "max_length": None,
+    }
