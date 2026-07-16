@@ -57,6 +57,7 @@ logs/
 # BFCL 官方 score / 失败明细嵌入原始 prompt、schema 和 possible answer，不进 git
 /reports/bfcl/**/official_scores/
 /reports/bfcl/**/failures.jsonl
+/reports/bfcl/**/comparison_analysis.jsonl
 # 单任务 GPU smoke 仅作运行前全链路验证，保留在本地和远程产物目录
 /reports/bfcl/*-smoke-*/
 
