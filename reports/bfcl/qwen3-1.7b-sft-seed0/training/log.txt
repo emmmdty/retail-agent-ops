@@ -1,0 +1,1 @@
+QLoRA-SFT 完成；adapter=reports/bfcl/qwen3-1.7b-sft-seed0/training/adapter
