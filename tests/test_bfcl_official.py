@@ -97,3 +97,83 @@ def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
     rejected = subprocess.run(command, check=False, capture_output=True, text=True)
     assert rejected.returncode != 0
     assert "Result task IDs do not match frozen manifest" in rejected.stderr
+
+
+def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
+    tmp_path: Path,
+) -> None:
+    python = Path("tools/bfcl_eval/.venv/bin/python")
+    assert python.is_file(), "请先运行 uv sync --project tools/bfcl_eval --frozen"
+    model_dir = tmp_path / "results/Qwen_Qwen3-1.7B-FC/non_live"
+    model_dir.mkdir(parents=True)
+    rows = [
+        {
+            "id": "simple_python_0",
+            "result": (
+                '<tool_call>\n{"name":"calculate_triangle_area","arguments":'
+                '{"base":10,"height":5,"unit":"units"}}\n</tool_call>'
+            ),
+        },
+        {
+            "id": "simple_python_1",
+            "result": (
+                '<tool_call>\n{"name":"math.factorial","arguments":{"number":5}}'
+                "\n</tool_call>"
+            ),
+        },
+    ]
+    (model_dir / "BFCL_v4_simple_python_result.json").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "sft-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "bfcl_commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+                "holdout_manifest_sha256": "a" * 64,
+                "selection_algorithm": "fixed",
+                "sources": [],
+                "splits": {
+                    "train": [
+                        {"category": "simple_python", "task_id": "simple_python_0"}
+                    ],
+                    "dev": [
+                        {"category": "simple_python", "task_id": "simple_python_1"}
+                    ],
+                    "holdout": [
+                        {"category": "simple_python", "task_id": "simple_python_2"}
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    command = [
+        str(python),
+        "scripts/run_bfcl_official_ast.py",
+        "--bfcl-repo",
+        "data/external_repos/gorilla/berkeley-function-call-leaderboard",
+        "--expected-commit",
+        "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        "--manifest",
+        str(manifest_path),
+        "--model",
+        "Qwen/Qwen3-1.7B-FC",
+        "--test-category",
+        "simple_python",
+        "--result-dir",
+        str(tmp_path / "results"),
+        "--score-dir",
+        str(tmp_path / "scores"),
+    ]
+
+    completed = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert completed.returncode == 0, completed.stderr
+    score_path = (
+        tmp_path
+        / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
+    )
+    summary = json.loads(score_path.read_text(encoding="utf-8").splitlines()[0])
+    assert summary == {"accuracy": 1.0, "correct_count": 2, "total_count": 2}

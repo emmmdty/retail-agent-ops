@@ -145,9 +145,19 @@ def _load_expected_ids(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError(f"Invalid frozen manifest: {manifest_path}")
-    if manifest.get("bfcl_commit") != expected_commit or manifest.get("seed") != 0:
-        raise ValueError("Frozen manifest commit or seed does not match the evaluation")
-    tasks = manifest.get("tasks")
+    if manifest.get("bfcl_commit") != expected_commit:
+        raise ValueError("Frozen manifest commit does not match the evaluation")
+    splits = manifest.get("splits")
+    if isinstance(splits, dict):
+        train = splits.get("train")
+        dev = splits.get("dev")
+        if not isinstance(train, list) or not isinstance(dev, list):
+            raise ValueError("Frozen SFT manifest has invalid train/dev splits")
+        tasks = [*train, *dev]
+    else:
+        if manifest.get("seed") != 0:
+            raise ValueError("Frozen manifest seed does not match the evaluation")
+        tasks = manifest.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         raise ValueError("Frozen manifest has no tasks")
     manifest_categories: dict[str, str] = {}
