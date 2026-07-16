@@ -50,6 +50,16 @@ def test_git_ignores_report_adapters_and_checkpoints() -> None:
         assert result.returncode == 0, f"未忽略训练大产物路径: {path}"
 
 
+def test_git_ignores_serena_user_directory() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", ".serena/project.yml"],
+        cwd=ROOT,
+        check=False,
+    )
+
+    assert result.returncode == 0, "必须忽略用户的 .serena/ 目录"
+
+
 def test_git_ignores_bfcl_outputs_that_embed_raw_benchmark_data() -> None:
     paths = [
         "reports/bfcl/qwen3-1.7b-base-seed0/failures.jsonl",

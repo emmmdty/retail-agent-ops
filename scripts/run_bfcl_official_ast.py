@@ -13,7 +13,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 MODEL_NAME = "Qwen/Qwen3-1.7B-FC"
 SUPPORTED_CATEGORIES = (
@@ -79,7 +79,12 @@ def _read_model_underscore_to_dot(model_config_path: Path, model_name: str) -> b
                 if keyword.arg == "underscore_to_dot" and isinstance(
                     keyword.value, ast.Constant
                 ):
-                    values.append(keyword.value.value)
+                    flag = keyword.value.value
+                    if not isinstance(flag, bool):
+                        raise ValueError(
+                            f"Invalid underscore_to_dot flag for {model_name}: {flag!r}"
+                        )
+                    values.append(flag)
     if values != [False]:
         raise ValueError(
             f"Expected one {model_name} config with underscore_to_dot=False, got {values}"
@@ -95,7 +100,8 @@ def _load_official_checker(
     underscore_to_dot = _read_model_underscore_to_dot(model_config_path, model_name)
     module_name = "bfcl_eval.constants.model_config"
     model_config_stub = types.ModuleType(module_name)
-    model_config_stub.MODEL_CONFIG_MAPPING = {
+    model_config = cast(Any, model_config_stub)
+    model_config.MODEL_CONFIG_MAPPING = {
         model_name: SimpleNamespace(underscore_to_dot=underscore_to_dot)
     }
     sys.modules[module_name] = model_config_stub
@@ -148,6 +154,7 @@ def _load_expected_ids(
     if manifest.get("bfcl_commit") != expected_commit:
         raise ValueError("Frozen manifest commit does not match the evaluation")
     splits = manifest.get("splits")
+    tasks: Any
     if isinstance(splits, dict):
         train = splits.get("train")
         dev = splits.get("dev")

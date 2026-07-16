@@ -245,3 +245,15 @@ def test_pretokenized_runtime_uses_explicit_labels_not_trl_auto_mask() -> None:
         "dataset_kwargs": {"skip_prepare_dataset": True},
         "max_length": None,
     }
+
+
+def test_sft_output_guard_rejects_existing_training_artifacts(tmp_path: Path) -> None:
+    from veritool_rl.training.sft import _ensure_new_training_output
+
+    output_dir = tmp_path / "training"
+    output_dir.mkdir()
+    _ensure_new_training_output(output_dir)
+
+    (output_dir / "metrics.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(FileExistsError, match="拒绝覆盖"):
+        _ensure_new_training_output(output_dir)

@@ -58,6 +58,11 @@ addopts = "-ra"
 
 [tool.mypy]
 python_version = "3.11"
-packages = ["veritool_rl"]
+files = [
+  "src/veritool_rl",
+  "scripts/aggregate_bfcl_report.py",
+  "scripts/evaluate_bfcl.py",
+  "scripts/run_bfcl_official_ast.py",
+]
 strict = true
 ignore_missing_imports = true

@@ -22,3 +22,8 @@ BFCL 运行额外保留 `manifest.json`、`raw_generations.jsonl`、官方 resul
 `failures.jsonl` 含原始 prompt、function schema 和 possible answer，只在本地及
 远程审计目录保留并由 `.gitignore` 排除；模型权重和独立 evaluator `.venv` 同样
 不进入 git。
+
+BFCL SFT 运行还保留 `data_audit.json`、训练 `metrics.json`、
+`trainer_log_history.json` 和 Base/SFT `comparison.jsonl`。split manifest 只含
+task_id、类别、commit、源文件哈希和选择算法；派生 train/dev JSONL、adapter、
+checkpoint、官方逐题 score、完整失败分析与 smoke 目录不进入 git。

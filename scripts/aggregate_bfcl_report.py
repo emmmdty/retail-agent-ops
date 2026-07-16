@@ -17,9 +17,10 @@ def main() -> None:
     manifest_path = config.get("manifest_path")
     bootstrap_samples = config.get("bootstrap_samples")
     sensitive = config.get("benchmark_sensitive_ids", [])
-    if not all(
-        isinstance(value, str)
-        for value in (baseline_dir, sft_dir, manifest_path)
+    if (
+        not isinstance(baseline_dir, str)
+        or not isinstance(sft_dir, str)
+        or not isinstance(manifest_path, str)
     ):
         raise ValueError("baseline_dir、sft_dir、manifest_path 必须是路径字符串")
     if not isinstance(bootstrap_samples, int) or isinstance(bootstrap_samples, bool):

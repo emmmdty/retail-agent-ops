@@ -266,7 +266,7 @@ def _validate_config(config: dict[str, Any], seed: int) -> dict[str, Any]:
         "model_name": cast(str, policy["model_name"]),
         "bfcl_model_name": cast(str, policy["bfcl_model_name"]),
         "max_new_tokens": cast(int, policy["max_new_tokens"]),
-        "adapter_path": cast(str | None, adapter_path),
+        "adapter_path": adapter_path,
         "official_python": cast(str, official["python"]),
         "official_project_root": cast(str, official["project_root"]),
         "official_categories": cast(list[str], categories),

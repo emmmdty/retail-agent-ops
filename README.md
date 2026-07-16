@@ -5,8 +5,14 @@
 面向小型工具智能体的可验证课程式后训练方法。
 
 当前已实现 MiniRetail 最小可行闭环，以及 BFCL V4 固定单轮子集的数据冻结、
-Qwen3-1.7B 离线 4-bit 推理、官方 AST 评分和失败分析。研究级 L1/L2，
-不宣称生产上线。
+Qwen3-1.7B 离线 4-bit 推理、QLoRA-SFT、官方 AST 评分和配对失败分析。
+研究级 L1/L2，不宣称生产上线。
+
+> Qwen3-1.7B 在项目定义的 BFCL V4 非重叠公开数据划分上进行 QLoRA-SFT
+> 后，在固定 200 条单轮 AST holdout 子集上的结果：Base 为 163/200
+> (0.815)，SFT 为 167/200 (0.835)，改善/退化/不变为 20/16/164，
+> success delta 为 +0.020，seed 0、10,000 次配对 bootstrap 95% CI 为
+> [-0.040, 0.080]。区间跨 0，不能据此声称稳定提升。
 
 > Qwen3-1.7B 在 BFCL V4 固定 200 条单轮 AST 子集上的零样本结果：官方
 > BFCL AST accuracy 为 0.815（163/200）；`simple_python`、`multiple`、
@@ -27,8 +33,14 @@ Qwen3-1.7B 离线 4-bit 推理、官方 AST 评分和失败分析。研究级 L1
   单卡训练前后指标、命令、资源与失败轨迹分析。
 - [`reports/bfcl/qwen3-1.7b-base-seed0/report.md`](./reports/bfcl/qwen3-1.7b-base-seed0/report.md)：
   BFCL 固定 200 条单轮 AST 子集的零样本指标、资源与失败分析。
+- [`reports/bfcl/qwen3-1.7b-sft-seed0/training/report.md`](./reports/bfcl/qwen3-1.7b-sft-seed0/training/report.md)：
+  BFCL QLoRA-SFT 数据审计、训练命令、速度、显存与 adapter 重载证据。
+- [`reports/bfcl/qwen3-1.7b-base-vs-sft-seed0/report.md`](./reports/bfcl/qwen3-1.7b-base-vs-sft-seed0/report.md)：
+  固定 200 条 holdout 上的 Base/SFT 严格配对比较与任务级变化。
 - [`manifests/bfcl_v4_single_turn_seed0.json`](./manifests/bfcl_v4_single_turn_seed0.json)：
   200 个 task_id、固定 BFCL commit、源文件哈希与 SHA-256 选择 provenance。
+- [`manifests/bfcl_v4_sft_split_seed0.json`](./manifests/bfcl_v4_sft_split_seed0.json)：
+  720/80/200 非重叠公开数据重新划分的 task_id 与来源 provenance。
 
 ## 本地闭环
 
@@ -74,6 +86,26 @@ TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 \
 function-call schema-valid rate 0.945，共 37 个官方失败。含原始 prompt、schema
 和 possible answer 的官方 score 与 `failures.jsonl` 作为本地/远程审计产物保留，
 不进入 git。
+
+## BFCL V4 QLoRA-SFT 对照
+
+固定 holdout 200 条从四类共 1000 条公开任务中排除后，按
+`sha256(f"bfcl-sft-dev:0:{task_id}".encode())` 稳定选择 80 条 dev，其余
+720 条训练。800 个训练/开发 target 均先通过固定 BFCL commit 的官方 AST
+checker；完整 chat 序列最大 1115 tokens，因此固定 `max_seq_len=1152`，监督
+target 截断数为 0。
+
+正式训练使用 NF4 4-bit、bf16 compute、LoRA r=16/alpha=32/dropout=0.05、
+q/k/v/o target、3 epochs、batch size 2、gradient accumulation 8、lr 2e-4
+和显式 assistant-only labels。训练在物理 GPU 2 上完成，135 optimizer steps
+耗时 341.471 秒，峰值 allocated/reserved 显存 3.65/3.93 GB，最终 adapter
+离线重载成功。
+
+固定 200 条 SFT 评测同样使用物理 GPU 2，官方 AST 为 167/200；分类正确数为
+45/50、47/50、40/50、35/50。相对 Base 净增 4 条，但配对 bootstrap CI 跨 0，
+且 `parallel_multiple` 从 39/50 退化到 35/50。该结果是项目定义的 BFCL V4
+公开数据重新划分实验，不是官方训练、官方全量成绩、排行榜成绩或独立分布泛化
+结果。
 
 ## 单卡 Qwen3 前后对照
 

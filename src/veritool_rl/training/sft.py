@@ -213,12 +213,29 @@ def pretokenized_sft_runtime_options() -> dict[str, Any]:
     }
 
 
+def _ensure_new_training_output(output_dir: Path) -> None:
+    """拒绝覆盖任何已开始的训练运行。"""
+    protected = (
+        "config.yaml",
+        "adapter",
+        "checkpoints",
+        "metrics.json",
+        "trainer_log_history.json",
+        "log.txt",
+    )
+    existing = [name for name in protected if (output_dir / name).exists()]
+    if existing:
+        msg = f"输出目录包含既有训练产物，拒绝覆盖: {existing}"
+        raise FileExistsError(msg)
+
+
 def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, Any]:
     """执行 QLoRA-SFT，保存可重载 adapter、配置和有限指标。"""
     resolved = resolve_sft_config(config, seed, output_dir)
     model_path = Path(resolved.model.name)
     if not model_path.is_dir():
         raise FileNotFoundError(model_path)
+    _ensure_new_training_output(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(output_dir / "config.yaml", resolved.model_dump(mode="json"))
 
