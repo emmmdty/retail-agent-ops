@@ -238,6 +238,7 @@ def test_finalize_bfcl_artifacts_writes_metrics_and_real_failure(
         wall_time_seconds=1.5,
         cuda_peak_allocated_bytes=10,
         cuda_peak_reserved_bytes=20,
+        is_sft=True,
     )
 
     assert metrics["official_ast_accuracy"] == 0.0
@@ -250,7 +251,10 @@ def test_finalize_bfcl_artifacts_writes_metrics_and_real_failure(
     assert failure["official_error_type"] == "simple_function_checker:wrong_func_name"
     assert failure["root_cause"] == "模型选择了错误的函数名"
     report = (tmp_path / "report.md").read_text(encoding="utf-8")
-    assert "BFCL V4 固定 1 条单轮 AST 子集" in report
+    assert (
+        "Qwen3-1.7B 在项目定义的 BFCL V4 非重叠公开数据划分上进行 "
+        "QLoRA-SFT 后，在固定 1 条单轮 AST holdout 子集上的结果"
+    ) in report
     assert "不是 BFCL 官方全量成绩或排行榜成绩" in report
     assert "总耗时：1.500 秒" in report
     assert "平均每任务耗时：1.500 秒" in report
@@ -301,3 +305,24 @@ def test_run_official_evaluator_creates_isolated_project_root(
     )
 
     assert output == "official ok"
+
+
+def test_bfcl_eval_config_accepts_only_project_relative_adapter_path() -> None:
+    import yaml
+
+    from scripts.evaluate_bfcl import _validate_config
+
+    config = yaml.safe_load(
+        Path("configs/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
+    )
+    config["policy"]["adapter_path"] = (
+        "reports/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
+    )
+
+    parsed = _validate_config(config, seed=0)
+
+    assert parsed["adapter_path"] == config["policy"]["adapter_path"]
+
+    config["policy"]["adapter_path"] = "/data/TJK/adapter"
+    with pytest.raises(ValueError, match="项目相对路径"):
+        _validate_config(config, seed=0)

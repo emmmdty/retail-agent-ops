@@ -63,10 +63,15 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
     visible_gpu = validate_offline_single_gpu_environment()
     model_evidence = inspect_local_model(Path(parsed["model_name"]))
     code_commit = _git_head(Path.cwd())
+    is_sft = parsed["adapter_path"] is not None
     run_manifest = {
         "title": (
-            f"Qwen3-1.7B 在 BFCL V4 固定 {len(task_answers)} 条单轮 AST 子集上的"
-            "零样本结果"
+            "Qwen3-1.7B BFCL QLoRA-SFT 固定 holdout 结果"
+            if is_sft
+            else (
+                f"Qwen3-1.7B 在 BFCL V4 固定 {len(task_answers)} 条单轮 AST "
+                "子集上的零样本结果"
+            )
         ),
         "started_at_utc": started_at,
         "seed": seed,
@@ -77,6 +82,7 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
         "frozen_manifest": manifest.model_dump(mode="json"),
         "selected_task_ids": [task.id for task, _ in task_answers],
         "model": model_evidence,
+        "adapter_path": parsed["adapter_path"],
         "offline_environment": {
             "TRANSFORMERS_OFFLINE": "1",
             "HF_HUB_OFFLINE": "1",
@@ -101,7 +107,10 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
     torch.cuda.reset_peak_memory_stats()
     properties = torch.cuda.get_device_properties(0)
     generation_started = time.perf_counter()
-    backend = TransformersBackend.from_pretrained(parsed["model_name"], None)
+    backend = TransformersBackend.from_pretrained(
+        parsed["model_name"],
+        parsed["adapter_path"],
+    )
     model_loaded_at = time.perf_counter()
     records = generate_bfcl_records(
         task_answers,
@@ -142,6 +151,7 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
         wall_time_seconds=wall_time_seconds,
         cuda_peak_allocated_bytes=peak_allocated,
         cuda_peak_reserved_bytes=peak_reserved,
+        is_sft=is_sft,
     )
     run_manifest.update(
         {
@@ -216,6 +226,12 @@ def _validate_config(config: dict[str, Any], seed: int) -> dict[str, Any]:
             msg = f"policy.{policy_field} 必须为 {policy_expected_value}"
             raise ValueError(msg)
     validate_project_relative_path(cast(str, policy["model_name"]), "policy.model_name")
+    adapter_path = policy.get("adapter_path")
+    if adapter_path is not None:
+        if not isinstance(adapter_path, str) or not adapter_path:
+            msg = "policy.adapter_path 必须是非空路径字符串"
+            raise ValueError(msg)
+        validate_project_relative_path(adapter_path, "policy.adapter_path")
     official = config.get("official_eval")
     if not isinstance(official, dict):
         msg = "official_eval 必须是 mapping"
@@ -250,6 +266,7 @@ def _validate_config(config: dict[str, Any], seed: int) -> dict[str, Any]:
         "model_name": cast(str, policy["model_name"]),
         "bfcl_model_name": cast(str, policy["bfcl_model_name"]),
         "max_new_tokens": cast(int, policy["max_new_tokens"]),
+        "adapter_path": cast(str | None, adapter_path),
         "official_python": cast(str, official["python"]),
         "official_project_root": cast(str, official["project_root"]),
         "official_categories": cast(list[str], categories),

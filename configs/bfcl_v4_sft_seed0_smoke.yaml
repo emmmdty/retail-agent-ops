@@ -1,0 +1,29 @@
+# 最长 8 条真实训练样例、最多 2 optimizer steps 的独立 GPU smoke。
+model:
+  name: models/Qwen3-1.7B
+  load_in_4bit: true
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+
+data:
+  train_path: data/bfcl/sft-seed0/train.jsonl
+  eval_path: data/bfcl/sft-seed0/dev.jsonl
+  train_limit: 8
+  eval_limit: 8
+
+training:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8
+  lr: 2.0e-4
+  max_seq_len: 1152
+  bf16: true
+  gradient_checkpointing: true
+  assistant_only_loss: true
+  max_steps: 2
+  smoke: true
+  verify_adapter_reload: true

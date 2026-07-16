@@ -311,6 +311,7 @@ def finalize_bfcl_artifacts(
     wall_time_seconds: float,
     cuda_peak_allocated_bytes: int,
     cuda_peak_reserved_bytes: int,
+    is_sft: bool = False,
 ) -> dict[str, Any]:
     """严格对齐官方 score 后写入指标、失败分析与范围限定报告。"""
     ids_by_category: dict[str, list[str]] = defaultdict(list)
@@ -339,10 +340,21 @@ def finalize_bfcl_artifacts(
         msg = "真实失败分析数量与官方错误数不一致"
         raise ValueError(msg)
     metrics["failure_analysis_count"] = len(failures)
+    metrics["input_token_count"] = sum(record.input_tokens for record in records)
+    metrics["output_token_count"] = sum(record.output_tokens for record in records)
+    metrics["throughput_tasks_per_second"] = (
+        len(records) / wall_time_seconds if wall_time_seconds else 0.0
+    )
+    generation_seconds = metrics["generation_latency_seconds"]
+    metrics["generation_output_tokens_per_second"] = (
+        metrics["output_token_count"] / generation_seconds
+        if generation_seconds
+        else 0.0
+    )
     write_json(output_dir / "metrics.json", metrics)
     write_jsonl(output_dir / "failures.jsonl", failures)
     (output_dir / "report.md").write_text(
-        _render_bfcl_report(metrics, failures),
+        _render_bfcl_report(metrics, failures, is_sft=is_sft),
         encoding="utf-8",
     )
     return metrics
@@ -393,11 +405,34 @@ def _root_cause(diagnostic: BfclDiagnostic, official: dict[str, Any]) -> str:
 def _render_bfcl_report(
     metrics: dict[str, Any],
     failures: list[dict[str, Any]],
+    *,
+    is_sft: bool = False,
 ) -> str:
     task_count = metrics["task_count"]
     accuracy = metrics["official_ast_accuracy"]
+    if is_sft:
+        title = (
+            "Qwen3-1.7B 在项目定义的 BFCL V4 非重叠公开数据划分上进行 "
+            f"QLoRA-SFT 后，在固定 {task_count} 条单轮 AST holdout 子集上的结果"
+        )
+        scope = (
+            "结果仅适用于项目定义的 BFCL V4 非重叠公开数据划分、固定单轮 AST "
+            "holdout、seed 0 和 Qwen3-1.7B QLoRA-SFT；不能称为官方训练、官方全量"
+            "成绩、排行榜成绩或独立分布泛化结果，也不能外推到多轮任务、"
+            "ToolSandbox、tau2、偏好优化或 GRPO。"
+        )
+    else:
+        title = (
+            f"Qwen3-1.7B 在 BFCL V4 固定 {task_count} 条单轮 AST 子集上的"
+            "零样本结果"
+        )
+        scope = (
+            "结果仅适用于提交 manifest 冻结的 BFCL V4 单轮 AST 子集、seed 0、"
+            "Qwen3-1.7B 4-bit NF4 零样本设置；不能外推到 BFCL 全量、官方排行榜、"
+            "多轮任务、ToolSandbox、tau2、SFT、偏好优化或 GRPO。"
+        )
     lines = [
-        f"# Qwen3-1.7B 在 BFCL V4 固定 {task_count} 条单轮 AST 子集上的零样本结果",
+        f"# {title}",
         "",
         "## 结论",
         "",
@@ -440,6 +475,9 @@ def _render_bfcl_report(
             f"- 生成总耗时：{metrics['generation_latency_seconds']:.3f} 秒",
             f"- GPU 峰值 allocated：{metrics['cuda_peak_allocated_bytes']} bytes",
             f"- GPU 峰值 reserved：{metrics['cuda_peak_reserved_bytes']} bytes",
+            f"- 任务吞吐量：{metrics['throughput_tasks_per_second']:.6f} tasks/s",
+            "- 生成输出吞吐量："
+            f"{metrics['generation_output_tokens_per_second']:.6f} tokens/s",
             "",
             "## 失败分析",
             "",
@@ -466,9 +504,7 @@ def _render_bfcl_report(
             "",
             "## 适用范围",
             "",
-            "结果仅适用于提交 manifest 冻结的 BFCL V4 单轮 AST 子集、seed 0、"
-            "Qwen3-1.7B 4-bit NF4 零样本设置；不能外推到 BFCL 全量、官方排行榜、"
-            "多轮任务、ToolSandbox、tau2、SFT、偏好优化或 GRPO。",
+            scope,
             "",
         ]
     )
