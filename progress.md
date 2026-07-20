@@ -33,4 +33,12 @@
 
 ## Next Gate
 
-R0 已关闭。工作区和分支原样保留，不合并、不 push；等待用户确认 R1 产品契约与冻结规则。
+R0 已关闭。用户已选择 R1 方案 A；当前进入规格复核门。设计规格提交并经用户书面复核后，
+才创建实现计划；正式 train/dev/holdout 仍留到 R2 冻结。
+
+## 2026-07-20 — R1 方案 A 规格准备
+
+- 用户选择窄而完整的退款闭环：2 个正式业务工具、6 类任务、12 条 R1 qualification fixture。
+- 设计了正确拒绝与政策违规的分离 verifier 语义，以及 sealed holdout receipt/evidence 边界。
+- 未实现代码、未生成正式 R2 数据、未运行 GPU、模型下载、商业 API 或训练。
+- 当前设计文件：`docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`。

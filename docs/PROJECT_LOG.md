@@ -247,3 +247,31 @@ Code 承担，用户负责方向和阶段决策。旧路线以研究型多 seed�
 
 **后果与下一步**：R0 已关闭并停止，等待用户批准 R1 的任务契约和 holdout 规则；
 本次不下载模型、不调用 API、不运行本地或远程 GPU。
+
+### LOG-20260720-02：选择 RetailOps v1 方案 A 并进入规格复核
+
+- 日期：2026-07-20
+- 阶段/任务：R1 / 产品契约与冻结规则
+- 状态：决定
+- 关联：`docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`、`docs/EXECUTION_PLAN.md`
+
+**背景与难点**：R0 只固定了产品边界，尚未决定 RetailOps v1 的任务类别、工具集合、政策
+验证和 holdout 保护方式。直接沿用 MiniRetail 动态 `test` split 会把任务真值写进轨迹，
+无法满足正式发布的泄漏边界。
+
+**证据**：用户选择方案 A。现有代码包含 `get_order`、`refund_order` 和 4 类 MiniRetail
+场景，但评测按 seed 动态生成任务，`TaskSpec` 内嵌目标状态/期望调用，评测产物会保存完整
+trajectory。R1/R2 计划分别要求 qualification vertical slice 和正式冻结 split。
+
+**决定与方案**：采用 2 个正式业务工具、6 类任务、6 条政策约束；R1 只用 12 条
+qualification fixture，R2 目标配额为 train/dev/holdout `240/60/120`。holdout 先按
+任务族分组划分，公共 receipt 只保存版本、配额、指纹和哈希，原始真值与完整逐任务证据
+保持 sealed。正确拒绝和违规调用分开计量；release 门禁失败即 NO-GO 并回退 base。
+
+**备选方案与未选择理由**：未选择更丰富的 5 工具/8 类操作流方案，因为它会在 R1 同时
+引入取消、政策查询和工单升级，增加 verifier 误判与时程风险；未直接冻结正式 holdout，
+因为 R2 才负责生成和冻结正式数据。
+
+**后果与下一步**：R1 可进入规格复核，但仍不实现代码。用户复核规格后才创建实现计划；
+若 qualification 无法稳定区分正确拒绝与 policy violation，或 sealed evidence 边界
+无法自动验证，停止进入 R2 并记录阻塞。BFCL 固定 200 条继续独立只读。
