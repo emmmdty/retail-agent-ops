@@ -16,10 +16,11 @@
 
 ## 本地工作区
 
-- 推荐工作区：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`
+- 推荐工作区：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
 - 初始化分支：`portfolio/retail-agent-ops-init`
 - 原始工作区：`/home/tjk/myProjects/internship-projects/veritool-rl`，不得清理或覆盖。
 - Python 包暂为 `veritool_rl`；产品品牌是 RetailAgentOps。
+- Codex 直接读取根目录 `AGENTS.md`；项目不使用 `.codex` 配置或 Hook。
 
 本地初始化：
 

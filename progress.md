@@ -42,3 +42,12 @@ R0 已关闭。用户已选择 R1 方案 A；当前进入规格复核门。设�
 - 设计了正确拒绝与政策违规的分离 verifier 语义，以及 sealed holdout receipt/evidence 边界。
 - 未实现代码、未生成正式 R2 数据、未运行 GPU、模型下载、商业 API 或训练。
 - 当前设计文件：`docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`。
+
+## 2026-07-20 — Codex 启动与仓库隔离简化
+
+- 复核结论：Codex 当前直接读取根目录 `AGENTS.md`，无需 `.codex/config.toml` 再把
+  `CLAUDE.md` 配成 fallback。
+- 处理：移除冗余 Codex 项目配置及其专用测试；Claude Code 的 Stop prompt hook 保持不变。
+- 隔离：将现有路径原地转为拥有自身 `.git` 的独立 checkout，保留本地 `.venv`、
+  `tools/bfcl_eval/.venv`、ignored 数据和固定 benchmark 软链接。
+- 阶段边界不变：R1 仍停在规格复核门，不因本维护任务进入实现。

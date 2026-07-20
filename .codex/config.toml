@@ -1,4 +1,0 @@
-# AGENTS.md is the primary Codex entry. Keep CLAUDE.md as a fallback so older
-# clients and Claude Code follow the same execution and logging rules.
-project_doc_fallback_filenames = ["CLAUDE.md"]
-project_doc_max_bytes = 32768

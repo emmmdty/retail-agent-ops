@@ -34,3 +34,11 @@ R1 当前；方案 A 已获用户选择，尚未进入实现。
 | 2026-07-20 | 本机镜像变量机械改写 `uv.lock` | 反向应用仅 lock diff，后续命令显式清除 `UV_INDEX_URL` |
 | 2026-07-20 | 清除 `UV_INDEX_URL` 后 `uv run` 仍按全局索引改写 `uv.lock` | 最终验收直接调用已冻结 `.venv/bin/*`，提交前精确回退 lock diff |
 | 2026-07-20 | 新治理测试被 Ruff I001 拒绝双空行 | 按 import sorter 的最小 diff 删除一行空白后重跑 |
+
+## Maintenance: Codex 启动简化
+
+- [x] 确认 `AGENTS.md` 已覆盖 Codex 接管和记录协议
+- [x] 移除冗余 `.codex/config.toml` 与对应 fallback 测试
+- [ ] 将 linked worktree 原地转为独立 Git checkout
+- [ ] 验证环境、ignored benchmark 链接、质量门和 Codex 启动
+- [ ] 提交结果，保持 R1 规格复核门不变

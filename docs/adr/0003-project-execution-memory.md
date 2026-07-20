@@ -27,6 +27,13 @@ VeriTool-RL 已跨越环境搭建、MiniRetail 和 BFCL Base/SFT 多个阶段。
   文件内容已正确写入的强证明；
 - Codex 只有在信任项目并启动新会话后才读取 `.codex/config.toml`。
 
+## 2026-07-20 更新
+
+RetailAgentOps 已建立根目录 `AGENTS.md`，因此上面的 Codex fallback 决定不再适用。
+Codex 直接读取 `AGENTS.md`，项目不保留 `.codex/config.toml` 或 Codex Hook；Claude
+Code 仍读取 `CLAUDE.md` 并保留自身 Stop prompt hook。阶段计划、项目日志和 ADR 的职责
+保持不变。
+
 ## 备选方案
 
 1. **仅更新 `CLAUDE.md`**：最简单，但没有生命周期检查，长期任务更容易漏记。

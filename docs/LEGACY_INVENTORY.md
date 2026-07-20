@@ -4,10 +4,10 @@
 
 - 原仓库：`/home/tjk/myProjects/internship-projects/veritool-rl`
 - 原分支/起点：`main@3e1a88d7d5298bb825c41db8b07a98dea2f5c490`
-- 初始化 worktree：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`
+- 初始化目录：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（现已转为独立 checkout）
 - 初始化分支：`portfolio/retail-agent-ops-init`
 - 迁入状态快照：`29ea3b9`
-- 远程仅有 `gpu-4090`；本阶段没有创建 GitHub `origin`。
+- 初始化来源远程仅有 `gpu-4090`；独立 checkout 不配置远程，远程操作继续按显式审批执行。
 
 ## 已继承能力
 
@@ -16,7 +16,7 @@
 - BFCL 固定 720/80/200 数据划分、官方 AST evaluator 和固定 200 条 holdout；
 - Base/SFT 163/200 与 167/200 的窄口径结果及失败分析；
 - messages/pretokenized SFT 数据兼容、防篡改 manifest 校验和相关测试；
-- append-only 项目日志、ADR 与 Claude/Codex 配置。
+- append-only 项目日志、ADR 与 Claude Code 配置；Codex 由根目录 `AGENTS.md` 接管。
 
 这些事实可以作为工程基础，但旧的课程式训练、多 seed、偏好优化和 GRPO 路线不再是活动计划。
 

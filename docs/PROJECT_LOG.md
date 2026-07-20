@@ -275,3 +275,29 @@ qualification fixture，R2 目标配额为 train/dev/holdout `240/60/120`。hold
 **后果与下一步**：R1 可进入规格复核，但仍不实现代码。用户复核规格后才创建实现计划；
 若 qualification 无法稳定区分正确拒绝与 policy violation，或 sealed evidence 边界
 无法自动验证，停止进入 R2 并记录阻塞。BFCL 固定 200 条继续独立只读。
+
+### LOG-20260720-03：移除冗余 Codex 项目配置并独立化 checkout
+
+- 日期：2026-07-20
+- 阶段/任务：R1 / 开发环境维护
+- 状态：已完成
+- 关联：`AGENTS.md`、`docs/HANDOFF.md`、`docs/adr/0003-project-execution-memory.md`
+
+**背景与难点**：RetailAgentOps 已有根目录 `AGENTS.md`，但仍保留只为加载
+`CLAUDE.md` 而存在的 `.codex/config.toml`，并且目录仍是 `veritool-rl` 的 linked
+worktree。Codex 0.144.6 会对 linked worktree 的 Hook 使用 root checkout 配置，
+使两个项目未来可能再次耦合。
+
+**决定与方案**：删除冗余 Codex 项目配置和专用 fallback 测试；Codex 直接以
+`AGENTS.md` 为入口。保持路径和工作文件不变，把 Git 元数据原地替换为独立 checkout，
+不配置远程；Claude Code 的 Stop prompt hook 不变。
+
+**选择理由**：该方案保留所有 R1 文档、环境和 ignored benchmark 资产，同时消除原仓库
+配置覆盖、项目 Hook 审核和误写远程的风险。记录协议仍由版本化指令、计划、进度和本日志保证。
+
+**备选方案与未选择理由**：继续使用 linked worktree 当前也能加载，但未来 root checkout
+增加 Hook 时会重新耦合；保留 `.codex/config.toml` 没有新增能力；删除 Claude Hook 超出
+本次 Codex 启动问题范围。
+
+**后果与下一步**：R1 规格复核门不变，不进入实现，不运行 GPU、API 或数据下载。后续 Codex
+会话从 `AGENTS.md` 和 `docs/HANDOFF.md` 接管。
