@@ -33,8 +33,8 @@
 
 ## Next Gate
 
-R0 已关闭，方案 A 规格已批准，R1 实现计划已完成。等待用户选择 subagent-driven 或
-inline execution；正式 train/dev/holdout 仍留到 R2 冻结。
+R0 已关闭，方案 A 规格与 R1 实现计划已批准。用户选择 subagent-driven 执行，
+R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 R2 冻结。
 
 ## 2026-07-20 — R1 方案 A 规格准备
 
@@ -50,6 +50,12 @@ inline execution；正式 train/dev/holdout 仍留到 R2 冻结。
   evaluation、release、CLI、FastAPI service 和最终验收 10 个 TDD 任务。
 - 计划明确 R1 不读取或生成正式 holdout，R2 才接入 sealed holdout evaluator。
 - 尚未实现产品代码，等待用户选择 subagent-driven 或 inline execution。
+
+## 2026-07-20 — R1 subagent-driven 执行启动
+
+- 用户选择方案 1，授权按已批准计划连续执行 Task 1-10，并在每项后做规格与质量审查。
+- 当前独立 checkout 为分支 `portfolio/retail-agent-ops-init`，preflight 未发现计划冲突。
+- 执行前基线：`.venv/bin/pytest -q` 为 111 passed；未运行 GPU、模型、API 或数据生成。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 

@@ -6,20 +6,19 @@
 
 ## Current Phase
 
-R1 当前；方案 A 已获用户选择，尚未进入实现。
+R1 当前；方案 A 规格与实现计划已获批准，按 subagent-driven 流程执行。
 
 ## Current Task
 
-- 输入：用户选择的方案 A、R0 文档、现有 MiniRetail/BFCL 资产和 [设计规格](docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md)。
-- 输出：基于已批准规格的可执行 R1 实现计划；用户选择执行方式前不实现代码。
-- 非目标：不实现 R1 代码；不生成正式 R2 数据或 holdout；不运行 GPU、模型、API、下载或正式训练。
-- 影响文件：实现计划、`task_plan.md`、`findings.md`、`progress.md`、`docs/PROJECT_LOG.md`。
-- [x] 核对方案 A 范围与现有代码缺口。
-- [x] 编写契约、工具、政策、指标和 holdout 设计。
-- [x] 完成规格自审并取得用户书面批准。
-- [x] 编写并自审 R1 实现计划。
-- [x] 提交 R1 实现计划（本提交）。
-- [ ] 等待用户选择执行方式；选择前不修改产品代码。
+- 输入：已批准的方案 A [设计规格](docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md)、[R1 实现计划](docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md)、R0 代码与治理基线。
+- 输出：完成 CPU-only `build -> evaluate -> release -> serve` qualification 纵向切片、逐任务审查证据与 R1 收口记录。
+- 非目标：不生成或读取正式 R2 train/dev/holdout；不运行 GPU、模型下载、商业 API、训练、DPO、GRPO 或在线 RL；不修改固定 BFCL 评测资产。
+- 影响文件：实现计划列出的 `domains/retail_ops/v1/`、`src/veritool_rl/retail_ops/`、CLI、配置、测试、依赖锁及阶段治理文档。
+- [x] 方案 A 规格与 10 项实现计划获用户批准。
+- [x] 用户选择 subagent-driven 执行方式。
+- [x] 完成隔离状态、计划冲突和 `111 passed` 基线检查。
+- [ ] 逐项完成 Task 1-10 的 TDD 实现、提交与独立审查。
+- [ ] 完成 whole-branch 审查、最终质量门和 R1 阶段收口。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`。
 
 ## Task Rules
