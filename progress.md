@@ -33,8 +33,8 @@
 
 ## Next Gate
 
-R0 已关闭。用户已选择 R1 方案 A；当前进入规格复核门。设计规格提交并经用户书面复核后，
-才创建实现计划；正式 train/dev/holdout 仍留到 R2 冻结。
+R0 已关闭，方案 A 规格已批准，R1 实现计划已完成。等待用户选择 subagent-driven 或
+inline execution；正式 train/dev/holdout 仍留到 R2 冻结。
 
 ## 2026-07-20 — R1 方案 A 规格准备
 
@@ -42,6 +42,14 @@ R0 已关闭。用户已选择 R1 方案 A；当前进入规格复核门。设�
 - 设计了正确拒绝与政策违规的分离 verifier 语义，以及 sealed holdout receipt/evidence 边界。
 - 未实现代码、未生成正式 R2 数据、未运行 GPU、模型下载、商业 API 或训练。
 - 当前设计文件：`docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`。
+
+## 2026-07-20 — R1 实现计划
+
+- 用户书面批准方案 A 设计规格。
+- 实现计划拆为 bundle、环境、qualification policy、manifest、holdout governance、
+  evaluation、release、CLI、FastAPI service 和最终验收 10 个 TDD 任务。
+- 计划明确 R1 不读取或生成正式 holdout，R2 才接入 sealed holdout evaluator。
+- 尚未实现产品代码，等待用户选择 subagent-driven 或 inline execution。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 

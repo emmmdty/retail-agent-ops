@@ -11,12 +11,15 @@ R1 当前；方案 A 已获用户选择，尚未进入实现。
 ## Current Task
 
 - 输入：用户选择的方案 A、R0 文档、现有 MiniRetail/BFCL 资产和 [设计规格](docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md)。
-- 输出：经书面复核的 RetailOps v1 契约设计；用户复核前不创建实现计划。
+- 输出：基于已批准规格的可执行 R1 实现计划；用户选择执行方式前不实现代码。
 - 非目标：不实现 R1 代码；不生成正式 R2 数据或 holdout；不运行 GPU、模型、API、下载或正式训练。
-- 影响文件：设计规格、R1 阶段记录、`task_plan.md`、`findings.md`、`progress.md`、`docs/PROJECT_LOG.md`。
+- 影响文件：实现计划、`task_plan.md`、`findings.md`、`progress.md`、`docs/PROJECT_LOG.md`。
 - [x] 核对方案 A 范围与现有代码缺口。
 - [x] 编写契约、工具、政策、指标和 holdout 设计。
-- [ ] 完成规格自审并等待用户书面复核。
+- [x] 完成规格自审并取得用户书面批准。
+- [x] 编写并自审 R1 实现计划。
+- [x] 提交 R1 实现计划（本提交）。
+- [ ] 等待用户选择执行方式；选择前不修改产品代码。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`。
 
 ## Task Rules

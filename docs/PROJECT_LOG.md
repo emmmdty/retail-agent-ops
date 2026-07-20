@@ -301,3 +301,30 @@ worktree。Codex 0.144.6 会对 linked worktree 的 Hook 使用 root checkout �
 
 **后果与下一步**：R1 规格复核门不变，不进入实现，不运行 GPU、API 或数据下载。后续 Codex
 会话从 `AGENTS.md` 和 `docs/HANDOFF.md` 接管。
+
+### LOG-20260720-04：批准方案 A 规格并冻结 R1 实现计划边界
+
+- 日期：2026-07-20
+- 阶段/任务：R1 / 规格复核与实现计划
+- 状态：决定
+- 关联：`docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`、`docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md`
+
+**背景与难点**：方案选择只确定方向，仍需把正确拒绝、qualification、holdout 隔离、
+release 和 serve 拆成可执行接口，避免实施时把 R2 正式数据冻结或 R3 模型服务提前带入。
+
+**证据**：用户书面批准方案 A 设计规格。代码映射确认现有 `OraclePolicy` 依赖
+`expected_calls`，FastAPI/Uvicorn 尚未进入依赖锁，根 `/data/` 已被 Git 忽略，现有
+`ToolEnv`、runner、replay 和 metrics 可以通过兼容扩展复用。
+
+**决定与方案**：R1 使用一个纵向实现计划，分成 10 个独立 TDD/commit 单元。新增领域
+代码集中在 `veritool_rl.retail_ops`；正式评测只覆盖 qualification/development，R1
+实现 holdout receipt、隔离、授权和脱敏契约，但不生成或打开正式 holdout。FastAPI
+只服务 qualification policy，并按 GO/NO-GO 选择 candidate 或 base fallback。
+
+**备选方案与未选择理由**：未拆成多个互不关联的计划，因为 bundle、environment、
+evidence、release 和 serve 共享同一冻结契约；未在 R1 实现 sealed holdout evaluation
+mode，因为这会提前执行 R2 的正式数据职责；未引入通用状态机 DSL。
+
+**后果与下一步**：实现计划已可执行，但尚未授权开始代码。下一步由用户选择逐任务
+subagent-driven execution 或当前会话 inline execution；任一方式都必须逐任务 TDD、
+审查并在最终 HEAD 重跑完整质量门。

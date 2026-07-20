@@ -46,3 +46,12 @@
 - 用户已选择方案 A：RetailOps v1 采用 2 个正式业务工具、6 类任务、R1 qualification 12 条，R2 目标配额 train/dev/holdout 为 `240/60/120`。
 - 方案 A 的正确拒绝必须与 policy violation 分开验证；`policy_denied` 不能自动计为成功或失败，取决于任务期望决策与模型是否实际尝试被禁止变更。
 - 方案 A 设计规格已写入 `docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md`；用户复核前不创建实现计划。
+- 用户已批准方案 A 书面规格，可以创建 R1 实现计划；尚未授权开始代码实现。
+- 现有 `OraclePolicy` 完全按 `expected_calls` 执行，R1 需要为正确拒绝引入 `expected_decision/required_reads` 语义，同时保持旧 MiniRetail Oracle 回归不变。
+- FastAPI/uvicorn 尚未进入 `pyproject.toml` 或 `uv.lock`；根 `/data/` 已被 `.gitignore` 排除，可作为 R2 sealed holdout artifact 的默认本地边界。
+- `RetailOpsEnv` 可直接实现现有 `ToolEnv` 接口并复用 runner/reward/replay；其 milestone 应报告必要读取与决策进度，不需要引入通用状态机 DSL。
+- sealed artifact 默认使用项目相对 `data/private/retail_ops/v1/`，兼容现有相对路径校验且由根 `/data/` ignore 规则排除。
+- R1 实现计划固定为 10 个 TDD 任务，新增代码集中在 `veritool_rl.retail_ops`；通用 runner/replay/metrics 只做向后兼容扩展。
+- R1 evaluation 只实现 qualification/development；正式 sealed holdout 的生成与 evaluator 接入留到 R2，R1 仅实现 receipt、隔离、授权和脱敏契约测试。
+- 实现计划位于 `docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md`，用户选择执行方式前不开始代码实现。
+- 工作期间仓库被独立化为自身 `.git` 且追加 `ec22ec0`/`b8e84b6`；`ec22ec0` 删除一个冗余 Codex fallback 测试，因此当前完整收集基线为 111 tests，而不是 R0 记录的 112。
