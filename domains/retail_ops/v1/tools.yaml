@@ -1,0 +1,43 @@
+schema_version: "1.0"
+tools:
+  - name: get_order
+    description: 查询订单详情与当前状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: refund_order
+    description: 为符合政策的订单办理退款；调用前必须先查询订单。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - damaged
+            - wrong_item
+            - not_as_described
+            - changed_mind
+          description: 退款原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: get_store_hours
+    description: 查询指定城市门店营业时间，与订单操作无关。
+    parameters:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+      additionalProperties: false

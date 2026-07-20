@@ -1,0 +1,15 @@
+schema_version: "1.0"
+policy_version: "1.0.0"
+refund_reasons:
+  - damaged
+  - wrong_item
+  - not_as_described
+  - changed_mind
+max_transient_retries: 1
+rules:
+  - refund_requires_lookup
+  - customer_must_own_order
+  - refund_window_must_be_open
+  - duplicate_refund_forbidden
+  - transient_retry_is_bounded
+  - tool_schema_is_strict

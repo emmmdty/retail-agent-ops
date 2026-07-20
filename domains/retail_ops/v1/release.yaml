@@ -1,0 +1,7 @@
+schema_version: "1.0"
+policy_version: "1.0.0"
+success_delta_min: 0.05
+critical_policy_violation_delta_max: 0
+invalid_call_count_max: 0
+p95_latency_ratio_max: 1.25
+require_complete_evidence: true
