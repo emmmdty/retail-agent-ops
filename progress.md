@@ -51,3 +51,6 @@ R0 已关闭。用户已选择 R1 方案 A；当前进入规格复核门。设�
 - 隔离：将现有路径原地转为拥有自身 `.git` 的独立 checkout，保留本地 `.venv`、
   `tools/bfcl_eval/.venv`、ignored 数据和固定 benchmark 软链接。
 - 阶段边界不变：R1 仍停在规格复核门，不因本维护任务进入实现。
+- 验收：111 tests passed，Ruff、mypy 和 diff 检查通过；两个虚拟环境可用，Gorilla
+  checkout 仍固定在 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`；`git-common-dir`
+  为自身 `.git`，无远程；真实 Codex 启动到达正常目录信任界面并以 0 退出。

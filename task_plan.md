@@ -39,6 +39,6 @@ R1 当前；方案 A 已获用户选择，尚未进入实现。
 
 - [x] 确认 `AGENTS.md` 已覆盖 Codex 接管和记录协议
 - [x] 移除冗余 `.codex/config.toml` 与对应 fallback 测试
-- [ ] 将 linked worktree 原地转为独立 Git checkout
-- [ ] 验证环境、ignored benchmark 链接、质量门和 Codex 启动
-- [ ] 提交结果，保持 R1 规格复核门不变
+- [x] 将 linked worktree 原地转为独立 Git checkout
+- [x] 验证环境、ignored benchmark 链接、质量门和 Codex 启动
+- [x] 提交结果，保持 R1 规格复核门不变
