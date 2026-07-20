@@ -28,7 +28,7 @@
 - R1 的最小闭环已经固定为 `build -> evaluate -> release -> serve`，且本阶段不进行正式训练。
 - RetailOps 内部任务必须以最终状态、政策违规、非法工具调用和参数错误为主判据；语言质量不能替代执行真值。
 - 固定 BFCL 200 条及其失败样例只能用于窄口径外部回归，不能作为 RetailOps v1 的开发数据或内部 holdout。
-- 用户选择任务契约与冻结规则前，`docs/EXECUTION_PLAN.md` 的 R1 状态必须保持“待执行”。
+- 在用户选择任务契约与冻结规则之前，`docs/EXECUTION_PLAN.md` 的 R1 状态保持“待执行”；该前置条件已由方案 A 选择解除。
 - 当前分支为 `portfolio/retail-agent-ops-init`，HEAD 为 `5e25bd7`；核对时除本轮治理记录外没有其他未提交改动。
 - `SPEC.md` 已冻结稳定入口、主指标和默认发布门槛，但尚未冻结 RetailOps v1 的具体工具 schema、任务规模、政策条款和内部 holdout 生成算法。
 - 当前受版本控制资产以 MiniRetail、BFCL 和通用 trajectory/evaluator 为主，尚无正式 domain bundle、release policy 或 serve 模块。

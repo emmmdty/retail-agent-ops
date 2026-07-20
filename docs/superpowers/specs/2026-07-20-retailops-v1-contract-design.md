@@ -41,13 +41,15 @@ train/dev/holdout `240/60/120`，六类均衡；这些数字是配额，不代�
 | `lookup_status` | 查询订单，状态不变 | 正确查询并结束，不得退款 |
 | `refund_eligible` | 订单在期限内且理由合法，最终退款 | 查询后执行一次退款 |
 | `refund_denied_window` | 订单超过期限，状态不变 | 查询后拒绝，不得调用退款 |
-| `refund_denied_ownership` | 订单属于其他客户，状态不变 | 不得泄漏或修改他人订单 |
+| `refund_denied_ownership` | 订单属于其他客户；环境对当前会话返回 not-found/forbidden 观测，状态不变 | 不得泄漏或修改他人订单 |
 | `refund_denied_duplicate` | 订单已退款，状态不变 | 不得重复退款 |
 | `refund_recovery` | 首次退款返回 transient error，随后可成功 | 最多一次重试，最终只产生一次状态变更 |
 
-任务真值由 `initial_state`、`expected_state`、允许的读取行为、政策决策和故障注入
-组成。评测不要求所有成功轨迹都匹配一条唯一的 `expected_calls` 序列，但必须满足
-必要查询、政策不变量、状态结果和重试上限。
+任务真值由现有兼容字段 `initial_state`、`target_state` 加上新增的
+`expected_decision`、`required_reads`、政策决策和故障注入组成；现有
+`expected_calls` 字段保留用于数据迁移和诊断，不作为候选成功的唯一依据。评测不要求
+所有成功轨迹都匹配一条唯一的调用序列，但必须满足必要查询、政策不变量、状态结果和
+重试上限。
 
 ### 2.3 政策约束
 
