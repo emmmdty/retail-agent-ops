@@ -221,3 +221,29 @@ P0 可复现路径；未在本地启动 GPU smoke，因为项目约束禁止本�
 manifest provenance 链在聚合时强制闭合。此次只完成 CPU 级数据与产物校验；下次经
 授权运行远程 SFT smoke 时，应分别覆盖 `messages` 和 `pretokenized` 两条 trainer
 路径。P2 保持完成，P3 仍未启动。
+
+### LOG-20260720-01：隔离并重定位为 RetailAgentOps 求职工程
+
+- 日期：2026-07-20
+- 阶段/任务：R0 / 项目初始化
+- 状态：已完成
+- 关联：`docs/adr/0004-reposition-as-retail-agent-ops.md`、`docs/EXECUTION_PLAN.md`
+
+**背景与难点**：用户需要在三个月内完成面向 Agent 求职的工程项目，具体代码由 Codex/Claude
+Code 承担，用户负责方向和阶段决策。旧路线以研究型多 seed、偏好优化和论文式证据为主，且原工作区
+含未提交成果，不能直接覆盖。
+
+**证据**：在共同父目录创建隔离 worktree 和分支，迁入有效修改后逐项比较，原工作区状态未变化；
+迁入快照为 `29ea3b9`。最终初始化验收为 112 tests passed，Ruff、mypy、JSON/TOML 和 diff 检查
+通过。旧生成报告未迁入，三个文件
+的路径和 SHA-256 已写入 `docs/LEGACY_INVENTORY.md`。
+
+**决定与方案**：产品更名为 RetailAgentOps，保持 `veritool_rl` 包名，以单卡可复现的
+`build/evaluate/release/serve` 和发布门禁为主线；默认一个开发 seed，最终简历数字才做一次独立重建。
+新增 `AGENTS.md`、求职背景、产品简报、R0-R5 计划、接管说明和三份项目记录文件。
+
+**备选方案与未选择理由**：未继续把 GRPO 和多 seed 设为必做，因为缺少失败证据且算力/周期不匹配；
+未只包装 BFCL，因为不能证明零售应用闭环；未在初始化中重命名 Python 包，因为会扩大无价值 diff。
+
+**后果与下一步**：R0 已关闭并停止，等待用户批准 R1 的任务契约和 holdout 规则；
+本次不下载模型、不调用 API、不运行本地或远程 GPU。
