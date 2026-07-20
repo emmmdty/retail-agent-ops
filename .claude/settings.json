@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "You are checking whether Claude followed the VeriTool-RL project logging protocol. Inspect the Stop event in $ARGUMENTS, especially stop_hook_active and last_assistant_message. If stop_hook_active is true, return {\"ok\": true} to avoid a reminder loop. Otherwise, decide whether the completed turn reports a material implementation, experiment, failure, blocker, phase transition, design decision, constraint change, or rejected alternative. For such a turn, require last_assistant_message to state either that docs/PROJECT_LOG.md was updated with a LOG identifier, or that no log entry was needed with a concrete reason. Read-only analysis, routine successful commands, status-only replies, and formatting-only edits do not require a log entry. Return {\"ok\": true} when the disposition is present or no trigger occurred. Otherwise return {\"ok\": false, \"reason\": \"Before stopping, apply the logging triggers in CLAUDE.md and append the material event to docs/PROJECT_LOG.md, then report its LOG identifier.\"}.",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

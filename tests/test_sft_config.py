@@ -151,6 +151,64 @@ def test_validate_tokenized_sft_rows_requires_assistant_only_suffix() -> None:
         validate_tokenized_sft_rows(rows, max_seq_len=3)
 
 
+def test_prepare_sft_rows_keeps_messages_format_for_mini_retail() -> None:
+    from veritool_rl.training.sft import message_sft_runtime_options, prepare_sft_rows
+
+    row = {
+        "task_id": "train-lookup_status-0000",
+        "scenario": "lookup_status",
+        "messages": [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "answer"},
+        ],
+        "tools": [],
+    }
+
+    data_format, train_rows, eval_rows = prepare_sft_rows(
+        [row],
+        [row],
+        max_seq_len=1024,
+        train_limit=None,
+        eval_limit=None,
+    )
+
+    assert data_format == "messages"
+    assert train_rows == [row]
+    assert eval_rows == [row]
+    assert message_sft_runtime_options(max_seq_len=1024) == {
+        "assistant_only_loss": True,
+        "completion_only_loss": False,
+        "max_length": 1024,
+    }
+
+
+def test_prepare_sft_rows_rejects_mixed_train_eval_formats() -> None:
+    from veritool_rl.training.sft import prepare_sft_rows
+
+    message_row = {
+        "task_id": "message-row",
+        "messages": [{"role": "assistant", "content": "answer"}],
+        "tools": [],
+    }
+    tokenized_row = {
+        "task_id": "tokenized-row",
+        "input_ids": [1, 2],
+        "attention_mask": [1, 1],
+        "labels": [-100, 2],
+        "full_token_count": 2,
+    }
+
+    with pytest.raises(ValueError, match="格式必须一致"):
+        prepare_sft_rows(
+            [message_row],
+            [tokenized_row],
+            max_seq_len=1024,
+            train_limit=None,
+            eval_limit=None,
+        )
+
+
 def test_select_longest_rows_for_smoke_is_deterministic() -> None:
     from veritool_rl.training.sft import select_longest_rows
 

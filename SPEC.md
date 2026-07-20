@@ -191,20 +191,25 @@ success delta +0.020，seed 0、10,000 次配对 bootstrap 95% CI 为
 - 8–12 页技术报告;
 - 一页模型/系统卡 (数据、限制、风险、复现方式)。
 
-## 17. 里程碑 (映射到 12 周执行计划)
+## 17. 可执行阶段
 
-| 周 (日) | VeriTool-RL 目标 | 产出 |
+阶段状态、依赖、并行轨道、GPU 边界和退出门以
+[`docs/EXECUTION_PLAN.md`](docs/EXECUTION_PLAN.md) 为唯一事实来源；本节只保留
+研究规格到执行阶段的映射。
+
+| 阶段 | 状态 | 研究目标 / 产出 |
 |---|---|---|
-| W1 (D1–D7) | 问题—方法—边界一页纸; RFC; 相关工作矩阵; 非-Toy 门清单 | Problem Brief、RFC、related-work matrix |
-| W3 (D20–D21) | 下载并审计 BFCL/ToolSandbox; 定义 trajectory JSON schema; 20 条失败轨迹分析 | dataset card、数据检查报告、tool-use baseline report V0 |
-| W4 (D26) | BFCL 单轮 + ToolSandbox 多步零样本基线 | 100–300 条样本基线结果 |
-| W5 (D29–D35) | trajectory→SFT 转换器; LoRA 过拟合实验; SFT V0; 数据质量报告 | 可复现实验配置与结果、实验报告 V1 |
-| W6 (D36–D38) | 偏好数据规则; DPO/SimPO 小规模可行性; 在线 GRPO go/no-go 结论 | reward 设计文档、go/no-go 结论 |
-| W8 (D50) | 全量基线 (固定模型/数据/种子/环境) | baseline table V1 |
-| W9 (D57–D63) | 课程/失败/偏好消融; 后训练收益表; schema 鲁棒性曲线; 成本-质量 Pareto; 100 例误差分析; 复现报告 | VeriTool-RL 报告 V1 |
-| W12 (D79/D81) | 技术报告与图表; 5 分钟演示视频 | 算法报告 RC1、演示链接 |
+| P0 基础设施与 MiniRetail | 已完成 | 可审计 trajectory、replay、verifier、Base/QLoRA MVP |
+| P1 BFCL 单轮 Base/SFT | 已完成并冻结 | 固定 720/80/200 公开数据划分和一次配对对照 |
+| P2 执行治理 | 已完成 | 阶段计划、append-only 日志和 Agent 自动记录协议 |
+| P3 Benchmark 扩展 | 待执行（下一阶段） | BFCL 多轮/鲁棒性、ToolSandbox、单领域 tau2 基线 |
+| P4 课程式 SFT | 待执行 | H1：课程顺序与等数据混合的多 seed 对照 |
+| P5 独立离线实验 | 待执行 | 并行检验 H2 偏好、H4 schema 与 H3 reward calibration |
+| P6 在线 RL 决策 | 条件执行 | 通过 go/no-go 才运行小规模 GRPO，否则降级 |
+| P7 汇总与交付 | 待执行 | 消融、失败分析、Pareto、复现包、报告与系统卡 |
 
-**阶段验收线**: D28 可投递 · D49 主投递 · D70 竞争力 · D84 交付 (详见根计划文档 §12)。
+所有阶段变更、困难、方案选择与未选择理由追加到
+[`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md)，长期架构决定继续使用 ADR。
 
 ## 18. 参考链接
 

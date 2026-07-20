@@ -7,7 +7,7 @@ import math
 import time
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -79,6 +79,9 @@ class ResolvedSFTConfig(UserSFTConfig):
     seed: int
     output_dir: Path
     adapter_dir: Path
+
+
+SftDataFormat = Literal["messages", "pretokenized"]
 
 
 def resolve_sft_config(
@@ -159,6 +162,84 @@ def validate_tokenized_sft_rows(
         raise ValueError("SFT tokenized 数据不能为空")
 
 
+def prepare_sft_rows(
+    train_rows: list[dict[str, Any]],
+    eval_rows: list[dict[str, Any]],
+    *,
+    max_seq_len: int,
+    train_limit: int | None,
+    eval_limit: int | None,
+) -> tuple[SftDataFormat, list[dict[str, Any]], list[dict[str, Any]]]:
+    """识别并校验两种既有 SFT 数据格式，禁止跨 split 混用。"""
+    train_format = _detect_sft_data_format(train_rows, "train")
+    eval_format = _detect_sft_data_format(eval_rows, "eval")
+    if train_format != eval_format:
+        raise ValueError("SFT train/eval 数据格式必须一致")
+    if train_format == "pretokenized":
+        validate_tokenized_sft_rows(train_rows, max_seq_len=max_seq_len)
+        validate_tokenized_sft_rows(eval_rows, max_seq_len=max_seq_len)
+        if train_limit is not None:
+            train_rows = select_longest_rows(train_rows, limit=train_limit)
+        if eval_limit is not None:
+            eval_rows = select_longest_rows(eval_rows, limit=eval_limit)
+    else:
+        _validate_message_sft_rows(train_rows, "train")
+        _validate_message_sft_rows(eval_rows, "eval")
+        if train_limit is not None:
+            train_rows = _select_first_rows(train_rows, train_limit, "train")
+        if eval_limit is not None:
+            eval_rows = _select_first_rows(eval_rows, eval_limit, "eval")
+    return train_format, train_rows, eval_rows
+
+
+def _detect_sft_data_format(
+    rows: list[dict[str, Any]],
+    split: str,
+) -> SftDataFormat:
+    if not rows:
+        raise ValueError(f"SFT {split} 数据不能为空")
+    formats: set[SftDataFormat] = set()
+    for index, row in enumerate(rows):
+        has_messages = "messages" in row and "tools" in row
+        has_tokens = all(
+            field in row for field in ("input_ids", "attention_mask", "labels")
+        )
+        if has_messages == has_tokens:
+            task_id = row.get("task_id", f"row-{index}")
+            raise ValueError(f"{task_id} 无法唯一识别 SFT 数据格式")
+        formats.add("messages" if has_messages else "pretokenized")
+    if len(formats) != 1:
+        raise ValueError(f"SFT {split} 内部数据格式必须一致")
+    return formats.pop()
+
+
+def _validate_message_sft_rows(rows: list[dict[str, Any]], split: str) -> None:
+    for index, row in enumerate(rows):
+        task_id = row.get("task_id", f"{split}-row-{index}")
+        messages = row.get("messages")
+        tools = row.get("tools")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError(f"{task_id} messages 必须是非空列表")
+        if not isinstance(tools, list):
+            raise ValueError(f"{task_id} tools 必须是列表")
+        if any(not isinstance(message, dict) for message in messages):
+            raise ValueError(f"{task_id} messages 每项必须是 mapping")
+        if not any(message.get("role") == "assistant" for message in messages):
+            raise ValueError(f"{task_id} 缺少 assistant 监督消息")
+        if any(not isinstance(tool, dict) for tool in tools):
+            raise ValueError(f"{task_id} tools 每项必须是 mapping")
+
+
+def _select_first_rows(
+    rows: list[dict[str, Any]],
+    limit: int,
+    split: str,
+) -> list[dict[str, Any]]:
+    if len(rows) < limit:
+        raise ValueError(f"SFT {split} 至少需要 {limit} 条样本")
+    return rows[:limit]
+
+
 def select_longest_rows(
     rows: Iterable[dict[str, Any]],
     *,
@@ -213,6 +294,15 @@ def pretokenized_sft_runtime_options() -> dict[str, Any]:
     }
 
 
+def message_sft_runtime_options(*, max_seq_len: int) -> dict[str, Any]:
+    """返回 messages + tools 数据的 TRL assistant-only 运行时选项。"""
+    return {
+        "assistant_only_loss": True,
+        "completion_only_loss": False,
+        "max_length": max_seq_len,
+    }
+
+
 def _ensure_new_training_output(output_dir: Path) -> None:
     """拒绝覆盖任何已开始的训练运行。"""
     protected = (
@@ -259,24 +349,13 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     )
     train_rows = [dict(row) for row in loaded_dataset["train"]]
     eval_rows = [dict(row) for row in loaded_dataset["validation"]]
-    validate_tokenized_sft_rows(
+    data_format, train_rows, eval_rows = prepare_sft_rows(
         train_rows,
-        max_seq_len=resolved.training.max_seq_len,
-    )
-    validate_tokenized_sft_rows(
         eval_rows,
         max_seq_len=resolved.training.max_seq_len,
+        train_limit=resolved.data.train_limit,
+        eval_limit=resolved.data.eval_limit,
     )
-    if resolved.data.train_limit is not None:
-        train_rows = select_longest_rows(
-            train_rows,
-            limit=resolved.data.train_limit,
-        )
-    if resolved.data.eval_limit is not None:
-        eval_rows = select_longest_rows(
-            eval_rows,
-            limit=resolved.data.eval_limit,
-        )
     dataset = {
         "train": Dataset.from_list(train_rows),
         "validation": Dataset.from_list(eval_rows),
@@ -298,6 +377,11 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         target_modules=resolved.lora.target_modules,
         bias="none",
         task_type="CAUSAL_LM",
+    )
+    runtime_options = (
+        pretokenized_sft_runtime_options()
+        if data_format == "pretokenized"
+        else message_sft_runtime_options(max_seq_len=resolved.training.max_seq_len)
     )
     training_args = SFTConfig(
         output_dir=str(output_dir / "checkpoints"),
@@ -323,24 +407,25 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
             "device_map": {"": "cuda:0"},
             "local_files_only": True,
         },
-        **pretokenized_sft_runtime_options(),
+        **runtime_options,
     )
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        padding=True,
-        label_pad_token_id=-100,
-        pad_to_multiple_of=8,
-    )
-    trainer = SFTTrainer(
-        model=str(model_path),
-        args=training_args,
-        train_dataset=dataset["train"],
-        eval_dataset=dataset["validation"],
-        processing_class=tokenizer,
-        peft_config=lora_config,
-        quantization_config=quantization,
-        data_collator=data_collator,
-    )
+    trainer_kwargs: dict[str, Any] = {
+        "model": str(model_path),
+        "args": training_args,
+        "train_dataset": dataset["train"],
+        "eval_dataset": dataset["validation"],
+        "processing_class": tokenizer,
+        "peft_config": lora_config,
+        "quantization_config": quantization,
+    }
+    if data_format == "pretokenized":
+        trainer_kwargs["data_collator"] = DataCollatorForSeq2Seq(
+            tokenizer=tokenizer,
+            padding=True,
+            label_pad_token_id=-100,
+            pad_to_multiple_of=8,
+        )
+    trainer = SFTTrainer(**trainer_kwargs)
     train_result = trainer.train()
     eval_metrics = trainer.evaluate()
     trainer.save_model(str(resolved.adapter_dir))
@@ -352,18 +437,29 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         "train": _json_metrics(train_result.metrics),
         "eval": _json_metrics(eval_metrics),
         "data": {
+            "format": data_format,
             "train_examples": len(train_rows),
             "eval_examples": len(eval_rows),
-            "train_input_tokens_per_epoch": sum(
-                len(cast(list[int], row["input_ids"])) for row in train_rows
+            "train_input_tokens_per_epoch": (
+                sum(len(cast(list[int], row["input_ids"])) for row in train_rows)
+                if data_format == "pretokenized"
+                else None
             ),
-            "train_supervised_tokens_per_epoch": sum(
-                sum(label != -100 for label in cast(list[int], row["labels"]))
-                for row in train_rows
+            "train_supervised_tokens_per_epoch": (
+                sum(
+                    sum(label != -100 for label in cast(list[int], row["labels"]))
+                    for row in train_rows
+                )
+                if data_format == "pretokenized"
+                else None
             ),
             "max_seq_len": resolved.training.max_seq_len,
-            "trainer_truncation_enabled": False,
-            "loss_mask_source": "pretokenized_explicit_labels",
+            "trainer_truncation_enabled": data_format == "messages",
+            "loss_mask_source": (
+                "pretokenized_explicit_labels"
+                if data_format == "pretokenized"
+                else "trl_chat_template_assistant_mask"
+            ),
         },
         "resources": _cuda_resource_metrics(
             torch.cuda,

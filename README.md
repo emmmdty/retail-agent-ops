@@ -27,7 +27,10 @@ Qwen3-1.7B 离线 4-bit 推理、QLoRA-SFT、官方 AST 评分和配对失败分
 ## 文档
 
 - [`SPEC.md`](./SPEC.md)：研究问题、假设、评测与非-Toy 验收门。
+- [`docs/EXECUTION_PLAN.md`](./docs/EXECUTION_PLAN.md)：当前阶段、依赖、并行轨道、停止规则与验收门。
+- [`docs/PROJECT_LOG.md`](./docs/PROJECT_LOG.md)：append-only 的困难、证据、决策、替代方案与阶段变更记录。
 - [`CLAUDE.md`](./CLAUDE.md)：环境快照、服务器边界与执行规则。
+- [`docs/adr/0003-project-execution-memory.md`](./docs/adr/0003-project-execution-memory.md)：阶段计划和自动记录系统的架构决策。
 - [`docs/adr/0002-mini-retail-mvp.md`](./docs/adr/0002-mini-retail-mvp.md)：MVP 架构决策。
 - [`reports/mvp/comparison-seed0/report.md`](./reports/mvp/comparison-seed0/report.md)：
   单卡训练前后指标、命令、资源与失败轨迹分析。

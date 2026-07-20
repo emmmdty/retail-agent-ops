@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def test_oracle_metrics_match_hand_computed_values() -> None:
     from veritool_rl.agent.policy import OraclePolicy
@@ -38,6 +40,13 @@ def test_empty_metrics_have_defined_zero_denominators() -> None:
     assert metrics["task_success"] == 0.0
     assert metrics["invalid_call_rate"] == 0.0
     assert metrics["task_success_ci95"] == [0.0, 0.0]
+
+
+def test_metrics_reject_boolean_bootstrap_sample_count() -> None:
+    from veritool_rl.eval.metrics import compute_metrics
+
+    with pytest.raises(ValueError, match="正整数"):
+        compute_metrics([], bootstrap_samples=True, seed=0)
 
 
 def test_metrics_separate_schema_execution_policy_and_verifier_reward() -> None:

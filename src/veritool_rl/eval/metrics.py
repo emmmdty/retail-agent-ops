@@ -19,8 +19,12 @@ def compute_metrics(
     seed: int,
 ) -> dict[str, Any]:
     """计算主指标、资源指标和 task success bootstrap 置信区间。"""
-    if bootstrap_samples < 1:
-        msg = "bootstrap_samples 必须大于 0"
+    if (
+        not isinstance(bootstrap_samples, int)
+        or isinstance(bootstrap_samples, bool)
+        or bootstrap_samples < 1
+    ):
+        msg = "bootstrap_samples 必须是正整数"
         raise ValueError(msg)
     count = len(trajectories)
     if count == 0:

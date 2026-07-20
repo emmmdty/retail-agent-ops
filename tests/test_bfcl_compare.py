@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,22 @@ def _prepare_run(
         "official_ast_accuracy": 0.995,
     }
     (root / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    manifest_path = Path("manifests/bfcl_v4_single_turn_seed0.json")
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "seed": 0,
+                "bfcl_checkout": {"commit": manifest["bfcl_commit"]},
+                "frozen_manifest": manifest,
+                "frozen_manifest_sha256": hashlib.sha256(
+                    manifest_path.read_bytes()
+                ).hexdigest(),
+                "selected_task_ids": task_ids,
+                "official_evaluator": {"commit": manifest["bfcl_commit"]},
+            }
+        ),
+        encoding="utf-8",
+    )
     config = yaml.safe_load(
         Path("configs/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
     )
@@ -199,6 +216,75 @@ def test_aggregate_bfcl_runs_rejects_missing_or_extra_raw_id(tmp_path: Path) -> 
     )
 
     with pytest.raises(ValueError, match="缺失 task_id"):
+        aggregate_bfcl_runs(
+            baseline_dir=baseline_dir,
+            sft_dir=sft_dir,
+            manifest_path=Path("manifests/bfcl_v4_single_turn_seed0.json"),
+            output_dir=tmp_path / "comparison",
+            bootstrap_samples=10_000,
+            seed=0,
+            benchmark_sensitive_ids=set(),
+        )
+
+
+def test_aggregate_bfcl_runs_rejects_manifest_changed_after_evaluation(
+    tmp_path: Path,
+) -> None:
+    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+
+    manifest = _load_manifest()
+    baseline_dir = tmp_path / "base"
+    sft_dir = tmp_path / "sft"
+    _prepare_run(
+        baseline_dir,
+        failure_id=manifest["tasks"][0]["task_id"],
+        adapter=False,
+    )
+    _prepare_run(
+        sft_dir,
+        failure_id=manifest["tasks"][1]["task_id"],
+        adapter=True,
+    )
+    manifest["tasks"][0]["selection_sha256"] = "0" * 64
+    tampered_manifest = tmp_path / "tampered-manifest.json"
+    tampered_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="manifest.*哈希"):
+        aggregate_bfcl_runs(
+            baseline_dir=baseline_dir,
+            sft_dir=sft_dir,
+            manifest_path=tampered_manifest,
+            output_dir=tmp_path / "comparison",
+            bootstrap_samples=10_000,
+            seed=0,
+            benchmark_sensitive_ids=set(),
+        )
+
+
+def test_aggregate_bfcl_runs_requires_embedded_frozen_manifest(
+    tmp_path: Path,
+) -> None:
+    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+
+    manifest = _load_manifest()
+    baseline_dir = tmp_path / "base"
+    sft_dir = tmp_path / "sft"
+    _prepare_run(
+        baseline_dir,
+        failure_id=manifest["tasks"][0]["task_id"],
+        adapter=False,
+    )
+    _prepare_run(
+        sft_dir,
+        failure_id=manifest["tasks"][1]["task_id"],
+        adapter=True,
+    )
+    run_manifest_path = baseline_dir / "manifest.json"
+    run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    del run_manifest["frozen_manifest"]
+    run_manifest_path.write_text(json.dumps(run_manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="内嵌冻结 manifest"):
         aggregate_bfcl_runs(
             baseline_dir=baseline_dir,
             sft_dir=sft_dir,

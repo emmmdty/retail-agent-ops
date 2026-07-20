@@ -70,3 +70,18 @@ def test_replay_rejects_tampered_final_state_and_reward() -> None:
     reward_tampered.steps[0].reward.total = 99.0
     with pytest.raises(ReplayMismatch, match=r"step=0.*reward"):
         replay_trajectory(reward_tampered, MiniRetailEnv)
+
+
+def test_replay_rejects_non_contiguous_recorded_step_index() -> None:
+    from veritool_rl.agent.policy import OraclePolicy
+    from veritool_rl.agent.runner import run_episode
+    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.trajectory.replay import ReplayMismatch, replay_trajectory
+
+    task = build_mvp_task_splits(seed=8)["dev"][1]
+    trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=8)
+    tampered = trajectory.model_copy(deep=True)
+    tampered.steps[0].index = 7
+
+    with pytest.raises(ReplayMismatch, match=r"step=0.*index"):
+        replay_trajectory(tampered, MiniRetailEnv)

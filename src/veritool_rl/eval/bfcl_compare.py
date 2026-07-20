@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import yaml
 
-from veritool_rl.artifacts import write_json, write_jsonl, write_yaml
+from veritool_rl.artifacts import sha256_file, write_json, write_jsonl, write_yaml
 from veritool_rl.data.bfcl import BFCL_CATEGORIES, BfclManifest
 from veritool_rl.eval.bfcl import BfclOfficialScore, load_official_scores
 
@@ -39,6 +39,8 @@ def aggregate_bfcl_runs(
     manifest = BfclManifest.model_validate_json(
         manifest_path.read_text(encoding="utf-8")
     )
+    if manifest.seed != 0 or manifest.quotas != dict.fromkeys(BFCL_CATEGORIES, 50):
+        raise ValueError("BFCL 配对 manifest 必须是 seed 0 且四类各 50 条")
     expected_ids = [item.task_id for item in manifest.tasks]
     if len(expected_ids) != 200 or len(set(expected_ids)) != 200:
         raise ValueError("BFCL 配对 manifest 必须恰好包含 200 个唯一 task_id")
@@ -48,6 +50,21 @@ def aggregate_bfcl_runs(
         ]
         for category in BFCL_CATEGORIES
     }
+    manifest_sha256 = sha256_file(manifest_path)
+    _validate_run_manifest(
+        _read_json(baseline_dir / "manifest.json"),
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        expected_ids=expected_ids,
+        label="base",
+    )
+    _validate_run_manifest(
+        _read_json(sft_dir / "manifest.json"),
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        expected_ids=expected_ids,
+        label="SFT",
+    )
     _validate_fair_configs(
         _read_yaml(baseline_dir / "resolved_config.yaml"),
         _read_yaml(sft_dir / "resolved_config.yaml"),
@@ -248,6 +265,34 @@ def _validate_metrics(
     for key, value in expected.items():
         if metrics.get(key) != value:
             raise ValueError(f"{label} metrics.{key} 与官方 score 不一致")
+
+
+def _validate_run_manifest(
+    run_manifest: dict[str, Any],
+    *,
+    manifest: BfclManifest,
+    manifest_sha256: str,
+    expected_ids: list[str],
+    label: str,
+) -> None:
+    """确认配对输入仍对应生成时冻结的 manifest 与 evaluator commit。"""
+    if run_manifest.get("frozen_manifest_sha256") != manifest_sha256:
+        raise ValueError(f"{label} run manifest 的冻结 manifest 哈希不一致")
+    if run_manifest.get("selected_task_ids") != expected_ids:
+        raise ValueError(f"{label} run manifest 的 task_id 顺序与冻结集合不一致")
+    if run_manifest.get("seed") != manifest.seed:
+        raise ValueError(f"{label} run manifest 的 seed 与冻结集合不一致")
+    if run_manifest.get("frozen_manifest") != manifest.model_dump(mode="json"):
+        raise ValueError(f"{label} run manifest 的内嵌冻结 manifest 不一致")
+    checkout = run_manifest.get("bfcl_checkout")
+    evaluator = run_manifest.get("official_evaluator")
+    if (
+        not isinstance(checkout, dict)
+        or checkout.get("commit") != manifest.bfcl_commit
+        or not isinstance(evaluator, dict)
+        or evaluator.get("commit") != manifest.bfcl_commit
+    ):
+        raise ValueError(f"{label} run manifest 的 BFCL/evaluator commit 不一致")
 
 
 def _validate_fair_configs(

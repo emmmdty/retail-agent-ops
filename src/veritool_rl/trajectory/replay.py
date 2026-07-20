@@ -34,6 +34,7 @@ def replay_trajectory(
     """重放工具调用并核对每个可验证字段。"""
     env = env_factory(trajectory.task)
     for index, step in enumerate(trajectory.steps):
+        _assert_equal(trajectory.task.task_id, index, "index", index, step.index)
         if step.tool_call is not None:
             observation = env.execute_tool(step.tool_call.name, step.tool_call.arguments)
         elif step.parse_error is not None:

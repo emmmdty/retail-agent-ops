@@ -1,6 +1,6 @@
 # CLAUDE.md — VeriTool-RL
 
-本文件给在本仓库工作的 coding agent (Claude Code / Codex 等)。**规格以 `SPEC.md` 为准**, 本文件规定协作、实现与运行方式。
+本文件给在本仓库工作的 coding agent (Claude Code / Codex 等)。**规格以 `SPEC.md` 为准**，阶段状态以 `docs/EXECUTION_PLAN.md` 为准，本文件规定协作、实现与运行方式。
 
 ---
 
@@ -66,20 +66,20 @@ ssh gpu-4090 'cd /data/TJK/internship-projects/veritool-rl && UV_CACHE_DIR=/data
 
 ### 2.3 当前开发阶段
 
-- **已完成**: 本地与远程 uv 环境、训练依赖、CUDA smoke test、外部 benchmark 源码与离线归档、基础 lint/type/test 门禁；MiniRetail 确定性闭环与 Qwen3-1.7B Base/QLoRA-SFT seed-0 实验；BFCL V4 项目定义的 720/80/200 非重叠公开数据划分、800/800 官方 AST target 验证、一次 QLoRA-SFT 和固定 200 条 holdout 对照。Base/SFT 为 163/200 与 167/200，配对 delta +0.020，95% CI [-0.040, 0.080]；证据见 `reports/bfcl/qwen3-1.7b-base-vs-sft-seed0/report.md`。
-- **待运行**: ToolSandbox/tau2 adapter、多 seed 重复、失败轨迹偏好优化、奖励校准与消融。
+- **已完成**: P0 基础设施/MiniRetail；P1 BFCL V4 项目定义的 720/80/200 非重叠公开数据划分、800/800 官方 AST target 验证、一次 QLoRA-SFT 和固定 200 条 holdout 对照；P2 阶段计划、append-only 日志和 Agent 自动记录协议。Base/SFT 为 163/200 与 167/200，配对 delta +0.020，95% CI [-0.040, 0.080]。
+- **下一阶段**: P3 Benchmark 扩展，尚未启动；详细依赖、并行轨道、退出门和后续 P3-P7 以 `docs/EXECUTION_PLAN.md` 为唯一事实来源。
+- **待运行**: BFCL robustness/multi-turn、隔离的 ToolSandbox/tau2 adapter、课程式多 seed SFT、失败轨迹偏好优化、schema 鲁棒性、奖励校准与条件式 GRPO。
 - **结论边界**: 正式表述为“Qwen3-1.7B 在项目定义的 BFCL V4 非重叠公开数据划分上进行 QLoRA-SFT 后，在固定 200 条单轮 AST holdout 子集上的结果。”不得称为官方训练、官方全量成绩、排行榜成绩或独立分布泛化结果，也不得外推到多轮、ToolSandbox、tau2、偏好优化或 GRPO。
 
-## 3. Coding Agent 协作协议 (每个开发任务固定 8 步)
+## 3. Coding Agent 协作与记录协议
 
-1. **明确任务规格**: 用户与 Agent 共同确认背景、输入、输出、约束、非目标、失败模式与验收测试。
-2. **Agent 先给方案**: ≥2 个方案 + 权衡 + 风险 + 影响文件; 重大设计选择经用户确认后实施。
-3. **Agent 端到端实现**: 可编写所有模块、调用点、测试、配置与文档, 不停在占位或脚手架。
-4. **小步实现**: 一次 Diff 原则上 **≤150–250 行**; 大任务拆成多个可验证提交。
-5. **可审查交付**: Agent 解释数据流、状态变化、异常分支、复杂度、安全风险与测试覆盖, 用户按需 Review。
-6. **先运行再相信**: 单元测试、类型检查、lint、集成测试、最小手工案例。
-7. **复核核心逻辑**: 对 verifier、奖励、状态变更与指标计算给出可追溯证据和针对性测试。
-8. **口述复盘**: 回答「为什么这样设计、替代方案、在哪里会失败」。
+1. **恢复状态**: 实质任务开始时读取 `docs/EXECUTION_PLAN.md` 当前阶段和 `docs/PROJECT_LOG.md` 最近记录。
+2. **明确规格**: 确认输入、输出、约束、非目标、失败模式与验收测试；重大设计给出 ≥2 个方案，经用户确认后实施。
+3. **端到端小步实现**: 更新必要模块、调用点、类型、测试、配置与文档，不停在占位；大任务拆成可验证提交。
+4. **先运行再相信**: 执行单元/集成测试、类型检查、lint 和最小手工案例；verifier、奖励、状态与指标必须有证据。
+5. **记录与复盘**: 最终答复前检查日志触发器，回答选择理由、替代方案和失败边界。
+
+**自动记录触发器**：阶段状态变化；非显然失败/阻塞；数据、评测、依赖、后端、资源或约束实质变化；影响后续的设计/实验决定或被否决方案；GPU smoke、正式训练、批量评测、go/no-go；改变后续安排的结果；泄漏、复现或 provenance 风险。触发时必须先在 `docs/PROJECT_LOG.md` 追加真实证据，再在最终答复报告 `LOG` ID。只读分析、例行成功命令、状态答复和格式修正不记录；不得写入 secret、原始受限数据或带答案 benchmark 样例。
 
 > ⚠️ 本项目方法论明确**禁止**: 让 coding agent 一次性生成整个项目后只看最终效果。
 
