@@ -96,6 +96,7 @@ def test_all_config_file_references_are_project_relative() -> None:
         "eval_path",
         "baseline_dir",
         "adapter_dir",
+        "bundle_dir",
     }
     references: list[tuple[str, str]] = []
     for config_path in sorted((ROOT / "configs").glob("*.yaml")):

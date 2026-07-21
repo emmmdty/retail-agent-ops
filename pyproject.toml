@@ -15,6 +15,9 @@ dependencies = [
     "rich>=13.7",
 ]
 
+[project.scripts]
+retail-agent-ops = "veritool_rl.product_cli:main"
+
 [project.optional-dependencies]
 # 训练重依赖: 在 gpu-4090 上安装 (torch 需匹配 CUDA)。
 train = [
