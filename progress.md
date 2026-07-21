@@ -24,6 +24,10 @@
 | 2026-07-20 | `.venv/bin/ruff check .` | passed |
 | 2026-07-20 | `.venv/bin/mypy` | 35 source files passed |
 | 2026-07-20 | JSON/TOML parse + `git diff --check` | passed |
+| 2026-07-21 | R1 Task 1–5 恢复基线 `.venv/bin/pytest -q` | 173 passed |
+| 2026-07-21 | Task 6 RED `.venv/bin/pytest tests/test_retail_ops_evaluation.py tests/test_metrics.py -q` | expected 8 failed, 4 passed；缺 `evaluation.py` 与 p50/p95 指标 |
+| 2026-07-21 | Task 6 首轮 GREEN focused/full + Ruff + mypy | 20 selected passed；180 full passed；Ruff passed；mypy 43 files passed |
+| 2026-07-21 | Task 6 最终 focused/full + Ruff + mypy + diff | 22 selected passed；182 full passed；Ruff passed；mypy 43 files passed；diff passed |
 
 ## 初始化决策
 
@@ -56,6 +60,14 @@ R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 
 - 用户选择方案 1，授权按已批准计划连续执行 Task 1-10，并在每项后做规格与质量审查。
 - 当前独立 checkout 为分支 `portfolio/retail-agent-ops-init`，preflight 未发现计划冲突。
 - 执行前基线：`.venv/bin/pytest -q` 为 111 passed；未运行 GPU、模型、API 或数据生成。
+
+## 2026-07-21 — R1 Task 6 续接
+
+- 从 Codex 会话 `019f7e4b-48d3-7513-aa20-9f0a864018ed` 恢复；Task 1–5 已完成并审查。
+- 上一会话在 Task 6 RED/GREEN 期间因实现子代理外部 403 退出，仓库未留下 Task 6 代码或提交。
+- 恢复时 HEAD 为 `da12c3b`，仅本轮 planning 记录有未提交修改；完整基线为 173 passed。
+- 后续从 Task 6 评测证据、指标与脱敏开始，继续执行到 Task 10 和最终 HEAD 质量门。
+- Task 6 以提交 `9b13c84` 完成；公开 failures 使用固定允许列表，run loader 会验证 run ID 与 5 个证据产物哈希，holdout 在 policy 执行前拒绝。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 

@@ -61,3 +61,20 @@
 - R1 Task 3 在 `02b501a` 初始实现后以 `6faf8d4` 修复并通过重审：factory 先拒绝非 qualification split，baseline 拒绝空/非 `get_order` 首调用，分类断言精确；legacy Oracle 未改。独立重审无阻塞问题，另记录报告早段 stale final SHA 的 Minor 审计项。
 - R1 Task 4 已在 `5b2e043` 完成 TaskSpec JSONL、12 条 qualification 的确定性 manifest、逐任务/整文件哈希和目录存在即拒绝的不可覆盖构建；独立审查无阻塞问题，记录 partial-write 故障注入与类别顺序负测两个 Minor 覆盖项。
 - R1 Task 5 在 `c7e63c6` 初始实现后以 `6cb816c` 完成治理加固并通过无问题重审：receipt 内部计数/ID/hash 一致性、单 manifest 重复、跨 split 隔离、release-only purpose/path/规则文件/hash 顺序均有合成负测；正式 private holdout 路径未创建或读取。
+- 2026-07-21 从 Codex 会话 `019f7e4b-48d3-7513-aa20-9f0a864018ed` 续接；planning catchup 未报告未同步上下文。
+- 当前规划证据确认 R1 Task 1–5 已完成并审查，续接范围应从 Task 6 开始，最终仍需完成 Task 1–10、whole-branch 审查与完整质量门。
+- `progress.md` 当前只记录到 R1 subagent-driven 执行启动，尚未同步 Task 1–5 的实施进度；`docs/PROJECT_LOG.md` 最近一条长期决定仍是批准方案 A 与 10 项 TDD 计划，任务级完成证据主要保存在 `findings.md` 和 Git 历史中。
+- 当前为独立 Git checkout（`git-dir == git-common-dir`，非 submodule），分支 `portfolio/retail-agent-ops-init`；用户已明确要求在该路径和会话基础上继续，因此无需创建嵌套 worktree。
+- 恢复时 HEAD 为 `da12c3b`（Task 5 审查记录），工作树除本轮 `findings.md` 恢复记录外干净；没有 Task 6 代码或提交需要保留/回退。
+- 剩余计划为 Task 6 评测证据/延迟分位数/脱敏、Task 7 配对发布门禁与确定性报告、Task 8 稳定 CLI、Task 9 FastAPI fallback 服务、Task 10 端到端验收与 R1 收口；均为 CPU-only。
+- Task 6 的公开脱敏边界必须至少排除 `target_state`、`expected_calls`、`user_request`、`task_id`，且上一会话 reviewer 已特别要求复核字段名变体与嵌套结构是否能绕过脱敏。
+- R1 Task 1–5 当前完整 pytest 基线为 173 passed；恢复点没有预存失败，可把 Task 6 新失败明确归因于新增测试。
+- 现有 `compute_metrics` 已按 episode 汇总 `average_latency_ms`，新增 p50/p95 可在同一 episode latency 数组上计算并为 empty metrics 返回 `0.0`，不需要改变旧指标语义。
+- `Trajectory` 内含完整 `TaskSpec`、逐步 state、raw output 和 metadata；公开 failure 不能对完整模型 dump 做黑名单递归删除，应从失败 taxonomy、场景、终止原因、违规码和有限工具错误字段构造固定允许列表。
+- `load_built_tasks` 已验证 tasks 文件哈希、顺序、数量和逐任务哈希；Task 6 仍需额外核对 manifest 的 bundle hash、split/mode 与 CLI seed，避免只验证任务内容却接受错误运行契约。
+- 通用 `Evaluator` 会 `exist_ok=True` 写输出，不满足 R1 正式目录不可覆盖；RetailOps evaluation 应直接用 `create_output_dir` 并一次性写 `config.yaml`、`trajectories.jsonl`、`metrics.json`、`failures.jsonl`、`log.txt`、`run.json`。
+- 设计规格要求 Task 6 同时报告轨迹可重放率与证据完整率，失败 taxonomy 至少覆盖 parser/格式、工具选择、参数 schema、政策违规、恢复失败、步数上限和环境错误；R1 qualification 实际出现的类别必须稳定输出，未出现类别可不伪造计数。
+- 上一会话派发 Task 6 时明确要求：evidence 同时绑定 bundle 与 manifest SHA，验证任务覆盖完整性，在任何 policy 执行前拒绝 holdout；实现子代理尚未留下代码，因此本轮可从真实 RED 开始。
+- Task 6 RED 已确认失败原因正确：7 个用例因 `veritool_rl.retail_ops.evaluation` 不存在失败，2 个指标断言因缺少 p50/p95 key 失败；其余既有 metrics 用例仍通过。
+- Task 6 首轮实现已达到 180 tests、Ruff 与 mypy 全绿；自审继续发现两个计划契约应补显式测试：manifest 的类别/family 覆盖完整性不能只靠文件哈希，`EvaluationMode.DEVELOPMENT` 不能被 qualification policy 的 split guard 意外阻断。
+- R1 Task 6 已在 `9b13c84` 完成：evidence 双哈希绑定 bundle/manifest，固定产物逐项哈希与 loader 防篡改，qualification/development 模式、任务覆盖/seed/split 前置校验、100% replay 指标、p50/p95、不可覆盖输出及允许列表失败脱敏；自审补测后 22 selected、182 full tests、Ruff、mypy 与 diff 检查通过。
