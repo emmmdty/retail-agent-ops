@@ -12,9 +12,7 @@ def test_oracle_metrics_match_hand_computed_values() -> None:
     from veritool_rl.eval.metrics import compute_metrics
 
     tasks = build_mvp_task_splits(seed=10)["test"][:4]
-    trajectories = [
-        run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=10) for task in tasks
-    ]
+    trajectories = [run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=10) for task in tasks]
 
     first = compute_metrics(trajectories, bootstrap_samples=100, seed=3)
     second = compute_metrics(trajectories, bootstrap_samples=100, seed=3)
@@ -40,6 +38,8 @@ def test_empty_metrics_have_defined_zero_denominators() -> None:
     assert metrics["task_success"] == 0.0
     assert metrics["invalid_call_rate"] == 0.0
     assert metrics["task_success_ci95"] == [0.0, 0.0]
+    assert metrics["p50_latency_ms"] == 0.0
+    assert metrics["p95_latency_ms"] == 0.0
 
 
 def test_metrics_reject_boolean_bootstrap_sample_count() -> None:
@@ -124,8 +124,7 @@ def test_metrics_count_parse_errors_and_transient_calls() -> None:
 
         def __init__(self) -> None:
             self._outputs: Iterator[PolicyOutput] = iter(
-                PolicyOutput(raw_text="bad", parse_error="invalid_tool_call_json")
-                for _ in range(8)
+                PolicyOutput(raw_text="bad", parse_error="invalid_tool_call_json") for _ in range(8)
             )
 
         def respond(self, messages: list[dict[str, Any]], tools: list[Any]) -> PolicyOutput:
@@ -134,9 +133,7 @@ def test_metrics_count_parse_errors_and_transient_calls() -> None:
 
     tasks = build_mvp_task_splits(seed=1)["test"]
     invalid_task = tasks[0]
-    recovery_task = next(
-        task for task in tasks if task.scenario is TaskScenario.REFUND_RECOVERY
-    )
+    recovery_task = next(task for task in tasks if task.scenario is TaskScenario.REFUND_RECOVERY)
     invalid = run_episode(invalid_task, MiniRetailEnv, InvalidPolicy(), seed=1)
     recovery = run_episode(recovery_task, MiniRetailEnv, OraclePolicy(recovery_task), seed=1)
 

@@ -71,10 +71,7 @@ def compute_metrics(
             )
             invalid += int(
                 step.parse_error is not None
-                or (
-                    step.observation is not None
-                    and step.observation.error_code in _INVALID_CODES
-                )
+                or (step.observation is not None and step.observation.error_code in _INVALID_CODES)
             )
 
     recovery = [
@@ -86,6 +83,10 @@ def compute_metrics(
         failure_type
         for trajectory in trajectories
         if (failure_type := _failure_type(trajectory)) is not None
+    )
+    episode_latency = np.asarray(
+        [sum(step.latency_ms for step in trajectory.steps) for trajectory in trajectories],
+        dtype=np.float64,
     )
     ci_low, ci_high = _bootstrap_ci(successes, bootstrap_samples, seed)
     return {
@@ -121,6 +122,8 @@ def compute_metrics(
         "average_latency_ms": _mean(
             [float(sum(step.latency_ms for step in t.steps)) for t in trajectories]
         ),
+        "p50_latency_ms": float(np.quantile(episode_latency, 0.50)),
+        "p95_latency_ms": float(np.quantile(episode_latency, 0.95)),
         "verifier_reward": _mean(
             [float(sum(step.reward.total for step in t.steps)) for t in trajectories]
         ),
@@ -186,6 +189,8 @@ def _empty_metrics() -> dict[str, Any]:
         "average_input_tokens": 0.0,
         "average_output_tokens": 0.0,
         "average_latency_ms": 0.0,
+        "p50_latency_ms": 0.0,
+        "p95_latency_ms": 0.0,
         "verifier_reward": 0.0,
         "failure_type_distribution": {},
     }
