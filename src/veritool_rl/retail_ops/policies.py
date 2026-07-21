@@ -10,13 +10,27 @@ from veritool_rl.envs.base import ToolSchema
 from veritool_rl.trajectory import TaskSpec, ToolCall
 
 
+def _require_qualification_task(task: TaskSpec) -> None:
+    if task.split != "qualification":
+        msg = "qualification policy 仅接受 qualification 任务"
+        raise ValueError(msg)
+
+
 class QualificationBaselinePolicy:
     """只查询订单，不执行退款的 qualification 基线。"""
 
     name = "baseline"
 
     def __init__(self, task: TaskSpec) -> None:
-        self._call = task.expected_calls[0].model_copy(deep=True)
+        _require_qualification_task(task)
+        if not task.expected_calls:
+            msg = "qualification baseline 要求 expected_calls 非空"
+            raise ValueError(msg)
+        first_call = task.expected_calls[0]
+        if first_call.name != "get_order":
+            msg = "qualification baseline 的首个调用必须是 get_order"
+            raise ValueError(msg)
+        self._call = first_call.model_copy(deep=True)
         self._responded = False
 
     def respond(
@@ -52,6 +66,7 @@ class UnknownToolPolicy:
 
 def build_qualification_policy(policy_type: str, task: TaskSpec) -> Policy:
     """按名称构建 qualification policy。"""
+    _require_qualification_task(task)
     if policy_type == "oracle":
         return OraclePolicy(task)
     if policy_type == "baseline":
