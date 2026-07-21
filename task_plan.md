@@ -17,7 +17,7 @@ R1 当前；方案 A 规格与实现计划已获批准，按 subagent-driven 流
 - [x] 方案 A 规格与 10 项实现计划获用户批准。
 - [x] 用户选择 subagent-driven 执行方式。
 - [x] 完成隔离状态、计划冲突和 `111 passed` 基线检查。
-- [ ] 逐项完成 Task 1-10 的 TDD 实现、提交与审查（Task 1-8 已完成，Task 9-10 待执行）。
+- [ ] 逐项完成 Task 1-10 的 TDD 实现、提交与审查（Task 1-9 已完成，Task 10 待执行）。
 - [ ] 完成 whole-branch 审查、最终质量门和 R1 阶段收口。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`。
 
@@ -44,6 +44,8 @@ R1 当前；方案 A 规格与实现计划已获批准，按 subagent-driven 流
 | 2026-07-21 | Task 8 `uv lock --check` 报告锁文件过期，`UV_INDEX_URL` 仍被全局默认索引覆盖 | 清除 3506 行镜像 URL 机械 diff，改用 `UV_DEFAULT_INDEX` 对齐现有 lock 索引；离线解析后 `uv.lock` 字节不变 |
 | 2026-07-21 | Task 8 planning 记录补丁因表格行顺序假设错误未应用 | 用 `rg` 定位实际行后按精确上下文重新应用，未影响产品文件 |
 | 2026-07-21 | Task 8 `ruff format --check` 报告 CLI 测试需格式化 | 仅格式化本任务测试文件并重跑 focused/Ruff/diff |
+| 2026-07-21 | Task 9 首次全门禁发现 `product_cli.py` import 未排序且 service/test 需格式化 | 对本任务文件执行 Ruff import fix/format 后重跑 selected/full 相关门禁 |
+| 2026-07-21 | Task 9 误将全仓 `ruff format --check .` 当作验收项，发现 35 个既有文件未采用当前 formatter | 不扩大本阶段 diff；仅检查本任务 Python 文件，继续执行项目规定的 `.venv/bin/ruff check .` |
 
 ## Maintenance: Codex 启动简化
 

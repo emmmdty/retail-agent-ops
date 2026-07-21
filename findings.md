@@ -86,3 +86,6 @@
 - Task 8 自审发现 release CLI 若只比较 base/candidate，可能用另一 bundle 的阈值发布；已用失败测试要求两份 run evidence 同时匹配配置加载的 release bundle SHA。
 - 当前 uv 版本使用 `UV_DEFAULT_INDEX` 覆盖全局 default-index；`UV_INDEX_URL` 无法阻止全局镜像 URL 规范化。显式设为 lock 中的 `https://pypi.tuna.tsinghua.edu.cn/simple` 后离线解析不改 `uv.lock`。
 - R1 Task 8 已在 `df68c60` 完成独立 `product_cli.py`、严格命令配置键、build/evaluate/release 分发、项目相对 bundle 路径、5 份稳定 YAML 和 `retail-agent-ops` console entry；最终 15 selected、201 full tests、Ruff、mypy、配置解析、lock 与 diff 检查通过。
+- Task 9 依赖已通过项目 uv 环境安装：FastAPI 0.139.2、Uvicorn 0.51.0、HTTPX 0.28.1；`uv add` 自动写入的项目级清华镜像块不属于产品需求，已删除并保留依赖 lock 更新。
+- 当前 Starlette 1.3.1 的 `TestClient` 优先导入 HTTPX2，回退 HTTPX 会发弃用警告；因此 dev 依赖从计划时的 `httpx>=0.27` 调整为 `httpx2>=2.0`，实际安装 2.7.0，产品运行依赖不受影响。
+- R1 Task 9 已在 `b6cc1e4` 完成：服务只接受与 release 同哈希的 bundle 和 qualification manifest，GO 部署 candidate、NO-GO 回退 baseline，固定任务执行响应不包含任务真值；最终 12 selected、208 full tests、Ruff、mypy、lock 与 diff 检查通过。

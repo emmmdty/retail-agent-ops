@@ -34,6 +34,9 @@
 | 2026-07-21 | Task 8 RED/首轮 GREEN | 4 expected failures（缺产品 CLI/entry point）后 14 selected passed；bundle provenance 补测先失败后修复，最终 15 selected passed |
 | 2026-07-21 | Task 8 lock 审计 | `UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --offline` 解析 95 packages；`uv.lock` 无 diff |
 | 2026-07-21 | Task 8 final | 15 selected、201 full passed；Ruff、mypy 45 files、TOML/5 YAML、lock check、diff passed |
+| 2026-07-21 | Task 9 dependency setup | uv 添加 FastAPI 0.139.2、Uvicorn 0.51.0 与 dev HTTPX 0.28.1；console script 可执行；未安装到系统 Python |
+| 2026-07-21 | Task 9 RED/首轮 GREEN | 7 expected failures（缺 service/serve）后 12 selected passed；按上游迁移将 dev client 改为 HTTPX2 2.7.0，测试无弃用警告 |
+| 2026-07-21 | Task 9 final | 12 selected、208 full passed；Ruff、mypy 46 files、targeted format、lock 与 diff 检查通过 |
 
 ## 初始化决策
 
@@ -76,6 +79,7 @@ R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 
 - Task 6 以提交 `9b13c84` 完成；公开 failures 使用固定允许列表，run loader 会验证 run ID 与 5 个证据产物哈希，holdout 在 policy 执行前拒绝。
 - Task 7 以提交 `042071a` 完成；Oracle 走 GO/candidate，unknown-tool 走 NO-GO/baseline，报告无时间戳且 HTML 文本转义。
 - Task 8 以提交 `df68c60` 完成；稳定 build/evaluate/release CLI、5 份配置和 console entry 已落地，release 会核对配置 bundle 与两份 evidence 的 SHA。
+- Task 9 以提交 `b6cc1e4` 完成；qualification FastAPI 服务按 release 选择 candidate 或 baseline，启动前核对 bundle/manifest，公开响应采用固定字段集合。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 
