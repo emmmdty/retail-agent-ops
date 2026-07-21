@@ -41,12 +41,23 @@ def validate_json_value(value: Any) -> Any:
 
 
 class TaskScenario(StrEnum):
-    """MiniRetail MVP 覆盖的任务场景。"""
+    """MiniRetail 与 RetailOps 覆盖的任务场景。"""
 
     LOOKUP_STATUS = "lookup_status"
     REFUND_ELIGIBLE = "refund_eligible"
     REFUND_DENIED = "refund_denied"
+    REFUND_DENIED_WINDOW = "refund_denied_window"
+    REFUND_DENIED_OWNERSHIP = "refund_denied_ownership"
+    REFUND_DENIED_DUPLICATE = "refund_denied_duplicate"
     REFUND_RECOVERY = "refund_recovery"
+
+
+class ExpectedDecision(StrEnum):
+    """任务对工具 Agent 的期望业务决策。"""
+
+    INFORM = "inform"
+    ALLOW = "allow"
+    DENY = "deny"
 
 
 class TerminationReason(StrEnum):
@@ -94,12 +105,14 @@ class TaskSpec(StrictModel):
     """创建新环境实例所需的全部冻结任务输入。"""
 
     task_id: str = Field(min_length=1)
-    split: Literal["train", "dev", "test"]
+    split: Literal["train", "dev", "test", "qualification", "holdout"]
     scenario: TaskScenario
     user_request: str = Field(min_length=1)
     initial_state: dict[str, Any]
     target_state: dict[str, Any]
     expected_calls: list[ToolCall] = Field(default_factory=list)
+    expected_decision: ExpectedDecision | None = None
+    required_reads: list[str] = Field(default_factory=list)
     transient_failures: dict[str, int] = Field(default_factory=dict)
     max_steps: int = Field(default=4, ge=1, le=32)
     metadata: dict[str, Any] = Field(default_factory=dict)

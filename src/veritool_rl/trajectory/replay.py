@@ -46,6 +46,8 @@ def replay_trajectory(
         else:
             observation = None
 
+        if step.final_response is not None:
+            env.record_final_response(step.final_response)
         _assert_equal(trajectory.task.task_id, index, "observation", observation, step.observation)
         _assert_equal(
             trajectory.task.task_id, index, "state_after", env.get_state(), step.state_after

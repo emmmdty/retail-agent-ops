@@ -15,6 +15,12 @@ Split = Literal["train", "dev", "test"]
 
 _SPLIT_COUNTS: dict[Split, int] = {"train": 128, "dev": 32, "test": 32}
 _REASONS = ("damaged", "wrong_item", "not_as_described", "changed_mind")
+_MINI_RETAIL_SCENARIOS = (
+    TaskScenario.LOOKUP_STATUS,
+    TaskScenario.REFUND_ELIGIBLE,
+    TaskScenario.REFUND_DENIED,
+    TaskScenario.REFUND_RECOVERY,
+)
 _PHRASINGS: dict[Split, dict[TaskScenario, tuple[str, ...]]] = {
     "train": {
         TaskScenario.LOOKUP_STATUS: (
@@ -46,8 +52,7 @@ def _stable_identifier(seed: int, split: Split, index: int, prefix: str) -> str:
 
 
 def _make_task(seed: int, split: Split, index: int) -> TaskSpec:
-    scenarios = tuple(TaskScenario)
-    scenario = scenarios[index % len(scenarios)]
+    scenario = _MINI_RETAIL_SCENARIOS[index % len(_MINI_RETAIL_SCENARIOS)]
     order_id = _stable_identifier(seed, split, index, "O")
     customer_id = _stable_identifier(seed, split, index, "C")
     reason = _REASONS[(seed + index) % len(_REASONS)]
@@ -96,8 +101,8 @@ def _make_task(seed: int, split: Split, index: int) -> TaskSpec:
 
 def generate_mini_retail_tasks(split: Split, count: int, seed: int) -> list[TaskSpec]:
     """按固定顺序生成场景均衡且可重复的任务。"""
-    if count < 1 or count % len(TaskScenario) != 0:
-        msg = f"任务数必须为正数且能被 {len(TaskScenario)} 整除: {count}"
+    if count < 1 or count % len(_MINI_RETAIL_SCENARIOS) != 0:
+        msg = f"任务数必须为正数且能被 {len(_MINI_RETAIL_SCENARIOS)} 整除: {count}"
         raise ValueError(msg)
     return [_make_task(seed, split, index) for index in range(count)]
 

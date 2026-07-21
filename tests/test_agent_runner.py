@@ -44,7 +44,12 @@ def test_oracle_runner_completes_all_scenarios() -> None:
         run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=9) for task in tasks
     ]
 
-    assert {trajectory.task.scenario for trajectory in trajectories} == set(TaskScenario)
+    assert {trajectory.task.scenario for trajectory in trajectories} == {
+        TaskScenario.LOOKUP_STATUS,
+        TaskScenario.REFUND_ELIGIBLE,
+        TaskScenario.REFUND_DENIED,
+        TaskScenario.REFUND_RECOVERY,
+    }
     assert all(trajectory.success for trajectory in trajectories)
     assert all(trajectory.termination is TerminationReason.SUCCESS for trajectory in trajectories)
     recovery = next(
@@ -120,3 +125,31 @@ def test_policy_violation_terminates_episode() -> None:
     assert trajectory.termination is TerminationReason.POLICY_VIOLATION
     assert trajectory.violations == ["refund_without_lookup"]
     assert trajectory.steps[0].reward.policy_penalty == -1.0
+
+
+def test_runner_records_terminal_response_before_verification() -> None:
+    from pathlib import Path
+
+    from veritool_rl.agent.policy import OraclePolicy
+    from veritool_rl.agent.runner import run_episode
+    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.trajectory import TaskScenario, TerminationReason
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        task
+        for task in build_qualification_tasks(seed=0)
+        if task.scenario is TaskScenario.REFUND_DENIED_WINDOW
+    )
+
+    trajectory = run_episode(
+        task,
+        lambda current: RetailOpsEnv(current, bundle),
+        OraclePolicy(task),
+        seed=0,
+    )
+
+    assert trajectory.success is True
+    assert trajectory.termination is TerminationReason.SUCCESS

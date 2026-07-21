@@ -89,6 +89,8 @@ def run_episode(
         else:
             messages.append({"role": "assistant", "content": output.final_response or ""})
 
+        if output.final_response is not None:
+            env.record_final_response(output.final_response)
         reward = compute_reward_breakdown(env, observation, output.parse_error)
         violations = env.check_policy()
         steps.append(

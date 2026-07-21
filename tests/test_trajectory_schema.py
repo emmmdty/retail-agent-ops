@@ -79,3 +79,21 @@ def test_trajectory_rejects_blank_jsonl_line() -> None:
 
     with pytest.raises(ValueError, match="空白"):
         Trajectory.from_jsonl("  \n")
+
+
+def test_task_spec_supports_retail_ops_decisions_and_qualification_split() -> None:
+    from veritool_rl.trajectory import ExpectedDecision, TaskScenario, TaskSpec
+
+    task = TaskSpec(
+        task_id="opaque-task",
+        split="qualification",
+        scenario=TaskScenario.REFUND_DENIED_WINDOW,
+        user_request="请查询并处理订单。",
+        initial_state={"orders": {}},
+        target_state={"orders": {}},
+        expected_decision=ExpectedDecision.DENY,
+        required_reads=["order-1"],
+    )
+
+    assert task.expected_decision is ExpectedDecision.DENY
+    assert task.required_reads == ["order-1"]

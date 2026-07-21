@@ -85,3 +85,35 @@ def test_replay_rejects_non_contiguous_recorded_step_index() -> None:
 
     with pytest.raises(ReplayMismatch, match=r"step=0.*index"):
         replay_trajectory(tampered, MiniRetailEnv)
+
+
+def test_retail_ops_denial_trajectory_replays_terminal_response() -> None:
+    from pathlib import Path
+
+    from veritool_rl.agent.policy import OraclePolicy
+    from veritool_rl.agent.runner import run_episode
+    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.trajectory.replay import replay_trajectory
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        task
+        for task in build_qualification_tasks(seed=0)
+        if task.scenario is TaskScenario.REFUND_DENIED_WINDOW
+    )
+    trajectory = run_episode(
+        task,
+        lambda current: RetailOpsEnv(current, bundle),
+        OraclePolicy(task),
+        seed=0,
+    )
+
+    result = replay_trajectory(
+        trajectory,
+        lambda current: RetailOpsEnv(current, bundle),
+    )
+
+    assert result.matched is True

@@ -39,6 +39,10 @@ class ToolSchema(StrictModel):
 class ToolEnv(ABC):
     """单个冻结任务对应的有状态确定性环境。"""
 
+    def record_final_response(self, response: str) -> None:
+        """通知环境 Agent 已给出终止响应；旧环境默认无需处理。"""
+        del response
+
     @property
     @abstractmethod
     def task(self) -> TaskSpec:
