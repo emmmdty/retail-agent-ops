@@ -130,6 +130,24 @@ class TaskSpec(StrictModel):
             raise ValueError(msg)
         return value
 
+    def to_jsonl(self) -> str:
+        """返回不含换行的规范 JSON。"""
+        return json.dumps(
+            self.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+
+    @classmethod
+    def from_jsonl(cls, line: str) -> Self:
+        """从单行 JSON 解析并执行严格校验。"""
+        if not line.strip():
+            msg = "任务 JSONL 行不能为空白"
+            raise ValueError(msg)
+        return cls.model_validate_json(line)
+
 
 class Step(StrictModel):
     """一个 assistant turn 及其可选工具执行结果。"""

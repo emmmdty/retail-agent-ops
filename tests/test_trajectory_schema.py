@@ -81,6 +81,25 @@ def test_trajectory_rejects_blank_jsonl_line() -> None:
         Trajectory.from_jsonl("  \n")
 
 
+def test_task_spec_jsonl_round_trip_is_canonical() -> None:
+    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.trajectory import TaskSpec
+
+    task = build_qualification_tasks(seed=0)[0]
+    line = task.to_jsonl()
+
+    assert "\n" not in line
+    assert line == task.to_jsonl()
+    assert TaskSpec.from_jsonl(line) == task
+
+
+def test_task_spec_rejects_blank_jsonl_line() -> None:
+    from veritool_rl.trajectory import TaskSpec
+
+    with pytest.raises(ValueError, match="空白"):
+        TaskSpec.from_jsonl("  \n")
+
+
 def test_task_spec_supports_retail_ops_decisions_and_qualification_split() -> None:
     from veritool_rl.trajectory import ExpectedDecision, TaskScenario, TaskSpec
 

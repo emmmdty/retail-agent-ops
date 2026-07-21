@@ -11,6 +11,15 @@ from typing import Any
 import yaml
 
 
+def create_output_dir(path: Path) -> None:
+    """创建不可覆盖的产物目录。"""
+    try:
+        path.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        msg = f"输出目录已存在，拒绝覆盖: {path}"
+        raise FileExistsError(msg) from None
+
+
 def canonical_json(value: Any) -> str:
     """返回稳定、可哈希的单行 JSON。"""
     return json.dumps(
