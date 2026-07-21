@@ -56,3 +56,4 @@
 - 实现计划位于 `docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md`，用户选择执行方式前不开始代码实现。
 - 工作期间仓库被独立化为自身 `.git` 且追加 `ec22ec0`/`b8e84b6`；`ec22ec0` 删除一个冗余 Codex fallback 测试，因此当前完整收集基线为 111 tests，而不是 R0 记录的 112。
 - 用户已选择 subagent-driven 执行 R1；计划 preflight 未发现任务间或全局约束冲突，执行前 HEAD `88448f3` 的完整测试为 111 passed。
+- R1 Task 1 已在 `0c9d639` 完成版本化 bundle：冻结 3 个工具 schema、6 类任务、退款政策和 release 阈值，并以严格 Pydantic 模型、跨文档退款原因校验和 canonical 组件哈希保护契约；独立任务审查无问题。
