@@ -57,3 +57,4 @@
 - 工作期间仓库被独立化为自身 `.git` 且追加 `ec22ec0`/`b8e84b6`；`ec22ec0` 删除一个冗余 Codex fallback 测试，因此当前完整收集基线为 111 tests，而不是 R0 记录的 112。
 - 用户已选择 subagent-driven 执行 R1；计划 preflight 未发现任务间或全局约束冲突，执行前 HEAD `88448f3` 的完整测试为 111 passed。
 - R1 Task 1 已在 `0c9d639` 完成版本化 bundle：冻结 3 个工具 schema、6 类任务、退款政策和 release 阈值，并以严格 Pydantic 模型、跨文档退款原因校验和 canonical 组件哈希保护契约；独立任务审查无问题。
+- R1 Task 2 已在 `d253cbf` 完成任务 schema、12 条确定性 qualification fixture、policy-aware 环境及 runner/replay 终止响应 hook；独立审查无阻塞问题，仅记录“恢复测试未显式发起第三次退款”的 Minor 覆盖项供最终审查复核。
