@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from veritool_rl.artifacts import sha256_file
 from veritool_rl.paths import validate_project_relative_path
@@ -15,6 +16,7 @@ from veritool_rl.retail_ops.manifests import TaskManifest
 from veritool_rl.trajectory.schema import StrictModel
 
 _PRIVATE_RETAIL_OPS_ROOT = Path("data/private/retail_ops/v1")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class HoldoutReceipt(StrictModel):
@@ -30,6 +32,35 @@ class HoldoutReceipt(StrictModel):
     family_ids: list[str]
     task_sha256: dict[str, str]
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_evidence_consistency(self) -> Self:
+        """校验公开指纹之间的数量、标识与摘要一致性。"""
+        if any(count < 0 for count in self.category_counts.values()):
+            raise ValueError("类别数量不得为负数")
+        if sum(self.category_counts.values()) != self.task_count:
+            raise ValueError("类别数量总和必须等于 task_count")
+
+        if len(self.task_ids) != self.task_count:
+            raise ValueError("task_ids 数量必须等于 task_count")
+        if any(not task_id.strip() for task_id in self.task_ids):
+            raise ValueError("task_id 不得为空")
+        if len(set(self.task_ids)) != len(self.task_ids):
+            raise ValueError("task_id 必须唯一")
+
+        if len(self.family_ids) != self.task_count:
+            raise ValueError("family_ids 数量必须等于 task_count")
+        if any(not family_id.strip() for family_id in self.family_ids):
+            raise ValueError("family_id 不得为空")
+
+        if set(self.task_sha256) != set(self.task_ids):
+            raise ValueError("task_sha256 key 必须与 task_ids 一致")
+        if any(
+            _SHA256_PATTERN.fullmatch(digest) is None
+            for digest in self.task_sha256.values()
+        ):
+            raise ValueError("task_sha256 必须是小写 64 位十六进制")
+        return self
 
 
 class EvidencePurpose(StrEnum):
@@ -47,9 +78,15 @@ def assert_split_isolation(manifests: Sequence[TaskManifest]) -> None:
     seen_content_hashes: set[str] = set()
 
     for manifest in manifests:
+        if len(manifest.task_ids) != len(set(manifest.task_ids)):
+            raise ValueError("manifest 内 task_id 重复")
+        content_hash_values = list(manifest.task_sha256.values())
+        if len(content_hash_values) != len(set(content_hash_values)):
+            raise ValueError("manifest 内内容 SHA-256 重复")
+
         task_ids = set(manifest.task_ids)
         family_ids = set(manifest.family_ids)
-        content_hashes = set(manifest.task_sha256.values())
+        content_hashes = set(content_hash_values)
 
         if overlap := seen_task_ids & task_ids:
             raise ValueError(f"split task_id 交叉: {sorted(overlap)}")
@@ -83,5 +120,19 @@ def authorize_holdout(
     if relative_path == Path("."):
         raise ValueError("sealed artifact 路径必须指向 private 根目录下的文件")
 
-    if sha256_file(artifact_path) != receipt.artifact_sha256:
+    try:
+        artifact_exists = artifact_path.exists()
+        artifact_is_file = artifact_path.is_file()
+    except OSError:
+        raise ValueError("holdout artifact 状态检查失败") from None
+    if not artifact_exists:
+        raise ValueError("holdout artifact 不存在")
+    if not artifact_is_file:
+        raise ValueError("holdout artifact 必须是普通文件")
+
+    try:
+        artifact_sha256 = sha256_file(artifact_path)
+    except OSError:
+        raise ValueError("holdout artifact 无法读取或计算 SHA-256") from None
+    if artifact_sha256 != receipt.artifact_sha256:
         raise ValueError("holdout artifact SHA-256 不匹配")
