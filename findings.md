@@ -60,3 +60,4 @@
 - R1 Task 2 已在 `d253cbf` 完成任务 schema、12 条确定性 qualification fixture、policy-aware 环境及 runner/replay 终止响应 hook；独立审查无阻塞问题，仅记录“恢复测试未显式发起第三次退款”的 Minor 覆盖项供最终审查复核。
 - R1 Task 3 在 `02b501a` 初始实现后以 `6faf8d4` 修复并通过重审：factory 先拒绝非 qualification split，baseline 拒绝空/非 `get_order` 首调用，分类断言精确；legacy Oracle 未改。独立重审无阻塞问题，另记录报告早段 stale final SHA 的 Minor 审计项。
 - R1 Task 4 已在 `5b2e043` 完成 TaskSpec JSONL、12 条 qualification 的确定性 manifest、逐任务/整文件哈希和目录存在即拒绝的不可覆盖构建；独立审查无阻塞问题，记录 partial-write 故障注入与类别顺序负测两个 Minor 覆盖项。
+- R1 Task 5 在 `c7e63c6` 初始实现后以 `6cb816c` 完成治理加固并通过无问题重审：receipt 内部计数/ID/hash 一致性、单 manifest 重复、跨 split 隔离、release-only purpose/path/规则文件/hash 顺序均有合成负测；正式 private holdout 路径未创建或读取。
