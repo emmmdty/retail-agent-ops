@@ -2,7 +2,7 @@
 
 RetailAgentOps 是面向零售订单、退款和客服操作的单卡工具 Agent 领域适配与发布流水线。它把工具 schema、业务政策和任务转换为可执行轨迹，完成数据质检、轻量后训练、状态级评测、GO/NO-GO 发布门禁和推理服务。
 
-> `R0` 初始化已经完成，当前等待用户确认是否进入 `R1`。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA 和可追溯评测基础，但旧研究路线不再是活动计划。Python 包暂保留 `veritool_rl`。
+> `R1` 产品契约与 v0.1 已完成，`R2` 数据与评测流水线仍待执行。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA 和可追溯评测基础，但旧研究路线不再是活动计划。Python 包暂保留 `veritool_rl`。
 
 ## 项目价值
 
@@ -35,6 +35,36 @@ env -u UV_INDEX_URL uv sync --project tools/bfcl_eval --frozen
 ```
 
 模型、benchmark checkout、数据、checkpoint 和运行产物不进入 Git。GPU 命令必须先向用户披露完整命令、工作目录、物理 GPU、预计时长和产物，并等待确认。
+
+## RetailOps v1 CPU qualification
+
+安装开发依赖后，以下六条命令会在 CPU 上依次生成固定任务、三组配对评测和两份发布结论：
+输出目录采用不可覆盖语义；重复验收时请把命令中的 `qualification-r1-final` 整体替换为新的 `qualification-*` 名称。
+
+```bash
+.venv/bin/retail-agent-ops build --config configs/retail_ops_v1_build.yaml --seed 0 --output_dir reports/retail_ops/v1/qualification-r1-final/build
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops_v1_qualification_base.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/base
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops_v1_qualification_oracle.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/oracle
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops_v1_qualification_fault.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/fault
+.venv/bin/retail-agent-ops release --config configs/retail_ops_v1_release.yaml --seed 0 --baseline_dir reports/retail_ops/v1/qualification-r1-final/base --candidate_dir reports/retail_ops/v1/qualification-r1-final/oracle --output_dir reports/retail_ops/v1/qualification-r1-final/release-go
+.venv/bin/retail-agent-ops release --config configs/retail_ops_v1_release.yaml --seed 0 --baseline_dir reports/retail_ops/v1/qualification-r1-final/base --candidate_dir reports/retail_ops/v1/qualification-r1-final/fault --output_dir reports/retail_ops/v1/qualification-r1-final/release-no-go
+```
+
+产物目录如下：
+
+| 目录 | 内容 |
+|---|---|
+| `build/` | 12 条固定 qualification 任务及其 manifest |
+| `base/`、`oracle/`、`fault/` | 配置、本地完整轨迹、指标、脱敏失败摘要、日志和 run evidence |
+| `release-go/`、`release-no-go/` | `release.json`、`report.md`、`report.html` 发布报告 |
+
+可用 GO 报告启动本地 qualification 服务；服务启动前会核对 release、bundle 和 task manifest 哈希：
+
+```bash
+.venv/bin/retail-agent-ops serve --config configs/retail_ops_v1_serve.yaml --release_dir reports/retail_ops/v1/qualification-r1-final/release-go --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/service
+```
+
+这套数据是用于验证工程契约的合成 qualification；R1 未生成正式 holdout，也没有读取 holdout 真值。BFCL 只保留为独立外部回归，现有 BFCL 成绩不是 RetailOps 内部指标。
 
 ## 结果边界
 

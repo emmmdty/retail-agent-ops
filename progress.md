@@ -37,6 +37,9 @@
 | 2026-07-21 | Task 9 dependency setup | uv 添加 FastAPI 0.139.2、Uvicorn 0.51.0 与 dev HTTPX 0.28.1；console script 可执行；未安装到系统 Python |
 | 2026-07-21 | Task 9 RED/首轮 GREEN | 7 expected failures（缺 service/serve）后 12 selected passed；按上游迁移将 dev client 改为 HTTPX2 2.7.0，测试无弃用警告 |
 | 2026-07-21 | Task 9 final | 12 selected、208 full passed；Ruff、mypy 46 files、targeted format、lock 与 diff 检查通过 |
+| 2026-07-21 | Task 10 RED | E2E 闭环通过；8 项 selected 中仅 closeout 文档治理断言按预期失败 |
+| 2026-07-21 | Task 10 artifact acceptance | baseline/oracle/fault 为 8/12、12/12、0/12；GO/candidate 与 NO-GO/baseline；重复树逐文件一致；公开边界与 HTML 检查通过 |
+| 2026-07-21 | Task 10 final before commit | 8 selected、211 full passed；Ruff、mypy 46 files、lock 与 diff 检查通过；RetailOps reports ignore 治理负测/修复通过 |
 
 ## 初始化决策
 
@@ -46,8 +49,8 @@
 
 ## Next Gate
 
-R0 已关闭，方案 A 规格与 R1 实现计划已批准。用户选择 subagent-driven 执行，
-R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 R2 冻结。
+R1 已完成并关闭；R2 仍为待执行，必须由用户另行确认后才可生成正式
+train/dev/holdout、调用模型或进入训练。
 
 ## 2026-07-20 — R1 方案 A 规格准备
 
@@ -80,6 +83,7 @@ R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 
 - Task 7 以提交 `042071a` 完成；Oracle 走 GO/candidate，unknown-tool 走 NO-GO/baseline，报告无时间戳且 HTML 文本转义。
 - Task 8 以提交 `df68c60` 完成；稳定 build/evaluate/release CLI、5 份配置和 console entry 已落地，release 会核对配置 bundle 与两份 evidence 的 SHA。
 - Task 9 以提交 `b6cc1e4` 完成；qualification FastAPI 服务按 release 选择 candidate 或 baseline，启动前核对 bundle/manifest，公开响应采用固定字段集合。
+- Task 10 的新鲜证据位于 `reports/retail_ops/v1/qualification-r1-final/`，重复证据位于相邻 `qualification-r1-repeat/`；两树逐文件一致，manifest SHA-256 为 `6f510a699c33a5ec9c7df3ef4310a36165b4acff270425b6bfc8c6fd39124f6e`。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 

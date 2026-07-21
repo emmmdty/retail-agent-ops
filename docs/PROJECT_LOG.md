@@ -328,3 +328,34 @@ mode，因为这会提前执行 R2 的正式数据职责；未引入通用状态
 **后果与下一步**：实现计划已可执行，但尚未授权开始代码。下一步由用户选择逐任务
 subagent-driven execution 或当前会话 inline execution；任一方式都必须逐任务 TDD、
 审查并在最终 HEAD 重跑完整质量门。
+
+### LOG-20260721-01：R1 qualification 纵向切片完成
+
+- 日期：2026-07-21
+- 阶段/任务：R1 / 端到端验收与阶段收口
+- 状态：阶段变更
+- 关联：`reports/retail_ops/v1/qualification-r1-final/`、`docs/EXECUTION_PLAN.md`
+
+**背景与难点**：R1 需要证明版本化 bundle、固定 qualification、评测证据、发布门禁和
+fallback 服务形成同一条可审计闭环，同时不能把合成 Oracle 结果、BFCL 外部回归或未生成的
+正式 holdout 误写成产品模型效果。
+
+**证据**：README 中的六条 CPU 命令生成 12 条 qualification；baseline、Oracle 和
+unknown-tool fault 分别成功 8/12、12/12、0/12，三组证据均 12/12 可重放。发布结果分别为
+GO/candidate 与 NO-GO/baseline。新鲜树与独立重复树逐文件一致；task manifest SHA-256 为
+`6f510a699c33a5ec9c7df3ef4310a36165b4acff270425b6bfc8c6fd39124f6e`。两份 HTML 可识别，
+公开 release 报告未命中任务真值、holdout、BFCL、常见 secret/private-key 标记，产物树无
+常见模型权重文件。服务用 TestClient 验证，未启动持久进程。
+提交前完整质量门为 211 passed，Ruff、mypy 46 个源文件、`uv lock --check` 与
+`git diff --check` 全部通过；治理测试同时保证 RetailOps 运行报告不进入 Git。
+
+**决定与方案**：R1 标为已完成，R2 保持待执行。Oracle 只作为确定性资格上限，fault 只用于
+验证门禁和 baseline fallback；它们均不作为候选模型效果。正式 train/dev/holdout 仍由 R2
+在用户确认后冻结。
+
+**备选方案与未选择理由**：未把 qualification 扩展成正式 holdout，因为会越过 R2 的数据
+冻结与授权边界；未因 Oracle 12/12 声称模型改善；未启动服务进程，因为 TestClient 已覆盖
+允许、拒绝、恢复和 fallback 路径，持久进程不增加 R1 验收证据。
+
+**后果与下一步**：R1 关闭后停止继续实现。R2 只有在用户确认正式数据来源、配额和冻结规则后
+才可启动；在此之前不得下载模型、调用商业 API、运行 GPU 或生成正式 holdout。

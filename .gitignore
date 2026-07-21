@@ -61,6 +61,8 @@ logs/
 /reports/bfcl/**/comparison_analysis.jsonl
 # 单任务 GPU smoke 仅作运行前全链路验证，保留在本地和远程产物目录
 /reports/bfcl/*-smoke-*/
+# RetailOps qualification evidence 由固定命令本地重建，不提交逐任务运行产物
+/reports/retail_ops/
 
 # ---- 权重文件 (任意位置, 不进 git) ----
 *.bin

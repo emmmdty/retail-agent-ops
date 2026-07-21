@@ -1,5 +1,6 @@
 """验证求职工程定位和 Agent 接管文档不会静默漂移。"""
 
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,3 +89,41 @@ def test_handoff_defines_read_order_and_stop_rules() -> None:
         "GPU",
     ):
         assert expected in handoff
+
+
+def test_retail_ops_v1_contract_and_holdout_boundary_are_governed() -> None:
+    design = ROOT / "docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md"
+    implementation = ROOT / "docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md"
+    assert design.is_file()
+    assert implementation.is_file()
+    assert "RetailOps v1" in design.read_text(encoding="utf-8")
+    assert "RetailOps v1" in implementation.read_text(encoding="utf-8")
+
+    for path in (ROOT / "domains/retail_ops/v1").rglob("*"):
+        if path.is_file():
+            assert "bfcl" not in path.read_text(encoding="utf-8").lower()
+
+    for ignored_path in (
+        "data/private/retail_ops/v1/holdout/tasks.jsonl",
+        "reports/retail_ops/v1/qualification-example/run.json",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path
+
+
+def test_r1_closeout_is_documented_without_claiming_formal_holdout() -> None:
+    readme = _read("README.md")
+    execution_plan = _read("docs/EXECUTION_PLAN.md")
+    project_log = _read("docs/PROJECT_LOG.md")
+
+    for expected in ("合成 qualification", "未生成正式 holdout", "不是 RetailOps 内部指标"):
+        assert expected in readme
+    assert "| R1 产品契约与 v0.1 | 第 1–2 周 | 已完成 |" in execution_plan
+    assert "| R2 数据与评测流水线 | 第 3–4 周 | 待执行 |" in execution_plan
+    assert "R1 qualification 纵向切片完成" in project_log

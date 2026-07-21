@@ -89,3 +89,11 @@
 - Task 9 依赖已通过项目 uv 环境安装：FastAPI 0.139.2、Uvicorn 0.51.0、HTTPX 0.28.1；`uv add` 自动写入的项目级清华镜像块不属于产品需求，已删除并保留依赖 lock 更新。
 - 当前 Starlette 1.3.1 的 `TestClient` 优先导入 HTTPX2，回退 HTTPX 会发弃用警告；因此 dev 依赖从计划时的 `httpx>=0.27` 调整为 `httpx2>=2.0`，实际安装 2.7.0，产品运行依赖不受影响。
 - R1 Task 9 已在 `b6cc1e4` 完成：服务只接受与 release 同哈希的 bundle 和 qualification manifest，GO 部署 candidate、NO-GO 回退 baseline，固定任务执行响应不包含任务真值；最终 12 selected、208 full tests、Ruff、mypy、lock 与 diff 检查通过。
+- Task 10 首次验收中，CPU 端到端 build/base-oracle-fault evaluate/GO-NO-GO release/TestClient 已通过；新增治理断言仅在尚未写入的 R1 README、阶段状态和 completion log 上失败，说明产品闭环无需额外代码修复。
+- README 中记录的六条 CPU 命令已原样生成 `reports/retail_ops/v1/qualification-r1-final/`：build、base/oracle/fault evidence 及 GO/NO-GO 三格式报告均存在；未启动持久服务。
+- 新鲜与重复 qualification 树逐文件 `diff -qr` 无差异；baseline/oracle/fault 分别为 8/12、12/12、0/12 且均 12/12 可重放，发布为 GO/candidate 与 NO-GO/baseline。manifest SHA-256 为 `6f510a699c33a5ec9c7df3ef4310a36165b4acff270425b6bfc8c6fd39124f6e`。
+- 两份 HTML 被识别为 UTF-8 HTML；公开 release 三格式报告未命中任务真值、holdout、BFCL、常见 secret/private-key 标记，证据树不存在常见模型权重扩展名。正式 holdout 路径仍由根 `/data/` ignore 规则隔离。
+- Task 10 提交前完整质量门为 211 passed、Ruff 和 mypy 46 files 通过、lock 与 diff 无变化；随后工作树审计发现新 `reports/retail_ops/` 尚未受 ignore 规则保护，需要在提交前补治理契约。
+- `/reports/retail_ops/` ignore 治理断言先失败后通过；本地证据树被保留用于复核，但不进入 Git。修复后重新执行完整门禁仍为 211 passed，Ruff、mypy、lock 与 diff 全部通过。
+- whole-branch 自审发现 README 曾把本地 `trajectories.jsonl` 误称为“脱敏轨迹”；实际脱敏边界是 `failures.jsonl` 与公开 release 报告。文档已改为“本地完整轨迹、脱敏失败摘要”，避免把 qualification 产物边界写宽。
+- whole-branch 核心 diff 复核确认 legacy MiniRetail 场景集合被显式冻结、final-response hook 在 run/replay 两端对称、输出目录不可覆盖、holdout 在 policy 前拒绝、paired release 八字段一致性与服务 fallback 均有负测；未发现阻塞缺陷。E2E 进一步固定每个 release 目录必须恰有 JSON/Markdown/HTML 三份报告。

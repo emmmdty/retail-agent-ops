@@ -1,0 +1,104 @@
+"""RetailOps v1 CPU-only qualification 纵向切片验收。"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from veritool_rl.product_cli import main
+from veritool_rl.retail_ops.service import create_app
+
+
+def _run_cli(arguments: list[str]) -> None:
+    assert main(arguments) == 0
+
+
+def _read_json(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_retail_ops_v1_cpu_vertical_slice(tmp_path: Path) -> None:
+    build_dir = tmp_path / "build"
+    base_dir = tmp_path / "base"
+    oracle_dir = tmp_path / "oracle"
+    fault_dir = tmp_path / "fault"
+    go_dir = tmp_path / "release-go"
+    no_go_dir = tmp_path / "release-no-go"
+
+    _run_cli(
+        [
+            "build",
+            "--config",
+            "configs/retail_ops_v1_build.yaml",
+            "--seed",
+            "0",
+            "--output_dir",
+            str(build_dir),
+        ]
+    )
+    for config, output in (
+        ("configs/retail_ops_v1_qualification_base.yaml", base_dir),
+        ("configs/retail_ops_v1_qualification_oracle.yaml", oracle_dir),
+        ("configs/retail_ops_v1_qualification_fault.yaml", fault_dir),
+    ):
+        _run_cli(
+            [
+                "evaluate",
+                "--config",
+                config,
+                "--seed",
+                "0",
+                "--input_dir",
+                str(build_dir),
+                "--output_dir",
+                str(output),
+            ]
+        )
+    for candidate, output in ((oracle_dir, go_dir), (fault_dir, no_go_dir)):
+        _run_cli(
+            [
+                "release",
+                "--config",
+                "configs/retail_ops_v1_release.yaml",
+                "--seed",
+                "0",
+                "--baseline_dir",
+                str(base_dir),
+                "--candidate_dir",
+                str(candidate),
+                "--output_dir",
+                str(output),
+            ]
+        )
+
+    assert _read_json(base_dir / "metrics.json")["task_success"] == 8 / 12
+    assert _read_json(oracle_dir / "metrics.json")["task_success"] == 1.0
+    assert _read_json(fault_dir / "metrics.json")["task_success"] == 0.0
+    assert _read_json(go_dir / "release.json")["decision"] == "GO"
+    assert _read_json(no_go_dir / "release.json")["decision"] == "NO-GO"
+    for release_dir in (go_dir, no_go_dir):
+        assert {path.name for path in release_dir.iterdir()} == {
+            "release.json",
+            "report.html",
+            "report.md",
+        }
+
+    go_health = TestClient(create_app(go_dir, Path("domains/retail_ops/v1"), build_dir)).get(
+        "/health"
+    )
+    no_go_health = TestClient(create_app(no_go_dir, Path("domains/retail_ops/v1"), build_dir)).get(
+        "/health"
+    )
+    assert go_health.json()["deployment"] == "candidate"
+    assert no_go_health.json()["deployment"] == "baseline"
+
+    for release_dir in (go_dir, no_go_dir):
+        public_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(release_dir.iterdir())
+            if path.suffix in {".json", ".md", ".html"}
+        )
+        for forbidden in ("target_state", "expected_calls", "user_request"):
+            assert forbidden not in public_text
