@@ -78,6 +78,16 @@ def test_git_ignores_bfcl_outputs_that_embed_raw_benchmark_data() -> None:
         assert result.returncode == 0, f"未忽略含 BFCL 原始数据的产物: {path}"
 
 
+def test_git_ignores_retail_ops_private_holdout() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "data/private/retail_ops/v1/holdout/tasks.jsonl"],
+        cwd=ROOT,
+        check=False,
+    )
+
+    assert result.returncode == 0, "必须忽略 RetailOps private holdout"
+
+
 def test_all_config_file_references_are_project_relative() -> None:
     path_keys = {
         "model_name",
