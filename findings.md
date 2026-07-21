@@ -81,3 +81,8 @@
 - Task 7 的配对门禁必须先验证 mode、bundle、manifest、evaluator、任务数、seed、parser 与 budget 完全一致，再一次性计算成功率增量、政策违规增量、非法调用、p95 比率和证据完整性；任何失败都选择 baseline，不能首错短路。
 - Task 7 自审发现仅校验 `failed_gate_ids` 一致性仍允许删除整个通过 gate；已用失败测试固定五项 gate 的集合与顺序，保证 loader 不接受残缺 release report。
 - R1 Task 7 已在 `042071a` 完成五项配对发布门禁、八字段公平性校验、零基座延迟安全处理、GO/NO-GO baseline fallback 决策及确定性 JSON/Markdown/HTML 报告；最终 16 selected、196 full tests、Ruff、mypy 与 diff 检查通过。
+- 现有通用参数/`load_config` 位于 `src/veritool_rl/cli.py`，尚无产品 console script；Task 8 可新增独立 `product_cli.py` 而不修改历史脚本入口或包名。
+- 已提交 config 的路径治理目前由 `veritool_rl.paths.validate_project_relative_path` 提供；Task 8 只需验证配置内 `bundle_dir`，用户显式传入的 input/output run 目录不受项目相对限制。
+- Task 8 自审发现 release CLI 若只比较 base/candidate，可能用另一 bundle 的阈值发布；已用失败测试要求两份 run evidence 同时匹配配置加载的 release bundle SHA。
+- 当前 uv 版本使用 `UV_DEFAULT_INDEX` 覆盖全局 default-index；`UV_INDEX_URL` 无法阻止全局镜像 URL 规范化。显式设为 lock 中的 `https://pypi.tuna.tsinghua.edu.cn/simple` 后离线解析不改 `uv.lock`。
+- R1 Task 8 已在 `df68c60` 完成独立 `product_cli.py`、严格命令配置键、build/evaluate/release 分发、项目相对 bundle 路径、5 份稳定 YAML 和 `retail-agent-ops` console entry；最终 15 selected、201 full tests、Ruff、mypy、配置解析、lock 与 diff 检查通过。

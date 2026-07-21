@@ -31,6 +31,9 @@
 | 2026-07-21 | Task 7 RED `.venv/bin/pytest tests/test_release_policy.py -q` | expected 13 failed；缺 `retail_ops.release` 模块 |
 | 2026-07-21 | Task 7 首轮 GREEN/full + Ruff + mypy | 15 selected passed；195 full passed；Ruff passed；mypy 44 files passed |
 | 2026-07-21 | Task 7 自审补测/final | 缺失固定 gate 的 RED 生效；16 selected、196 full passed；Ruff、mypy、diff passed |
+| 2026-07-21 | Task 8 RED/首轮 GREEN | 4 expected failures（缺产品 CLI/entry point）后 14 selected passed；bundle provenance 补测先失败后修复，最终 15 selected passed |
+| 2026-07-21 | Task 8 lock 审计 | `UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --offline` 解析 95 packages；`uv.lock` 无 diff |
+| 2026-07-21 | Task 8 final | 15 selected、201 full passed；Ruff、mypy 45 files、TOML/5 YAML、lock check、diff passed |
 
 ## 初始化决策
 
@@ -72,6 +75,7 @@ R1 正在按 10 个 TDD/审查单元实施；正式 train/dev/holdout 仍留到 
 - 后续从 Task 6 评测证据、指标与脱敏开始，继续执行到 Task 10 和最终 HEAD 质量门。
 - Task 6 以提交 `9b13c84` 完成；公开 failures 使用固定允许列表，run loader 会验证 run ID 与 5 个证据产物哈希，holdout 在 policy 执行前拒绝。
 - Task 7 以提交 `042071a` 完成；Oracle 走 GO/candidate，unknown-tool 走 NO-GO/baseline，报告无时间戳且 HTML 文本转义。
+- Task 8 以提交 `df68c60` 完成；稳定 build/evaluate/release CLI、5 份配置和 console entry 已落地，release 会核对配置 bundle 与两份 evidence 的 SHA。
 
 ## 2026-07-20 — Codex 启动与仓库隔离简化
 
