@@ -17,7 +17,7 @@ R1 当前；方案 A 规格与实现计划已获批准，按 subagent-driven 流
 - [x] 方案 A 规格与 10 项实现计划获用户批准。
 - [x] 用户选择 subagent-driven 执行方式。
 - [x] 完成隔离状态、计划冲突和 `111 passed` 基线检查。
-- [ ] 逐项完成 Task 1-10 的 TDD 实现、提交与审查（Task 1-6 已完成，Task 7-10 待执行）。
+- [ ] 逐项完成 Task 1-10 的 TDD 实现、提交与审查（Task 1-7 已完成，Task 8-10 待执行）。
 - [ ] 完成 whole-branch 审查、最终质量门和 R1 阶段收口。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`。
 
@@ -39,6 +39,7 @@ R1 当前；方案 A 规格与实现计划已获批准，按 subagent-driven 流
 | 2026-07-21 | Task 6 规格检索误写为不存在的 `docs/SPEC.md` | 确认产品契约实际位于根目录 `SPEC.md`，后续使用正确路径 |
 | 2026-07-21 | Task 6 首次 GREEN 加载 `run.json` 时错误要求 artifact map 保留插入顺序 | canonical JSON 会排序 object key；改为验证精确 key 集合，确定性由写入器保证 |
 | 2026-07-21 | Task 6 `ruff format --check` 报告 4 个变更文件需格式化 | 使用仓库 `.venv/bin/ruff format` 仅格式化本任务 Python 文件后重跑验证 |
+| 2026-07-21 | Task 7 `ruff format --check` 报告 `release.py` 需格式化 | 使用仓库 formatter 处理该文件并重跑 focused/Ruff/diff |
 
 ## Maintenance: Codex 启动简化
 

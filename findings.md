@@ -78,3 +78,6 @@
 - Task 6 RED 已确认失败原因正确：7 个用例因 `veritool_rl.retail_ops.evaluation` 不存在失败，2 个指标断言因缺少 p50/p95 key 失败；其余既有 metrics 用例仍通过。
 - Task 6 首轮实现已达到 180 tests、Ruff 与 mypy 全绿；自审继续发现两个计划契约应补显式测试：manifest 的类别/family 覆盖完整性不能只靠文件哈希，`EvaluationMode.DEVELOPMENT` 不能被 qualification policy 的 split guard 意外阻断。
 - R1 Task 6 已在 `9b13c84` 完成：evidence 双哈希绑定 bundle/manifest，固定产物逐项哈希与 loader 防篡改，qualification/development 模式、任务覆盖/seed/split 前置校验、100% replay 指标、p50/p95、不可覆盖输出及允许列表失败脱敏；自审补测后 22 selected、182 full tests、Ruff、mypy 与 diff 检查通过。
+- Task 7 的配对门禁必须先验证 mode、bundle、manifest、evaluator、任务数、seed、parser 与 budget 完全一致，再一次性计算成功率增量、政策违规增量、非法调用、p95 比率和证据完整性；任何失败都选择 baseline，不能首错短路。
+- Task 7 自审发现仅校验 `failed_gate_ids` 一致性仍允许删除整个通过 gate；已用失败测试固定五项 gate 的集合与顺序，保证 loader 不接受残缺 release report。
+- R1 Task 7 已在 `042071a` 完成五项配对发布门禁、八字段公平性校验、零基座延迟安全处理、GO/NO-GO baseline fallback 决策及确定性 JSON/Markdown/HTML 报告；最终 16 selected、196 full tests、Ruff、mypy 与 diff 检查通过。
