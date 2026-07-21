@@ -7,6 +7,9 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import uvicorn
+
+from veritool_rl.artifacts import create_output_dir, sha256_file, write_json
 from veritool_rl.cli import load_config
 from veritool_rl.paths import validate_project_relative_path
 from veritool_rl.retail_ops.bundle import load_bundle
@@ -16,7 +19,8 @@ from veritool_rl.retail_ops.evaluation import (
     load_run_evidence,
 )
 from veritool_rl.retail_ops.manifests import build_qualification
-from veritool_rl.retail_ops.release import decide_release, write_release_report
+from veritool_rl.retail_ops.release import decide_release, load_release_report, write_release_report
+from veritool_rl.retail_ops.service import create_app
 
 
 def build_product_parser() -> argparse.ArgumentParser:
@@ -45,6 +49,16 @@ def build_product_parser() -> argparse.ArgumentParser:
         required=True,
         help="候选 run evidence 目录",
     )
+
+    serve = subparsers.add_parser("serve", help="按发布结论启动 qualification 服务")
+    _add_common_arguments(serve)
+    serve.add_argument(
+        "--release_dir",
+        type=Path,
+        required=True,
+        help="release report 目录",
+    )
+    serve.add_argument("--input_dir", type=Path, required=True, help="build 产物目录")
     return parser
 
 
@@ -56,6 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "build": _run_build,
         "evaluate": _run_evaluate,
         "release": _run_release,
+        "serve": _run_serve,
     }
     handlers[args.command](args)
     return 0
@@ -121,6 +136,33 @@ def _run_release(args: argparse.Namespace) -> None:
         raise ValueError("run evidence 与 release bundle SHA-256 不匹配")
     report = decide_release(baseline, candidate, bundle.release)
     write_release_report(report, args.output_dir)
+
+
+def _run_serve(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    _require_config_keys(config, {"bundle_dir", "host", "port"})
+    bundle_dir = _bundle_dir(config)
+    host = config["host"]
+    port = config["port"]
+    if not isinstance(host, str) or not host:
+        raise ValueError("host 必须是非空字符串")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("port 必须是 1 到 65535 的整数")
+
+    app = create_app(args.release_dir, bundle_dir, args.input_dir)
+    release = load_release_report(args.release_dir / "release.json")
+    create_output_dir(args.output_dir)
+    write_json(
+        args.output_dir / "service.json",
+        {
+            "release_sha256": sha256_file(args.release_dir / "release.json"),
+            "bundle_sha256": load_bundle(bundle_dir).bundle_sha256,
+            "deployment": release.deployment,
+            "host": host,
+            "port": port,
+        },
+    )
+    uvicorn.run(app, host=host, port=port)
 
 
 def _bundle_dir(config: dict[str, Any]) -> Path:
