@@ -423,3 +423,27 @@ Qwen3-4B 留到 R3，因为用户批准 R2 同时建立两份 dev base；未提�
 
 **后果与下一步**：R2 状态改为“当前”，进入八个 TDD/审查任务。正式外部动作尚未授权；
 在对应命令获得批准前，不生成仓库正式数据、不调用 API、不连接服务器、不下载模型、不运行 GPU。
+
+### LOG-20260722-03：R2 Task 1 指纹完整性审查失败并修复
+
+- 日期：2026-07-22
+- 阶段/任务：R2 / Task 1 formal family-first 任务生成
+- 状态：失败已修复
+- 关联：`83bd0b3`、`dfdb8dd`
+
+**背景与难点**：初版已生成精确的六类 × 35 family × 2 variant，并能让全部 420 条任务在
+`RetailOpsEnv` 中执行成功；但正式数据隔离不仅要求当前结果正确，还要求后续篡改和派生泄漏能被
+指纹与自动测试可靠发现。
+
+**失败证据**：独立审查证明初版 `derivation_fingerprint` 信任任务自带的
+`metadata.formal_family`，只修改实际 deadline/owner/refund status/lookup status 时可能不变；
+`assert_exact_quotas()` 也会接受复制 variant 0 替换 variant 1。catalog 与 420 条环境执行当时仅
+存在临时验证，未固化成回归测试，因此审查结论为 NOT PASS。
+
+**修复与验证**：从实际 initial/target state 重建去 opaque ID 的政策投影，逐条重算五类指纹，
+强制每 family 的 variant 为 `{0,1}` 且 task/content 唯一；新增七状态、七 margin、0..4 distractor、
+四原因公式、调用序列、冻结 bundle 原因和全部 420 条环境语义测试。复审确认 3 个 Important 和
+1 个 Minor 全部关闭；17 个 focused、219 个全仓测试、Ruff、mypy 与 diff 检查通过。
+
+**后果与下一步**：Task 1 可以作为 Task 2 manifest/holdout 的可信输入。该失败没有读取或生成
+正式数据，也没有调用 API、模型、SSH 或 GPU；外部审批门保持不变。

@@ -16,6 +16,7 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 - 影响文件：`src/veritool_rl/retail_ops/`、`src/veritool_rl/product_cli.py`、`tests/`、`configs/`、`manifests/retail_ops/v1/`、`pyproject.toml`/`uv.lock`、R2 spec/plan、三份 planning 文件和追加式项目日志；私有数据位于 ignored `data/private/retail_ops/v1/r2/`。
 - [x] 创建 `feature/r2-formal-data-and-base-eval` 并复核 CPU 基线。
 - [x] 写入并自审 R2 正式设计与逐任务 TDD 实施计划。
+- [x] Task 1：实现并复审 formal family-first 任务生成、五类指纹和 420 条环境语义回归（`83bd0b3`、`dfdb8dd`）。
 - [ ] 实现正式任务、manifest、holdout 治理及密封评测合同。
 - [ ] 实现动态 provider 路由、teacher 采集、回放质检与 train 导出。
 - [ ] 实现 Qwen3-1.7B/4B dev base 配置、运行证据和 CLI 分派。
@@ -59,6 +60,8 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 | 2026-07-22 | 新增治理测试仍因目标短语跨 Markdown 换行失败 | 保留语义不变并合并为单行可机器检查契约，再重跑 focused test |
 | 2026-07-22 | 一次双引号 `rg` 模式中的反引号被 zsh 当作命令替换，并且一次 reviewer wait 使用了低于工具下限的 1 秒 timeout | 检索模式改用安全单引号/无反引号形式；等待调用改为工具允许的至少 10 秒，均未修改产品状态 |
 | 2026-07-22 | 计划审阅收口记录的跨文件补丁因 `progress.md` 目标句与实际表述不同而整体拒绝 | 读取文件尾部后按文件拆分应用，未产生半写入 |
+| 2026-07-22 | R2 Task 1 实现代理完成 RED 和初版实现后因所选模型容量不足退出 | 保留全部未提交改动，换用新 worker 接手 focused GREEN、修复、全门禁和提交；判定为代理基础设施故障而非仓库回归 |
+| 2026-07-22 | Task 1 独立审查发现 derivation 未绑定实际政策状态、quota 接受重复变体，且 catalog/420 条环境验证未固化为测试 | 判定 NOT PASS；派回实现代理先补 deadline/owner/status/duplicate/tamper/catalog/environment RED，再强化真值投影和 integrity 校验，复审通过前不进入 Task 2 |
 
 ## Maintenance: Codex 启动简化
 

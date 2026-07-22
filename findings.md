@@ -123,3 +123,7 @@
 - 已把 active instructions 切换到已批准 R2 CPU 实现，并固定 family 轴：lookup 七状态、窗口 margin `1/2/3/5/7/10/14`、0..4 distractor、四原因映射。content fingerprint 明确排除 task_id/split/答案字段；dev base 必须经过 private artifact SHA 与公开 manifest 双检；train/SFT 逐任务文件只写 ignored private root。
 - 二次计划审阅仅余 teacher 原始采集目录未显式限定 private。已新增治理 RED，并把 smoke/full 的 raw response、step、trajectory、usage、checkpoint 和哈希固定到不可覆盖的 private ignored `teacher-collection/<attempt>/`，计划要求测试拒绝公开或非私有输出。
 - 最终只读复审确认 R2 规格/计划 PASS，无 Critical/Important；CPU 实现可以依次执行，外部资源审批门保持不变。
+- Task 2 可在不改 R1 schema 的前提下新增 `FormalTaskManifest`/`FormalHoldoutReceipt`：现有 R1 writer 会公开原始 task/family ID，不能复用为 R2 public manifest；但 `canonical_json`、`create_output_dir`、`sha256_file` 和 strict Pydantic 模式可以复用。
+- 现有 `authorize_holdout` 已有 purpose-first、路径和整文件 SHA 门，但旧 receipt 暴露 task/family ID，loader 也不验证 R2 五类指纹/配额/顺序；R2 必须保持独立两阶段授权，且非 release 必须在任何 open/read 前失败。
+- Task 1 独立审查发现初版 derivation 指纹信任 `metadata.formal_family`，实际 deadline/owner/refund status/lookup status 被篡改时可能不变；正式 integrity 校验必须从 task 真值重建政策投影，不能把同一记录携带的 metadata 当独立证据。
+- 初版 quota 校验只计每 family 两条，会接受复制 variant 0 替换 variant 1；需同时校验 `{0,1}`、task/content 唯一和五指纹可重算一致。420 条环境语义、catalog 轴和冻结原因集合也必须进入自动测试，不能只留在临时验证报告。
