@@ -16,7 +16,7 @@
 
 ## 本地工作区
 
-- 推荐工作区：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
+- 推荐工作区：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
 - 初始化分支：`portfolio/retail-agent-ops-init`
 - 原始工作区：`/home/tjk/myProjects/internship-projects/veritool-rl`，不得清理或覆盖。
 - Python 包暂为 `veritool_rl`；产品品牌是 RetailAgentOps。
@@ -25,11 +25,18 @@
 本地初始化：
 
 ```bash
-env -u UV_INDEX_URL uv sync --extra dev --frozen
-env -u UV_INDEX_URL uv sync --project tools/bfcl_eval --frozen
+UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --extra dev --frozen
+UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --project tools/bfcl_eval --frozen
 ```
 
 本地 `data/external_repos` 是 ignored 相对软链接，指向原仓库已固定的 benchmark checkout。若链接不存在，先核对 `docs/LEGACY_INVENTORY.md`，不得联网拉取浮动 HEAD 替代。
+
+## 当前 R2 交接入口
+
+在正式目录启动新的 Codex 会话后，把
+`docs/handoffs/2026-07-22-r2-codex-execution-prompt.md` 的完整内容作为首条任务提示词。
+该提示词负责把 R2 拆成审批、实现、证据和收口门；它允许使用 subagent，但不会替用户
+选择正式数据来源、teacher/API、计划主模型或远程 GPU 命令。
 
 ## 任务开始协议
 

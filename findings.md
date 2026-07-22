@@ -103,3 +103,9 @@
 - 迁移前新鲜 CPU 基线为 `211 passed`，目标目录不存在，HEAD 为 `59cc1b574da0b55cb249aaeca09ab5a720b24ea6`，磁盘可用 813G；可在保留回滚点的前提下原子移动现有 201M 目录。
 - R2 可复用 R1 的 `TaskSpec`、`RetailOpsEnv`、`TaskManifest`、`HoldoutReceipt`、`assert_split_isolation`、`authorize_holdout`、replay、metrics 和 redaction，但现有 `build_qualification_tasks` 仅能生成 12 条 qualification，`evaluate_retail_ops` 明确拒绝 holdout，通用 `scripts/build_trajectories.py`/`scripts/evaluate.py` 仍是 MiniRetail-only，不能直接冒充 R2 正式流水线。
 - 现有 `build_success_trajectories` 与 `trajectory_to_sft_example` 可作为 train/dev 轨迹质检基础；R2 需要独立 RetailOps split builder、数据 provenance/quality report、sealed holdout freeze/evaluator 和 base-run contract，而 QLoRA 训练本身属于 R3，不应塞入 R2 提示词。
+- `data/external_repos` 的真实目标包含 `gorilla/`、`ToolSandbox/`、`tau2-bench/` 与 `appworld/`；迁移后应验证 `data/external_repos/gorilla` 的固定 commit，而不是误在 external_repos 父目录读取原 `veritool-rl` 的 HEAD。
+- R2 只读 subagent 审计确认：当前 `TaskManifest` 的完整任务 hash 会随 task_id/split 改变，不能识别派生泄漏，必须增加 answer-free content 与 derivation/source fingerprint；holdout loader 也必须在整文件 SHA 后核对 receipt 的逐项内容一致性。
+- 正式 base evidence 需补 checkpoint/revision/file hash、commit、lock SHA、GPU UUID、显存、wall time、吞吐和成本；CPU 测试使用 fake backend。现有通用 evaluator 继续拒绝 holdout，新的 sealed evaluator 独立实现，完整轨迹留 private、公共只出聚合 allowlist。
+- `docs/EXECUTION_PLAN.md` 要求 R2 同时建立 Qwen3-1.7B 与计划主模型 base，R3 又把 Qwen3-4B 下载/smoke 列在 R3。R2 提示词已把此冲突设为用户决策门：要么审批 R2 两个 base，要么正式修改阶段验收；不能缺报告却直接收口。
+- 2026-07-22 实际迁移完成：正式目录为 `/home/tjk/myProjects/internship-projects/retail-agent-ops`，旧 `.worktrees/retail-agent-ops` 路径已不存在；仓库仍为自身 `.git`、分支 `portfolio/retail-agent-ops-init`、无 remote，且 HEAD 保持 R1 基线 `59cc1b5` 的后代。
+- 新建主环境与 BFCL evaluator 环境均为 Python 3.11.15；`.venv/bin/pytest` 和 `.venv/bin/mypy` shebang 已指向正式目录。外部仓库链接解析到未修改的原项目路径，Gorilla commit 仍为 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。

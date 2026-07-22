@@ -4,7 +4,8 @@
 
 - 原仓库：`/home/tjk/myProjects/internship-projects/veritool-rl`
 - 原分支/起点：`main@3e1a88d7d5298bb825c41db8b07a98dea2f5c490`
-- 初始化目录：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（现已转为独立 checkout）
+- 初始化目录：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（历史路径，2026-07-22 已迁出）
+- 当前正式目录：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout）
 - 初始化分支：`portfolio/retail-agent-ops-init`
 - 迁入状态快照：`29ea3b9`
 - 初始化来源远程仅有 `gpu-4090`；独立 checkout 不配置远程，远程操作继续按显式审批执行。
@@ -35,7 +36,7 @@
 ## 本地非 Git 依赖
 
 - `tools/bfcl_eval/.venv` 由 `uv sync --project tools/bfcl_eval --frozen` 创建。
-- `data/external_repos` 是 ignored 相对软链接，当前指向原仓库固定 checkout。
+- `data/external_repos` 是 ignored 相对软链接 `../../veritool-rl/data/external_repos`，当前指向原仓库固定 checkout。
 - Gorilla/BFCL commit 必须保持 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。
 - 模型、数据、checkpoint 和运行产物继续不进入 Git。
 

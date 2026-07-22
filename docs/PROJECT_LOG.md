@@ -359,3 +359,35 @@ GO/candidate 与 NO-GO/baseline。新鲜树与独立重复树逐文件一致；t
 
 **后果与下一步**：R1 关闭后停止继续实现。R2 只有在用户确认正式数据来源、配额和冻结规则后
 才可启动；在此之前不得下载模型、调用商业 API、运行 GPU 或生成正式 holdout。
+
+### LOG-20260722-01：迁入正式项目目录并建立 R2 Codex 交接门
+
+- 日期：2026-07-22
+- 阶段/任务：R1→R2 / 项目迁移与执行交接
+- 状态：解决
+- 关联：`docs/handoffs/2026-07-22-r2-codex-execution-prompt.md`、`docs/LEGACY_INVENTORY.md`、`59025fc`
+
+**背景与难点**：仓库虽已拥有独立 `.git`，物理目录仍位于 `.worktrees/`，容易被当成
+临时 checkout。直接改路径会破坏两个虚拟环境中的绝对 shebang，也会使共享 benchmark
+checkout 的旧相对链接按错误层级解析；同时 R2 需要在新目录保留数据、API、模型和 GPU
+审批门，而不是把“完整执行”误解为可自行选择外部资源。
+
+**证据**：现有仓库已移动到
+`/home/tjk/myProjects/internship-projects/retail-agent-ops`，旧目录不存在；Git 仍为自身
+`.git`、分支 `portfolio/retail-agent-ops-init`、无 remote，且 HEAD 是 R1 提交 `59cc1b5`
+的后代。主项目与 BFCL evaluator 环境均以冻结 lock 重建为 Python 3.11.15，主命令
+shebang 已指向新目录；`data/external_repos` 解析到未修改的原仓库 external checkout，
+Gorilla 仍固定在 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。新目录首次完整门禁为
+211 passed、Ruff 通过、mypy 46 个源文件通过、lock 解析 101 packages、diff 检查通过。
+
+**决定与方案**：原子移动唯一活动仓库，不建立第二份 clone；把路径敏感环境视为可重建
+资产，用 `uv sync --frozen` 重建，并把软链接改为新层级的相对路径。R2 使用专门交接提示词，
+允许批准计划后的 subagent TDD/双重审查，但正式数据来源、teacher/API、计划主模型、模型
+下载和每条远程 GPU 命令仍需用户分别确认。
+
+**备选方案与未选择理由**：未复制或本地 clone，因为会留下两个活动事实源且无法自然迁移
+ignored evidence；未继续保留 `.worktrees/` 历史路径，因为目录语义仍有误清理风险；未在本轮
+启动 R2，因为数据/teacher 和两模型 base 的阶段口径仍需用户裁决。
+
+**后果与下一步**：新 Codex 会话从正式目录读取 R2 交接提示词并先执行只读 preflight；
+R2 状态继续为“待执行”，本轮未生成正式数据、未调用 API、未下载模型、未运行 GPU。

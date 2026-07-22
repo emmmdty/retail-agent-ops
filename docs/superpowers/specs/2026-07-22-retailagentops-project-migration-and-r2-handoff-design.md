@@ -81,4 +81,3 @@
 - `.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`、`uv lock --check` 全部通过；
 - 提示词无 `TBD`/`TODO`/占位符，包含新目录、配额、审批门、holdout 硬停机条件、subagent 规则、最终命令和阶段状态更新规则；
 - `docs/LEGACY_INVENTORY.md`、planning 文件和 append-only `docs/PROJECT_LOG.md` 记录迁移事实。
-

@@ -32,7 +32,7 @@
 - Consumes: clean R1 repository at `59cc1b5`, approved destination path.
 - Produces: committed migration design, rollback strategy, and exact validation contract.
 
-- [ ] **Step 1: Verify the destination and Git topology**
+- [x] **Step 1: Verify the destination and Git topology**
 
 Run:
 
@@ -45,7 +45,7 @@ git diff --check
 
 Expected: destination absent; HEAD starts at `59cc1b5`; only the migration planning files are modified before the preparation commit.
 
-- [ ] **Step 2: Verify the pre-migration CPU baseline**
+- [x] **Step 2: Verify the pre-migration CPU baseline**
 
 Run:
 
@@ -55,7 +55,7 @@ Run:
 
 Expected: `211 passed`.
 
-- [ ] **Step 3: Commit migration preparation**
+- [x] **Step 3: Commit migration preparation**
 
 ```bash
 git add docs/superpowers/specs/2026-07-22-retailagentops-project-migration-and-r2-handoff-design.md docs/superpowers/plans/2026-07-22-retailagentops-project-migration.md task_plan.md findings.md progress.md
@@ -76,7 +76,7 @@ Expected: clean tracked worktree at the old path.
 - Consumes: clean committed repository and reconstructible uv lockfiles.
 - Produces: one working repository at the formal path with path-correct environments and benchmark link.
 
-- [ ] **Step 1: Move the repository once**
+- [x] **Step 1: Move the repository once**
 
 Run from `/home/tjk/myProjects/internship-projects`:
 
@@ -86,7 +86,7 @@ mv /home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops /home/tj
 
 Expected: old path absent, new path present, Git HEAD unchanged.
 
-- [ ] **Step 2: Create a rollback directory and move path-sensitive assets into it**
+- [x] **Step 2: Create a rollback directory and move path-sensitive assets into it**
 
 Run the following as one shell block and record the printed rollback path:
 
@@ -100,7 +100,7 @@ mv /home/tjk/myProjects/internship-projects/retail-agent-ops/data/external_repos
 
 Expected: Git repository and local evidence remain in place; only reconstructible ignored assets move to rollback storage.
 
-- [ ] **Step 3: Recreate the benchmark link for the new path depth**
+- [x] **Step 3: Recreate the benchmark link for the new path depth**
 
 Run from the new repository:
 
@@ -111,7 +111,7 @@ readlink -f data/external_repos
 
 Expected resolved target: `/home/tjk/myProjects/internship-projects/veritool-rl/data/external_repos`.
 
-- [ ] **Step 4: Rebuild both frozen uv environments**
+- [x] **Step 4: Rebuild both frozen uv environments**
 
 ```bash
 UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --extra dev --frozen
@@ -120,7 +120,7 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --project tool
 
 Expected: `.venv/` and `tools/bfcl_eval/.venv/` are recreated without changing either lockfile.
 
-- [ ] **Step 5: Verify path-sensitive assets before deleting rollback data**
+- [x] **Step 5: Verify path-sensitive assets before deleting rollback data**
 
 ```bash
 head -n 1 .venv/bin/pytest
@@ -146,11 +146,11 @@ Expected: executable shebangs reference the new absolute directory; both Python 
 - Consumes: R1 final contracts, R2 execution-plan requirements, new repository path.
 - Produces: copy-paste-ready R2 prompt with decision gates, subagent workflow, exact acceptance gates, and migration provenance.
 
-- [ ] **Step 1: Write the prompt with complete startup and stage boundaries**
+- [x] **Step 1: Write the prompt with complete startup and stage boundaries**
 
 The prompt must contain the exact new `cwd`, required document read order, R1 base commit, current status checks, R2 quota/category invariants, required decision gates, subagent edit isolation, holdout hard stops, remote GPU approval format, TDD/commit/review loop, final quality commands, and completion-document updates.
 
-- [ ] **Step 2: Perform a placeholder and boundary scan**
+- [x] **Step 2: Perform a placeholder and boundary scan**
 
 Run:
 
@@ -161,7 +161,7 @@ rg -n "240/60/120|40/10/20|data/private/retail_ops/v1|gpu-4090|subagent|211 pass
 
 Expected: first command has no matches; second command matches every required boundary.
 
-- [ ] **Step 3: Record migration provenance without rewriting history**
+- [x] **Step 3: Record migration provenance without rewriting history**
 
 Update the current-path facts in `docs/LEGACY_INVENTORY.md`; append a new `LOG-20260722-*` entry to `docs/PROJECT_LOG.md`; update the three planning files. Do not edit existing log entries.
 
@@ -174,7 +174,7 @@ Update the current-path facts in `docs/LEGACY_INVENTORY.md`; append a new `LOG-2
 - Consumes: migrated repository, rebuilt environments, completed handoff.
 - Produces: final clean migration commit and reproducible evidence.
 
-- [ ] **Step 1: Run the complete CPU quality gate**
+- [x] **Step 1: Run the complete CPU quality gate**
 
 ```bash
 .venv/bin/pytest -q
@@ -186,7 +186,7 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check
 
 Expected: all tests pass, Ruff/mypy pass, no diff errors, lock unchanged.
 
-- [ ] **Step 2: Verify path, history, remote, ignored evidence, and benchmark link**
+- [x] **Step 2: Verify path, history, remote, ignored evidence, and benchmark link**
 
 ```bash
 test ! -e /home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops

@@ -14,9 +14,9 @@ R1 已完成并关闭；正在执行进入 R2 前的仓库物理迁移与 Codex 
 - 输出：将仓库迁至 `/home/tjk/myProjects/internship-projects/retail-agent-ops`，重建路径敏感环境与软链接，生成可复制给 Codex 的 R2 完整执行提示词、迁移设计/计划和治理记录。
 - 非目标：本轮不执行 R2 数据生成、模型下载、商业 API、GPU 推理/训练、DPO/GRPO，不创建 remote/公开仓库，不全仓重命名 `veritool_rl`。
 - 影响文件：`docs/superpowers/specs/`、`docs/superpowers/plans/`、`docs/handoffs/`、`docs/LEGACY_INVENTORY.md`、`docs/PROJECT_LOG.md`、三份 planning 文件；ignored `.venv`、`tools/bfcl_eval/.venv`、`data/external_repos`。
-- [ ] 固定迁移设计、回滚点、目标路径和验收命令。
-- [ ] 迁移现有独立 Git 仓库并重建两个 uv 环境与 benchmark 软链接。
-- [ ] 写入并审查 R2 Codex 全执行提示词，允许 subagent 但保留数据/GPU/API 决策门。
+- [x] 固定迁移设计、回滚点、目标路径和验收命令。
+- [x] 迁移现有独立 Git 仓库并重建两个 uv 环境与 benchmark 软链接。
+- [x] 写入并审查 R2 Codex 全执行提示词，允许 subagent 但保留数据/GPU/API 决策门。
 - [ ] 在新目录运行完整 CPU 质量门、路径/历史/软链接/提示词静态验收并提交。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`、`UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check`、Git/路径/软链接检查。
 
@@ -48,6 +48,7 @@ R1 已完成并关闭；正在执行进入 R2 前的仓库物理迁移与 Codex 
 | 2026-07-21 | Task 10 新鲜 qualification 证据树在最终状态审计中显示为未跟踪文件 | 新增失败治理断言并将 `/reports/retail_ops/` 纳入产品运行产物 ignore 边界，保留本地证据但不提交 |
 | 2026-07-21 | Task 10 完成前 targeted format check 报告两个新增测试需格式化 | 仅格式化 `test_retail_ops_e2e.py` 与 `test_project_governance.py`，随后从头重跑完整质量门 |
 | 2026-07-22 | `using-superpowers` 的 Codex reference 首次按错误的技能根路径读取失败 | 按 SKILL.md 相对路径改读 `skills/using-superpowers/references/codex-tools.md`，已恢复完整指令 |
+| 2026-07-22 | 迁移准备提交前 `git diff --cached --check` 报告设计文件 EOF 多一个空行，但 shell 未启用 fail-fast 仍完成提交 | 在最终文档提交中删除多余空行；后续提交命令使用 `set -e` 或显式检查退出码后再 commit |
 
 ## Maintenance: Codex 启动简化
 

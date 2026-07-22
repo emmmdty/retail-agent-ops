@@ -40,6 +40,8 @@
 | 2026-07-21 | Task 10 RED | E2E 闭环通过；8 项 selected 中仅 closeout 文档治理断言按预期失败 |
 | 2026-07-21 | Task 10 artifact acceptance | baseline/oracle/fault 为 8/12、12/12、0/12；GO/candidate 与 NO-GO/baseline；重复树逐文件一致；公开边界与 HTML 检查通过 |
 | 2026-07-21 | Task 10 final before commit | 8 selected、211 full passed；Ruff、mypy 46 files、lock 与 diff 检查通过；RetailOps reports ignore 治理负测/修复通过 |
+| 2026-07-22 | 正式目录迁移后首次完整质量门 | 211 passed；Ruff passed；mypy 46 files passed；lock 解析 101 packages；diff passed |
+| 2026-07-22 | 迁移路径与资产检查 | 新旧路径、独立 `.git`、R1 ancestry、无 remote、ignored evidence、新 shebang、Gorilla 固定 commit 全部通过 |
 
 ## 初始化决策
 
@@ -57,6 +59,9 @@ train/dev/holdout、调用模型或进入训练。
 - 用户批准把现有独立 checkout 迁移为正式项目目录，并要求生成可在新目录启动、允许 subagent 的 R2 全阶段执行提示词。
 - 本轮只做迁移、环境重建、交接设计和静态/CPU 验证；R2 正式数据、模型、API 与 GPU 仍由新会话按门禁执行。
 - 迁移前基线：`portfolio/retail-agent-ops-init@59cc1b5`，工作树干净，无 remote；目标目录为 `/home/tjk/myProjects/internship-projects/retail-agent-ops`。
+- 现有独立仓库已原子移动到正式目录；旧 `.worktrees/retail-agent-ops` 路径已不存在，Git 历史、分支、ignored qualification 证据和无 remote 状态均保留。
+- 主项目与 `tools/bfcl_eval` 的路径敏感虚拟环境已用冻结 lock 在新目录重建；`data/external_repos` 已改为 `../../veritool-rl/data/external_repos`，Gorilla 仍固定在 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。
+- R2 完整执行交接入口为 `docs/handoffs/2026-07-22-r2-codex-execution-prompt.md`；它允许 subagent，但保留正式数据来源、teacher/API、计划主模型、模型下载和远程 GPU 的用户审批门。
 
 ## 2026-07-20 — R1 方案 A 规格准备
 
