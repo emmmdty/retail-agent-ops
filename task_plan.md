@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-R1 已完成并关闭；正在执行进入 R2 前的仓库物理迁移与 Codex 交接准备，R2 产品工作仍待新会话按提示词通过决策门后启动。
+R1 已完成并关闭；正式目录迁移与 R2 Codex 交接已经完成，R2 产品工作仍待新会话按提示词通过决策门后启动。
 
 ## Current Task
 
@@ -17,7 +17,7 @@ R1 已完成并关闭；正在执行进入 R2 前的仓库物理迁移与 Codex 
 - [x] 固定迁移设计、回滚点、目标路径和验收命令。
 - [x] 迁移现有独立 Git 仓库并重建两个 uv 环境与 benchmark 软链接。
 - [x] 写入并审查 R2 Codex 全执行提示词，允许 subagent 但保留数据/GPU/API 决策门。
-- [ ] 在新目录运行完整 CPU 质量门、路径/历史/软链接/提示词静态验收并提交。
+- [x] 在新目录运行完整 CPU 质量门、路径/历史/软链接/提示词静态验收并提交。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`、`UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check`、Git/路径/软链接检查。
 
 ## Task Rules

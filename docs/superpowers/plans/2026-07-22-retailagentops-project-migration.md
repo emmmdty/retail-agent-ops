@@ -200,14 +200,14 @@ readlink -f data/external_repos
 
 Expected: every command succeeds and the link resolves to the original external checkout.
 
-- [ ] **Step 3: Commit the handoff and migration record**
+- [x] **Step 3: Commit the handoff and migration record**
 
 ```bash
 git add docs/handoffs/2026-07-22-r2-codex-execution-prompt.md docs/LEGACY_INVENTORY.md docs/PROJECT_LOG.md task_plan.md findings.md progress.md
 git commit -m "docs: hand off RetailAgentOps R2 execution"
 ```
 
-- [ ] **Step 4: Re-run the final verification on actual HEAD**
+- [x] **Step 4: Re-run the final verification on actual HEAD**
 
 Repeat the complete CPU gate and `git status --short --branch`.
 

@@ -42,6 +42,7 @@
 | 2026-07-21 | Task 10 final before commit | 8 selected、211 full passed；Ruff、mypy 46 files、lock 与 diff 检查通过；RetailOps reports ignore 治理负测/修复通过 |
 | 2026-07-22 | 正式目录迁移后首次完整质量门 | 211 passed；Ruff passed；mypy 46 files passed；lock 解析 101 packages；diff passed |
 | 2026-07-22 | 迁移路径与资产检查 | 新旧路径、独立 `.git`、R1 ancestry、无 remote、ignored evidence、新 shebang、Gorilla 固定 commit 全部通过 |
+| 2026-07-22 | R2 交接提交 `32b9bf7` 实际 HEAD 复验 | 211 passed；Ruff、mypy、lock、diff、迁移路径、BFCL/敏感路径与提示词静态边界全部通过；工作树干净 |
 
 ## 初始化决策
 
@@ -62,6 +63,7 @@ train/dev/holdout、调用模型或进入训练。
 - 现有独立仓库已原子移动到正式目录；旧 `.worktrees/retail-agent-ops` 路径已不存在，Git 历史、分支、ignored qualification 证据和无 remote 状态均保留。
 - 主项目与 `tools/bfcl_eval` 的路径敏感虚拟环境已用冻结 lock 在新目录重建；`data/external_repos` 已改为 `../../veritool-rl/data/external_repos`，Gorilla 仍固定在 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。
 - R2 完整执行交接入口为 `docs/handoffs/2026-07-22-r2-codex-execution-prompt.md`；它允许 subagent，但保留正式数据来源、teacher/API、计划主模型、模型下载和远程 GPU 的用户审批门。
+- 迁移与 R2 交接主体已提交为 `32b9bf7`；该提交已在实际 HEAD 上从头通过完整 CPU、路径、历史、泄漏和 BFCL 边界复验。
 
 ## 2026-07-20 — R1 方案 A 规格准备
 
