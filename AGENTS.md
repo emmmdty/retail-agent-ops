@@ -36,7 +36,9 @@
 
 ## 当前状态
 
-- 当前阶段：`R0` 初始化与治理已完成，等待用户批准 `R1`。
-- 已继承 MiniRetail、BFCL 固定评测、QLoRA-SFT 与可追溯运行基础。
+- 当前阶段：`R2` CPU 实现；R1 产品契约与 v0.1 已完成。
+- R2 已完成方案审批，批准的正式规格与计划位于 `docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
+- 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。
+- 已继承 MiniRetail、BFCL 固定评测、QLoRA-SFT 与可追溯运行基础；R2 不训练 adapter。
 - 当前 BFCL Base/SFT 为 163/200 与 167/200，差值置信区间跨 0，不能声称稳定改善。
-- 不自动进入 `R1`；下一任务先由用户确认产品契约和冻结规则。
+- 正式 RetailOps holdout 在 R2 不运行真实模型；任何后续 release 访问仍须满足 sealed purpose/hash 门禁。

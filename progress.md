@@ -110,3 +110,11 @@ train/dev/holdout、调用模型或进入训练。
 - 验收：111 tests passed，Ruff、mypy 和 diff 检查通过；两个虚拟环境可用，Gorilla
   checkout 仍固定在 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`；`git-common-dir`
   为自身 `.git`，无远程；真实 Codex 启动到达正常目录信任界面并以 0 退出。
+
+## 2026-07-22 — R2 正式数据与双模型 Base 执行启动
+
+- 用户完成数据规模/生成算法、密封治理、provider 路由、teacher 阈值、Qwen3-1.7B/4B dev base、远端目录和审批门设计复核，并授权实施。
+- 从 `a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60` 创建分支 `feature/r2-formal-data-and-base-eval`；未创建第二 worktree、remote 或外部仓库。
+- 分支基线为 211 passed、Ruff 和 mypy 通过；`uv lock --check` 的唯一异常已定位为用户级清华镜像 URL 规范化，不涉及依赖版本或哈希变化。
+- 当前只进入 CPU 实现与 fake backend 验证。正式数据生成、API、模型下载、SSH 与 GPU 仍保持逐项审批；本地禁止 GPU，R2 禁止 adapter 训练和正式 holdout 模型评测。
+- R2 正式规格和逐任务 TDD 计划已经两轮独立只读审阅；content/dev loader/train export/teacher collection 等治理缺口均已收口，最终结论 PASS（无 Critical/Important）。

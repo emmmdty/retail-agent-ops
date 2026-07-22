@@ -18,7 +18,7 @@ codex
 
 /home/tjk/myProjects/internship-projects/retail-agent-ops
 
-目标是在保留 R1 全部契约和证据边界的前提下，完整规划、实现、运行并验证 R2，最终只在所有验收证据成立时把 R2 标为已完成。用户已授权你在本阶段使用 subagent，也授权在方案批准后连续实现 R2；但用户尚未授权你自行决定数据来源、teacher/provider/model、计划主模型、商业 API 费用、模型下载或任何 GPU 命令。这些仍是明确审批门。
+目标是在保留 R1 全部契约和证据边界的前提下，完整实现、运行并验证 R2，最终只在所有验收证据成立时把 R2 标为已完成。R2 设计选择和 CPU 实施计划已经用户批准；用户已授权本阶段使用 subagent 和连续 CPU 实现，但正式数据、API、模型下载、SSH、远端修改和每条 GPU 命令仍是独立审批门。
 
 一、不可违反的边界
 
@@ -28,7 +28,7 @@ codex
 4. R2 只交付正式数据与评测流水线、冻结 split/evaluator、base 证据和数据质量报告。QLoRA-SFT、adapter、candidate 训练、DPO、GRPO、在线 RL 属于 R3/R4，不得提前实施。
 5. 本地 WSL 只运行 CPU 开发、测试、lint、类型检查、任务构建和轻量 smoke。严禁本地 GPU 推理或训练。
 6. 任何 ssh gpu-4090 命令执行前，必须先给用户展示：完整命令、实际远程工作目录、物理 GPU、预计时长、预期产物；等待明确确认后才能运行。不得用“逻辑 GPU 0”代替物理卡说明。
-7. 商业 API、模型下载、teacher 批量生成、正式数据生成和正式 holdout 冻结前，必须先展示批准后的配置、数量、成本/时长和产物路径并等待确认。
+7. API、模型下载、teacher 批量生成、正式数据生成和正式 holdout 冻结前，必须先展示批准后的 route/config、数量、token/请求限制、时长和产物路径并等待确认。
 8. 固定 BFCL 200 条 holdout、其答案、失败样例和 evaluator 继续独立只读。它们不能成为 RetailOps train/dev、prompt/parser 调整或内部指标的输入。
 9. 正式 RetailOps holdout 的任务真值、prompt、target_state、expected_calls、完整轨迹和逐任务失败只能位于 ignored sealed 路径；不得进入 Git、planning 文件、subagent prompt、公开报告或开发分析输入。
 10. 不自动 push、发布或创建外部仓库。
@@ -46,7 +46,9 @@ codex
 7. docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md
 8. docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md
 9. docs/superpowers/specs/2026-07-22-retailagentops-project-migration-and-r2-handoff-design.md
-10. 本提示词文档
+10. docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md
+11. docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md
+12. 本提示词文档
 
 主 agent 自己读取适用技能的 SKILL.md；不得把技能解释委托给 subagent。复杂任务使用 planning-with-files；设计先使用 brainstorming，实施计划使用 writing-plans，批准后优先使用 subagent-driven-development，完成前使用 verification-before-completion。
 
@@ -74,9 +76,15 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check
 
 预期迁移后 CPU 基线是 211 passed，Ruff/mypy/lock/diff 全绿；测试数量可因当前 HEAD 的迁移治理测试增加而上升，不能因数量不同就机械回退。若现有工作树不干净，先判断修改归属并保留；若基线失败，先做证据化诊断，不得把环境问题误写成产品缺陷。
 
-四、R2 开始前的方案审批门
+四、已完成方案审批与当前执行入口
 
-完成 preflight 后，先把 task_plan.md 重写为 R2 当前任务，写清输入、输出、非目标、影响文件、失败模式和验收命令。然后做只读代码/数据能力盘点，至少覆盖：
+R2 设计选择和 CPU 实施计划已经用户批准，唯一正式事实源是：
+
+- `docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md`
+- `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`
+
+不得重复创建平行规格或重新打开已裁决方案。继续执行前仍须确认 `task_plan.md` 已写清当前
+输入、输出、非目标、影响文件、失败模式和验收命令，并复核以下代码/数据能力：
 
 - src/veritool_rl/retail_ops/{tasks,manifests,governance,evaluation}.py
 - src/veritool_rl/data/generators.py
@@ -84,27 +92,10 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check
 - scripts/build_trajectories.py、scripts/evaluate.py
 - 相关 tests、configs、manifests 和 ignored data 路径
 
-必须向用户提出至少两个可执行的数据来源/teacher 方案，并给出推荐项。每个方案必须说明：
-
-- 数据如何产生或导入；
-- teacher/provider/model 是否需要商业 API；
-- 影响文件和新产物目录；
-- 预计 API 成本、CPU/GPU 时长和外部依赖；
-- 如何保证六类配额、执行真值、去重、family 隔离和可重放；
-- 如何防止 teacher 看到或派生 holdout；
-- 验收标准和停止条件。
-
-同时明确提出 base 评测范围选择。docs/EXECUTION_PLAN.md 的 R2 要求“Qwen3-1.7B 与计划主模型的 base 评测”，而 R3 又把 Qwen3-4B 下载/smoke 放在 R3；这是必须由用户裁决的阶段冲突，不能静默解释。至少给出：方案 A 在 R2 经单独下载/GPU 审批后完成 Qwen3-1.7B 与精确 Qwen3-4B revision 的两份 base（不训练，满足 R2 原验收）；方案 B 只做 Qwen3-1.7B base，并经用户批准正式修改 R2/R3 验收边界。若不修改计划却缺计划主模型 base，不得把 R2 标为完成。还必须明确 R2 base 的 split/可见性：开发可见报告默认来自 dev；任何 holdout base 结果必须保持 sealed，不能成为 R3 的 prompt、parser、数据或 checkpoint 选择信号，最终只允许用于一次锁定的 base/candidate 配对发布。
-
-提出方案后停止，等待用户选择。未经选择不得生成正式 240/60/120 数据，不得调用 API，不得下载模型，不得运行远程推理。
-
-用户批准方案后：
-
-1. 用 brainstorming 把 R2 数据来源、split 算法、provenance、sealed evaluator、base 运行和报告设计写入 docs/superpowers/specs/2026-07-22-retailops-v1-r2-data-eval-design.md；
-2. 自审无占位符、矛盾和范围漂移后，请用户复核书面规格；
-3. 用户批准规格后，用 writing-plans 创建 docs/superpowers/plans/2026-07-22-retailops-v1-r2-data-eval.md；
-4. 计划必须拆成可独立 TDD、提交、规格审查和质量审查的任务；
-5. 用户批准计划后再进入连续实现。
+已批准的关键选择为：family-first `240/60/120`、动态 provider namespace、初始 DeepSeek
+V4 Pro 非思考 profile、teacher 总体/单类 `70%/50%` 门、Qwen3-1.7B 与 Qwen3-4B 两份
+dev-only base，以及 R2 不运行正式 holdout 模型。CPU 实现可连续推进；未经后续逐项批准，
+不得生成仓库正式 `240/60/120`、调用 API、连接服务器、下载模型或运行远程推理。
 
 五、R2 实现必须覆盖的最小闭环
 

@@ -391,3 +391,35 @@ ignored evidence；未继续保留 `.worktrees/` 历史路径，因为目录语�
 
 **后果与下一步**：新 Codex 会话从正式目录读取 R2 交接提示词并先执行只读 preflight；
 R2 状态继续为“待执行”，本轮未生成正式数据、未调用 API、未下载模型、未运行 GPU。
+
+### LOG-20260722-02：批准并启动 R2 正式数据与双模型 Base
+
+- 日期：2026-07-22
+- 阶段/任务：R2 / 正式数据、teacher 与 dev base
+- 状态：阶段变更
+- 关联：`docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md`、`docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`
+
+**背景与难点**：R2 需要从 12 条 qualification 进入真正可用于领域适配的数据合同，同时
+不能让 teacher、派生样例或开发评测泄漏到正式 holdout。用户还要求 provider 可由 `.env`
+一行切换，并要求 Qwen3-1.7B/4B 两份真实 dev base，但所有 API、模型下载和远端 GPU 资源
+仍需保留逐项审批。
+
+**证据**：用户逐段批准 family-first `240/60/120`、五维指纹隔离、R2 专用 manifest/receipt、
+teacher 总体 70%/单类 50% 质量门、selector + provider namespace 路由、两份固定 Qwen revision、
+`/data/TJK/internship-projects/retail-agent-ops` 远端根和 `/data/TJK/models` 模型根。执行前
+HEAD 为 `a3c748b`，CPU 基线为 211 passed，Ruff 与 mypy 通过。`uv lock --check` 的异常已证明
+只是用户级清华镜像 URL 规范化，显式使用现有 lock 索引别名即可通过。
+
+**决定与方案**：从基线新建 `feature/r2-formal-data-and-base-eval`。保留 R1 类型与 CLI 兼容，
+新增 R2 formal task/manifest/governance、动态 OpenAI-compatible teacher、train export、sealed
+evaluator 和 base evidence。teacher 仅访问 train，dev 用 internal reference，正式 holdout 在
+R2 不运行真实模型。先完成 CPU TDD/审查，再分别请求正式数据、API smoke/full、SSH、同步、
+两个模型下载和每条 GPU 命令批准。
+
+**备选方案与未选择理由**：未把 provider 写死为 DeepSeek，因为用户需要后续一行切换；未把
+Qwen3-4B 留到 R3，因为用户批准 R2 同时建立两份 dev base；未提前执行 holdout base，因为会
+破坏冻结评测独立性；未设置 API 金额上限，因为用户使用自己的套餐，但仍固定任务、episode、
+步数、重试和 usage 记录。
+
+**后果与下一步**：R2 状态改为“当前”，进入八个 TDD/审查任务。正式外部动作尚未授权；
+在对应命令获得批准前，不生成仓库正式数据、不调用 API、不连接服务器、不下载模型、不运行 GPU。

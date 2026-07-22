@@ -109,3 +109,17 @@
 - `docs/EXECUTION_PLAN.md` 要求 R2 同时建立 Qwen3-1.7B 与计划主模型 base，R3 又把 Qwen3-4B 下载/smoke 列在 R3。R2 提示词已把此冲突设为用户决策门：要么审批 R2 两个 base，要么正式修改阶段验收；不能缺报告却直接收口。
 - 2026-07-22 实际迁移完成：正式目录为 `/home/tjk/myProjects/internship-projects/retail-agent-ops`，旧 `.worktrees/retail-agent-ops` 路径已不存在；仓库仍为自身 `.git`、分支 `portfolio/retail-agent-ops-init`、无 remote，且 HEAD 保持 R1 基线 `59cc1b5` 的后代。
 - 新建主环境与 BFCL evaluator 环境均为 Python 3.11.15；`.venv/bin/pytest` 和 `.venv/bin/mypy` shebang 已指向正式目录。外部仓库链接解析到未修改的原项目路径，Gorilla commit 仍为 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。
+
+## R2 正式数据与双模型 Base 启动发现（2026-07-22）
+
+- 用户已批准 `retail_ops_v1_r2_20260722`、seed 0、六类各 35 个 semantic family × 2 个表述变体；family-first 配额为每类 train/dev/holdout=`20/5/10` families，即任务 `40/10/20`，总计 `240/60/120`。
+- teacher 只访问 train，正式导出每任务恰一条可回放轨迹；优先合格 teacher，缺口由 internal reference 补齐。teacher 总通过率低于 70% 或任一类别低于 50% 时必须停止，不能自动换 provider/model/prompt。
+- provider 路由采用 `.env` selector：`TEACHER_LLM_PROVIDER=<name>` 动态选择 `TEACHER_LLM_<NAME>_{BASE_URL,API_KEY,MODEL,EXTRA_BODY_JSON}`。选中 route 的非秘密快照和哈希绑定 smoke/full attempt；route 变化必须重新 smoke。
+- 当前 `.env` 只读检查发现变量名为 `DEEPSEEK_API_KRY`、权限 0644 且 model 仍为旧配置；API 门前需要用户改为中立 provider profile key，agent 不读取或打印密钥，并将权限收紧为 0600。
+- R2 dev base 固定 Qwen3-1.7B revision `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` 与 Qwen3-4B revision `1cfa9a7208912126459214e8b04321603b3df60c`；均只跑 60 条 dev、4-bit NF4、deterministic non-thinking、无 adapter，不打开正式 holdout。
+- 远端项目根为 `/data/TJK/internship-projects/retail-agent-ops`，模型根为 `/data/TJK/models`；任何 SSH、目录创建/同步、模型下载和 GPU 命令仍需逐条展示实际工作目录、物理 GPU、时长与产物后等待批准。
+- `uv 0.11.8` 基线 lock 失败不是依赖变化：用户配置的清华镜像为 `https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/`，现有 lock 使用等价旧别名 `https://pypi.tuna.tsinghua.edu.cn/simple`，临时解析产生 4336 行纯 URL diff。显式旧别名后 `uv lock --check` 通过，R2 应项目级固定索引而非重写全部 lock。
+- R2 计划独立审阅指出旧 `AGENTS.md` 和 handoff 仍保留 R1 审批入口，同时 answer-free projection、dev 私有真值加载和 teacher 私有导出边界未完全闭合；这些都是执行前必须解决的治理缺口，不是实现阶段可默认为真的细节。
+- 已把 active instructions 切换到已批准 R2 CPU 实现，并固定 family 轴：lookup 七状态、窗口 margin `1/2/3/5/7/10/14`、0..4 distractor、四原因映射。content fingerprint 明确排除 task_id/split/答案字段；dev base 必须经过 private artifact SHA 与公开 manifest 双检；train/SFT 逐任务文件只写 ignored private root。
+- 二次计划审阅仅余 teacher 原始采集目录未显式限定 private。已新增治理 RED，并把 smoke/full 的 raw response、step、trajectory、usage、checkpoint 和哈希固定到不可覆盖的 private ignored `teacher-collection/<attempt>/`，计划要求测试拒绝公开或非私有输出。
+- 最终只读复审确认 R2 规格/计划 PASS，无 Critical/Important；CPU 实现可以依次执行，外部资源审批门保持不变。
