@@ -97,3 +97,9 @@
 - `/reports/retail_ops/` ignore 治理断言先失败后通过；本地证据树被保留用于复核，但不进入 Git。修复后重新执行完整门禁仍为 211 passed，Ruff、mypy、lock 与 diff 全部通过。
 - whole-branch 自审发现 README 曾把本地 `trajectories.jsonl` 误称为“脱敏轨迹”；实际脱敏边界是 `failures.jsonl` 与公开 release 报告。文档已改为“本地完整轨迹、脱敏失败摘要”，避免把 qualification 产物边界写宽。
 - whole-branch 核心 diff 复核确认 legacy MiniRetail 场景集合被显式冻结、final-response hook 在 run/replay 两端对称、输出目录不可覆盖、holdout 在 policy 前拒绝、paired release 八字段一致性与服务 fallback 均有负测；未发现阻塞缺陷。E2E 进一步固定每个 release 目录必须恰有 JSON/Markdown/HTML 三份报告。
+- 2026-07-22 迁移前复核：当前目录已经是 `git-dir == git-common-dir` 的普通独立仓库，原 `veritool-rl` 只登记自身 main worktree；因此应迁移现有目录而不是再次 `git init` 或复制历史。
+- 物理路径迁移会使 `.venv/bin/*` 与 `tools/bfcl_eval/.venv/bin/*` 的绝对 shebang 失效，且 `data/external_repos -> ../../../veritool-rl/data/external_repos` 在新层级下解析错误；迁移验收必须重建两个 uv 环境并把链接改为 `../../veritool-rl/data/external_repos`。
+- R2 仍缺数据来源/teacher/provider/计划主模型的用户决策；交接提示词可以授权阶段启动和 CPU 实现，但必须在正式数据生成、商业 API、模型下载或远程 GPU 前分别展示方案/精确命令并等待确认。
+- 迁移前新鲜 CPU 基线为 `211 passed`，目标目录不存在，HEAD 为 `59cc1b574da0b55cb249aaeca09ab5a720b24ea6`，磁盘可用 813G；可在保留回滚点的前提下原子移动现有 201M 目录。
+- R2 可复用 R1 的 `TaskSpec`、`RetailOpsEnv`、`TaskManifest`、`HoldoutReceipt`、`assert_split_isolation`、`authorize_holdout`、replay、metrics 和 redaction，但现有 `build_qualification_tasks` 仅能生成 12 条 qualification，`evaluate_retail_ops` 明确拒绝 holdout，通用 `scripts/build_trajectories.py`/`scripts/evaluate.py` 仍是 MiniRetail-only，不能直接冒充 R2 正式流水线。
+- 现有 `build_success_trajectories` 与 `trajectory_to_sft_example` 可作为 train/dev 轨迹质检基础；R2 需要独立 RetailOps split builder、数据 provenance/quality report、sealed holdout freeze/evaluator 和 base-run contract，而 QLoRA 训练本身属于 R3，不应塞入 R2 提示词。

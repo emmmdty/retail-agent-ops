@@ -6,20 +6,19 @@
 
 ## Current Phase
 
-R1 已完成并关闭；R2 待执行，尚未获得启动授权。
+R1 已完成并关闭；正在执行进入 R2 前的仓库物理迁移与 Codex 交接准备，R2 产品工作仍待新会话按提示词通过决策门后启动。
 
 ## Current Task
 
-- 输入：已批准的方案 A [设计规格](docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md)、[R1 实现计划](docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md)、R0 代码与治理基线。
-- 输出：完成 CPU-only `build -> evaluate -> release -> serve` qualification 纵向切片、逐任务审查证据与 R1 收口记录。
-- 非目标：不生成或读取正式 R2 train/dev/holdout；不运行 GPU、模型下载、商业 API、训练、DPO、GRPO 或在线 RL；不修改固定 BFCL 评测资产。
-- 影响文件：实现计划列出的 `domains/retail_ops/v1/`、`src/veritool_rl/retail_ops/`、CLI、配置、测试、依赖锁及阶段治理文档。
-- [x] 方案 A 规格与 10 项实现计划获用户批准。
-- [x] 用户选择 subagent-driven 执行方式。
-- [x] 完成隔离状态、计划冲突和 `111 passed` 基线检查。
-- [x] 逐项完成 Task 1-10 的 TDD 实现、提交与审查。
-- [x] 完成 whole-branch 审查、最终质量门和 R1 阶段收口。
-- 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`。
+- 输入：R1 最终提交 `59cc1b5`、当前独立 checkout、用户批准的正式项目目录和 R2 全阶段交接要求。
+- 输出：将仓库迁至 `/home/tjk/myProjects/internship-projects/retail-agent-ops`，重建路径敏感环境与软链接，生成可复制给 Codex 的 R2 完整执行提示词、迁移设计/计划和治理记录。
+- 非目标：本轮不执行 R2 数据生成、模型下载、商业 API、GPU 推理/训练、DPO/GRPO，不创建 remote/公开仓库，不全仓重命名 `veritool_rl`。
+- 影响文件：`docs/superpowers/specs/`、`docs/superpowers/plans/`、`docs/handoffs/`、`docs/LEGACY_INVENTORY.md`、`docs/PROJECT_LOG.md`、三份 planning 文件；ignored `.venv`、`tools/bfcl_eval/.venv`、`data/external_repos`。
+- [ ] 固定迁移设计、回滚点、目标路径和验收命令。
+- [ ] 迁移现有独立 Git 仓库并重建两个 uv 环境与 benchmark 软链接。
+- [ ] 写入并审查 R2 Codex 全执行提示词，允许 subagent 但保留数据/GPU/API 决策门。
+- [ ] 在新目录运行完整 CPU 质量门、路径/历史/软链接/提示词静态验收并提交。
+- 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`git diff --check`、`UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv lock --check`、Git/路径/软链接检查。
 
 ## Task Rules
 
@@ -48,6 +47,7 @@ R1 已完成并关闭；R2 待执行，尚未获得启动授权。
 | 2026-07-21 | Task 9 误将全仓 `ruff format --check .` 当作验收项，发现 35 个既有文件未采用当前 formatter | 不扩大本阶段 diff；仅检查本任务 Python 文件，继续执行项目规定的 `.venv/bin/ruff check .` |
 | 2026-07-21 | Task 10 新鲜 qualification 证据树在最终状态审计中显示为未跟踪文件 | 新增失败治理断言并将 `/reports/retail_ops/` 纳入产品运行产物 ignore 边界，保留本地证据但不提交 |
 | 2026-07-21 | Task 10 完成前 targeted format check 报告两个新增测试需格式化 | 仅格式化 `test_retail_ops_e2e.py` 与 `test_project_governance.py`，随后从头重跑完整质量门 |
+| 2026-07-22 | `using-superpowers` 的 Codex reference 首次按错误的技能根路径读取失败 | 按 SKILL.md 相对路径改读 `skills/using-superpowers/references/codex-tools.md`，已恢复完整指令 |
 
 ## Maintenance: Codex 启动简化
 

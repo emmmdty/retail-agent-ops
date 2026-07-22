@@ -52,6 +52,12 @@
 R1 已完成并关闭；R2 仍为待执行，必须由用户另行确认后才可生成正式
 train/dev/holdout、调用模型或进入训练。
 
+## 2026-07-22 — 正式目录迁移与 R2 Codex 交接
+
+- 用户批准把现有独立 checkout 迁移为正式项目目录，并要求生成可在新目录启动、允许 subagent 的 R2 全阶段执行提示词。
+- 本轮只做迁移、环境重建、交接设计和静态/CPU 验证；R2 正式数据、模型、API 与 GPU 仍由新会话按门禁执行。
+- 迁移前基线：`portfolio/retail-agent-ops-init@59cc1b5`，工作树干净，无 remote；目标目录为 `/home/tjk/myProjects/internship-projects/retail-agent-ops`。
+
 ## 2026-07-20 — R1 方案 A 规格准备
 
 - 用户选择窄而完整的退款闭环：2 个正式业务工具、6 类任务、12 条 R1 qualification fixture。
