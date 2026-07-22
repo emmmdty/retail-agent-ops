@@ -6,6 +6,19 @@ from veritool_rl.retail_ops.bundle import (
     RetailOpsPolicies,
     load_bundle,
 )
+from veritool_rl.retail_ops.formal_governance import (
+    AuthorizedFormalHoldout,
+    authorize_formal_holdout,
+    load_authorized_formal_holdout,
+)
+from veritool_rl.retail_ops.formal_manifests import (
+    FormalDatasetReceipt,
+    FormalHoldoutReceipt,
+    FormalTaskManifest,
+    assert_formal_split_isolation,
+    load_formal_split,
+    write_formal_task_set,
+)
 from veritool_rl.retail_ops.formal_tasks import (
     FormalSplit,
     FormalTaskRecord,
@@ -16,10 +29,19 @@ from veritool_rl.retail_ops.formal_tasks import (
 __all__ = [
     "LoadedRetailOpsBundle",
     "FormalSplit",
+    "FormalDatasetReceipt",
+    "FormalHoldoutReceipt",
     "FormalTaskRecord",
+    "FormalTaskManifest",
     "FormalTaskSet",
     "ReleasePolicyConfig",
     "RetailOpsPolicies",
+    "AuthorizedFormalHoldout",
+    "assert_formal_split_isolation",
+    "authorize_formal_holdout",
     "build_formal_task_set",
+    "load_authorized_formal_holdout",
     "load_bundle",
+    "load_formal_split",
+    "write_formal_task_set",
 ]
