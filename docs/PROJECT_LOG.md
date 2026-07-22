@@ -447,3 +447,25 @@ Qwen3-4B 留到 R3，因为用户批准 R2 同时建立两份 dev base；未提�
 
 **后果与下一步**：Task 1 可以作为 Task 2 manifest/holdout 的可信输入。该失败没有读取或生成
 正式数据，也没有调用 API、模型、SSH 或 GPU；外部审批门保持不变。
+
+### LOG-20260722-04：R2 Task 2 数据治理绕过修复
+
+- 日期：2026-07-22
+- 阶段/任务：R2 / Task 2 formal manifest 与 sealed holdout
+- 状态：失败已修复
+- 关联：`e877bd2`、`87a65ff`
+
+**失败证据**：初版 exact schema、公开/私有分离和两阶段 hash-before-parse 已通过 255 个测试，
+但独立审查仍复现六项 Important：允许字段值可承载私有文本、dataset/split/private provenance 未
+形成统一验证链、private variant 可失配、双输出根失败后会残留半成品、physical artifact 可经
+非可信路径进入授权，以及授权对象可由公开构造路径复制。
+
+**决定与修复**：冻结本 R2 的 dataset/generator/parser/evaluator/seed；新增一次读取并交叉核对四份
+公开文件的 `VerifiedFormalDataset`；private row 绑定完整 provenance 并重建 family `{0,1}`；writer
+改为 staging/验证/双根发布并对各故障点清理；holdout 从 trusted root 逐级 no-follow 打开 regular
+file，在同一 fd 上 `fstat/read/hash`；dataset 与 holdout 采用 factory-issued 注册对象。该对象只作为
+进程内受支持 API 门禁，不声称替代操作系统权限或抵御同进程对所有私有实现的恶意调用。
+
+**验证与后果**：103 个 Task 2 + R1 回归、284 个全仓测试、Ruff、mypy 和 diff 均通过；最终复审
+无 Critical/Important/Minor。R1 schema/行为未修改，仓库未生成正式数据，也未读取 `.env`、正式
+private/holdout/BFCL 或访问网络/API/SSH/GPU。Task 3 可开始，但真实 API 仍须单独批准。

@@ -127,3 +127,10 @@
 - 现有 `authorize_holdout` 已有 purpose-first、路径和整文件 SHA 门，但旧 receipt 暴露 task/family ID，loader 也不验证 R2 五类指纹/配额/顺序；R2 必须保持独立两阶段授权，且非 release 必须在任何 open/read 前失败。
 - Task 1 独立审查发现初版 derivation 指纹信任 `metadata.formal_family`，实际 deadline/owner/refund status/lookup status 被篡改时可能不变；正式 integrity 校验必须从 task 真值重建政策投影，不能把同一记录携带的 metadata 当独立证据。
 - 初版 quota 校验只计每 family 两条，会接受复制 variant 0 替换 variant 1；需同时校验 `{0,1}`、task/content 唯一和五指纹可重算一致。420 条环境语义、catalog 轴和冻结原因集合也必须进入自动测试，不能只留在临时验证报告。
+- Task 2 writer 不能仅依赖 `write_json`/`write_jsonl`，因为这些 helper 会创建 parent 且覆盖同名文件；必须先对 private/public 两个版本根执行不可覆盖创建，并对部分创建失败设计清理或预检，避免只写出一半契约。
+- R1 `authorize_holdout` 的 purpose-first 顺序可保留为兼容基线，但 R2 receipt 必须使用 opaque 五指纹而非 raw ID，并把整文件 SHA 认证与 JSONL 解析拆成两个公开接口；测试应使用 spy path/file 证明非 release 不触发 `exists/is_file/read/open`。
+- Task 2 初版自审需特别攻击两个尚未由接口形状自动保证的点：private row 的 `variant_index`/task metadata 是否精确成 `{0,1}` 且一致，以及正式 seed 0、dataset/generator ID 是否由 schema/loader 冻结而非仅被 public manifest 自报。
+- `_create_output_pair` 的 exists 预检可拒绝常见覆盖/嵌套，但两个 `mkdir` 不是事务：若 private 创建成功后 public 创建因权限或竞态失败，会残留半成品 private root。需由独立审查判断是否应在写前验证/临时目录提交或安全回滚。
+- Task 2 独立审查已实证 6 个 Important：自由 public identifier 可承载 request/ID/private path；dataset/split/private provenance 未统一串链；row variant 可改为 `[0,0]`；双根失败留半成品；physical artifact 可经 root 外 symlink 授权；公开 dataclass + module seal 可伪造授权 token。当前不得进入 Task 3。
+- 修复合同应以固定 R2 Literal、同 bytes 的 verified-dataset loader、private row 完整 provenance、family variant 重建、staging 后双根发布、trusted physical root + no-follow fd 读取，以及内部注册 capability 为核心；同进程 Python 私有对象不是密码学安全边界，不应夸大为绝对防伪。
+- Task 2 修复后统一 verified dataset、fixed provenance、private variant 重建、failure-atomic staging/publish、trusted-root 同 fd 读取和 factory-issued capability 均通过契约复审；最终无 Critical/Important/Minor，R1 行为未修改。

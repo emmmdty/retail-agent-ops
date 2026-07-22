@@ -119,3 +119,4 @@ train/dev/holdout、调用模型或进入训练。
 - 当前只进入 CPU 实现与 fake backend 验证。正式数据生成、API、模型下载、SSH 与 GPU 仍保持逐项审批；本地禁止 GPU，R2 禁止 adapter 训练和正式 holdout 模型评测。
 - R2 正式规格和逐任务 TDD 计划已经两轮独立只读审阅；content/dev loader/train export/teacher collection 等治理缺口均已收口，最终结论 PASS（无 Critical/Important）。
 - Task 1 以 `83bd0b3` 实现 formal family-first 任务生成；独立审查发现三项 integrity/测试缺口后，以 `dfdb8dd` 修复实际政策状态 derivation、重复变体/五指纹重算和全 catalog/420 条环境回归，复审 PASS。最终 219 passed、Ruff/mypy 通过。
+- Task 2 以 `e877bd2` 实现 formal manifest/holdout；独立审查发现六项治理绕过后，以 `87a65ff` 增加 fixed provenance、统一 verified dataset、private variant 重建、failure-atomic 双根发布、trusted-root 同 fd 读取和 factory-issued capability。复审 PASS；最终 284 passed。
