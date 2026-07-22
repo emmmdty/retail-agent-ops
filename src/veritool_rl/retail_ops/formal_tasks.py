@@ -40,6 +40,13 @@ _SCENARIOS = (
     TaskScenario.REFUND_DENIED_DUPLICATE,
     TaskScenario.REFUND_RECOVERY,
 )
+_FINGERPRINT_FIELDS = (
+    "task_fingerprint",
+    "family_fingerprint",
+    "content_fingerprint",
+    "source_fingerprint",
+    "derivation_fingerprint",
+)
 
 
 class FormalSplit(StrEnum):
@@ -124,9 +131,38 @@ class FormalTaskSet(StrictModel):
             scenario_counts = Counter(record.task.scenario for record in records)
             if scenario_counts != {scenario: expected_count for scenario in _SCENARIOS}:
                 raise ValueError(f"{split} 类别配额不符合冻结契约")
-            family_counts = Counter(record.family_fingerprint for record in records)
-            if not family_counts or set(family_counts.values()) != {2}:
-                raise ValueError(f"{split} 的每个 semantic family 必须恰有两个变体")
+
+            families: dict[str, list[FormalTaskRecord]] = {}
+            for record in records:
+                expected = FormalTaskRecord.from_task(
+                    record.task, record.variant_index
+                )
+                if any(
+                    getattr(record, field) != getattr(expected, field)
+                    for field in _FINGERPRINT_FIELDS
+                ):
+                    raise ValueError(f"{split} 记录指纹与 task/variant 不一致")
+                if record.task.metadata.get("variant_index") != record.variant_index:
+                    raise ValueError(f"{split} task 与 record 的 variant_index 不一致")
+                families.setdefault(record.family_fingerprint, []).append(record)
+
+            if not families:
+                raise ValueError(f"{split} 不包含 semantic family")
+            for family_records in families.values():
+                if len(family_records) != 2:
+                    raise ValueError(f"{split} 的每个 semantic family 必须恰有两个变体")
+                if {record.variant_index for record in family_records} != {0, 1}:
+                    raise ValueError(f"{split} family 的 variant_index 必须精确为 0 和 1")
+                for field in ("task_fingerprint", "content_fingerprint"):
+                    if len({getattr(record, field) for record in family_records}) != 2:
+                        raise ValueError(f"{split} family 的 {field} 必须有两个唯一值")
+                for field in (
+                    "family_fingerprint",
+                    "source_fingerprint",
+                    "derivation_fingerprint",
+                ):
+                    if len({getattr(record, field) for record in family_records}) != 1:
+                        raise ValueError(f"{split} family 的 {field} 必须由两个变体共享")
 
         for field in (
             "task_fingerprint",
@@ -402,21 +438,21 @@ def _primary_order_id(task: TaskSpec) -> str:
 
 def _derivation_payload(task: TaskSpec, primary_order_id: str) -> dict[str, Any]:
     return {
-        "formal_family": _family_payload_from_task(task),
         "scenario": task.scenario.value,
-        "reason": task.metadata.get("reason"),
+        "initial_state": _normalized_policy_state(task.initial_state, primary_order_id),
+        "target_state": _normalized_policy_state(task.target_state, primary_order_id),
         "expected_decision": (
             task.expected_decision.value if task.expected_decision is not None else None
         ),
         "required_reads": [
-            "primary_order" if order_id == primary_order_id else order_id
+            "primary_order" if order_id == primary_order_id else "other_order"
             for order_id in task.required_reads
         ],
         "call_sequence": [
             {
                 "name": call.name,
                 "arguments": {
-                    key: "primary_order" if value == primary_order_id else value
+                    key: _normalized_argument(key, value, primary_order_id)
                     for key, value in call.arguments.items()
                 },
             }
@@ -425,6 +461,56 @@ def _derivation_payload(task: TaskSpec, primary_order_id: str) -> dict[str, Any]
         "transient_failure_rule": task.transient_failures,
         "max_steps": task.max_steps,
     }
+
+
+def _normalized_policy_state(
+    state: dict[str, Any], primary_order_id: str
+) -> dict[str, Any]:
+    customer_id = state.get("customer_id")
+    current_day = state.get("current_day")
+    orders = state.get("orders")
+    if not isinstance(customer_id, str) or not isinstance(current_day, int):
+        raise ValueError("正式任务状态缺少 customer_id/current_day")
+    if not isinstance(orders, dict) or primary_order_id not in orders:
+        raise ValueError("正式任务状态缺少 primary order")
+    primary_order = orders[primary_order_id]
+    if not isinstance(primary_order, dict):
+        raise ValueError("正式任务 primary order 必须是 object")
+    distractors = [
+        _normalized_order(order, customer_id, current_day)
+        for order_id, order in orders.items()
+        if order_id != primary_order_id
+    ]
+    return {
+        "primary_order": _normalized_order(
+            primary_order, customer_id, current_day
+        ),
+        "distractor_orders": sorted(distractors, key=canonical_json),
+    }
+
+
+def _normalized_order(
+    order: Any, customer_id: str, current_day: int
+) -> dict[str, Any]:
+    if not isinstance(order, dict):
+        raise ValueError("正式任务 order 必须是 object")
+    refund_deadline = order.get("refund_deadline")
+    if not isinstance(refund_deadline, int):
+        raise ValueError("正式任务 order 缺少 refund_deadline")
+    return {
+        "relative_ownership": (
+            "customer" if order.get("customer_id") == customer_id else "other_customer"
+        ),
+        "status": order.get("status"),
+        "refund_deadline_offset": refund_deadline - current_day,
+        "refund_status": order.get("refund_status"),
+    }
+
+
+def _normalized_argument(key: str, value: Any, primary_order_id: str) -> Any:
+    if key != "order_id":
+        return value
+    return "primary_order" if value == primary_order_id else "other_order"
 
 
 def _user_request(scenario: TaskScenario, order_id: str, reason: str, variant_index: int) -> str:
