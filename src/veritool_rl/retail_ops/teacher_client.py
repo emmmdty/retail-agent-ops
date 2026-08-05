@@ -12,9 +12,22 @@ from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot
 from veritool_rl.trajectory import ToolCall
 from veritool_rl.trajectory.schema import StrictModel
 
+_RETRYABLE_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504})
+_RETRYABLE_ERROR_CLASS_NAMES = frozenset(
+    {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError"}
+)
+
 
 class TeacherClientError(RuntimeError):
-    """不携带请求凭据或原始敏感响应的 teacher client 错误。"""
+    """不携带请求凭据或原始敏感响应的 teacher client 错误。
+
+    ``retryable`` 只标记底层传输/限流/服务端错误（超时、429、5xx），供调用方
+    （Task 4 采集循环）决定是否重试；鉴权、schema 等 4xx 错误一律不可重试。
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class TeacherUsage(StrictModel):
@@ -113,7 +126,7 @@ class OpenAICompatibleTeacherClient:
             )
         except Exception as error:
             message = _redact_error(str(error), self._sensitive_values)
-            raise TeacherClientError(message) from None
+            raise TeacherClientError(message, retryable=_classify_retryable(error)) from None
 
         try:
             return _normalize_response(raw_response)
@@ -216,6 +229,18 @@ def _normalize_usage(raw_usage: Any) -> TeacherUsage | None:
     except ValidationError:
         msg = "teacher response usage 结构无效"
         raise TeacherClientError(msg) from None
+
+
+def _classify_retryable(error: Exception) -> bool:
+    """Duck-type against the openai SDK's exception shape without importing it.
+
+    Retryable: request timeouts, connection failures, rate limits, and 5xx.
+    Never retryable: auth/schema/other 4xx and any unrecognized error.
+    """
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int) and status_code in _RETRYABLE_STATUS_CODES:
+        return True
+    return type(error).__name__ in _RETRYABLE_ERROR_CLASS_NAMES
 
 
 def _reject_json_constant() -> None:

@@ -24,8 +24,15 @@ def test_success_trajectory_converts_to_trl_tool_call_example() -> None:
     assert example["task_id"] == task.task_id
     assert example["messages"][0]["role"] == "system"
     assert example["messages"][1] == {"role": "user", "content": task.user_request}
-    assert example["messages"][2]["tool_calls"][0]["function"]["name"] == "get_order"
+    call_entry = example["messages"][2]["tool_calls"][0]
+    assert call_entry["function"]["name"] == "get_order"
+    assert isinstance(call_entry["function"]["arguments"], str)
+    assert json.loads(call_entry["function"]["arguments"]) == {
+        "order_id": task.metadata["order_id"]
+    }
+    assert isinstance(call_entry.get("id"), str) and call_entry["id"]
     assert example["messages"][3]["role"] == "tool"
+    assert example["messages"][3]["tool_call_id"] == call_entry["id"]
     assert example["tools"][0]["type"] == "function"
 
 

@@ -206,6 +206,45 @@ def test_sdk_errors_redact_key_authorization_and_bearer_values() -> None:
     assert "Bearer [REDACTED]" in rendered
 
 
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        lambda: type("RateLimitError", (RuntimeError,), {"status_code": 429})("rl"),
+        lambda: type("InternalServerError", (RuntimeError,), {"status_code": 500})("500"),
+        lambda: type("BadGateway", (RuntimeError,), {"status_code": 502})("502"),
+        lambda: type("APITimeoutError", (RuntimeError,), {})("timeout"),
+        lambda: type("APIConnectionError", (RuntimeError,), {})("conn"),
+    ],
+)
+def test_transport_errors_are_marked_retryable(error_factory: Any) -> None:
+    route, _ = _route()
+    client = OpenAICompatibleTeacherClient(route, client=_FakeOpenAIClient(error_factory()))
+
+    with pytest.raises(TeacherClientError) as error:
+        client.complete([], [], temperature=0.0)
+
+    assert error.value.retryable is True
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        lambda: type("AuthenticationError", (RuntimeError,), {"status_code": 401})("auth"),
+        lambda: type("BadRequestError", (RuntimeError,), {"status_code": 400})("bad"),
+        lambda: type("NotFoundError", (RuntimeError,), {"status_code": 404})("nf"),
+        lambda: RuntimeError("generic failure"),
+    ],
+)
+def test_non_transport_errors_are_not_retryable(error_factory: Any) -> None:
+    route, _ = _route()
+    client = OpenAICompatibleTeacherClient(route, client=_FakeOpenAIClient(error_factory()))
+
+    with pytest.raises(TeacherClientError) as error:
+        client.complete([], [], temperature=0.0)
+
+    assert error.value.retryable is False
+
+
 def test_production_factory_lazy_imports_sdk_without_making_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

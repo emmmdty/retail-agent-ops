@@ -18,9 +18,7 @@ def build_success_trajectories(
     seed: int,
 ) -> list[Trajectory]:
     """用 Oracle 生成并验证成功轨迹。"""
-    trajectories = [
-        run_episode(task, env_factory, OraclePolicy(task), seed=seed) for task in tasks
-    ]
+    trajectories = [run_episode(task, env_factory, OraclePolicy(task), seed=seed) for task in tasks]
     failed = [trajectory.task.task_id for trajectory in trajectories if not trajectory.success]
     if failed:
         msg = f"Oracle 轨迹生成失败: {failed[:5]}"
@@ -45,16 +43,22 @@ def trajectory_to_sft_example(trajectory: Trajectory) -> dict[str, Any]:
     ]
     for step in trajectory.steps:
         if step.tool_call is not None:
+            call_id = step.tool_call.call_id or f"call_{step.index}"
             messages.append(
                 {
                     "role": "assistant",
                     "content": "",
                     "tool_calls": [
                         {
+                            "id": call_id,
                             "type": "function",
                             "function": {
                                 "name": step.tool_call.name,
-                                "arguments": step.tool_call.arguments,
+                                "arguments": json.dumps(
+                                    step.tool_call.arguments,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                ),
                             },
                         }
                     ],
@@ -66,6 +70,7 @@ def trajectory_to_sft_example(trajectory: Trajectory) -> dict[str, Any]:
             messages.append(
                 {
                     "role": "tool",
+                    "tool_call_id": call_id,
                     "content": json.dumps(
                         step.observation.model_dump(mode="json"),
                         ensure_ascii=False,
