@@ -168,3 +168,93 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
     assert "change only `task_id` or `split`" in implementation
     assert "validated private dev artifact" in implementation
     assert "private ignored `teacher-collection/<attempt>/`" in implementation
+
+
+_R2_CONFIG_NAMES = (
+    "retail_ops_v1_r2_formal_freeze.yaml",
+    "retail_ops_v1_r2_teacher_smoke.yaml",
+    "retail_ops_v1_r2_teacher_full.yaml",
+    "retail_ops_v1_r2_train_export.yaml",
+    "retail_ops_v1_r2_qwen3_1_7b_dev.yaml",
+    "retail_ops_v1_r2_qwen3_4b_dev.yaml",
+)
+
+
+def test_r2_governed_paths_remain_ignored() -> None:
+    """R2 CLI 新增的私有/模型/产物路径必须仍被 `.env`/`/data/`/`/models/`/
+    `/reports/retail_ops/` 这几条既有 `.gitignore` 规则覆盖，不需要新增规则；
+    这里用具体 R2 示例路径核实规则确实生效，而不是假设它们生效。"""
+    for ignored_path in (
+        ".env",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train.jsonl",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/teacher-collection/"
+        "attempt-1/checkpoint.json",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "attempt-1/train.jsonl",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-base/base-001/run.json",
+        "models/Qwen3-1.7B-pinned/model.safetensors",
+        "reports/retail_ops/v1/r2-example/run.json",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path
+
+    # 公开正式 manifest 根目录相反：不应被忽略（它是 answer-free、计划提交的产物）。
+    not_ignored = subprocess.run(
+        [
+            "git",
+            "check-ignore",
+            "manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dataset.json",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert not_ignored.returncode == 1
+
+
+def _iter_leaf_values(value: object) -> list[str]:
+    if isinstance(value, dict):
+        leaves: list[str] = []
+        for item in value.values():
+            leaves.extend(_iter_leaf_values(item))
+        return leaves
+    if isinstance(value, list):
+        leaves = []
+        for item in value:
+            leaves.extend(_iter_leaf_values(item))
+        return leaves
+    return [str(value)]
+
+
+def test_r2_configs_contain_no_secrets_or_private_paths() -> None:
+    """已提交的 6 份 R2 config 的实际取值（不含说明性注释）不得包含真实凭据、
+    绝对路径或私有根路径字面量——只扫描解析后的 YAML value，注释里出现
+    `data/private/...` 是在解释 CLI 内部推导的约定，不是配置数据本身。"""
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R2_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
+
+
+def test_product_cli_and_r2_configs_never_reference_bfcl() -> None:
+    """R2 CLI 分发代码和新增 config 不得引用 BFCL 固定 200 条 holdout 或其失败样例。"""
+    scanned = [ROOT / "src/veritool_rl/product_cli.py"]
+    scanned.extend(ROOT / "configs" / name for name in _R2_CONFIG_NAMES)
+    for path in scanned:
+        assert "bfcl" not in path.read_text(encoding="utf-8").lower(), path

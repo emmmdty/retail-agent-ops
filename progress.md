@@ -167,3 +167,34 @@ train/dev/holdout、调用模型或进入训练。
   tests/test_retail_ops_evaluation.py` 92 passed；全仓 `.venv/bin/pytest -q` 442 passed；
   Ruff、mypy 54 files、`git diff --check` 通过。本任务全部在 CPU + fake backend/fake hardware
   provider 上完成，未加载真实模型、未访问 CUDA、未运行任何 API/GPU/下载命令。
+
+## 2026-08-05 — R2 Task 6（CLI pipeline 分派与 CPU 端到端验收）
+
+- `product_cli.py` 新增按 config `pipeline` 字段分派的四条 R2 流水线（`formal_freeze`/
+  `teacher_collect`/`train_export` 挂在 `build` 下，`formal_dev_base` 挂在 `evaluate` 下），
+  `release`/`serve` 未新增任何 R2 路径；`build` 新增可选 `--input_dir`。R1 四个命令在无
+  `pipeline` 字段时逐字节保留原行为（`tests/test_retail_ops_cli.py` 未改一行，5 passed）。
+- 新增 6 份 config：`configs/retail_ops_v1_r2_{formal_freeze,teacher_smoke,teacher_full,
+  train_export,qwen3_1_7b_dev,qwen3_4b_dev}.yaml`；两份 dev-base config 的 `model.revision`/
+  `file_sha256` 是显式标注的占位值（真实 Qwen3 权重尚待用户批准下载）。
+- TDD：先写 `tests/test_retail_ops_r2_cli.py`（33 用例，覆盖精确 key 集合、`--input_dir`
+  必须/禁止、绝对路径、未知 pipeline、错误 dataset_version/seed/model revision、holdout
+  manifest 误传、adapter 相关多余字段、输出覆盖、env 边界）并确认因 `_require_config_keys`
+  拒绝新 key、`ImportError`、argparse 报错而 RED，再实现。
+- CPU 端到端（`tests/test_retail_ops_r2_e2e.py`，4 用例）：两个隔离 tmp 根各跑一次
+  formal_freeze 并逐字节比较全部公开/私有产物；240 条 train 任务跑一次 teacher_collect
+  （通用 fake teacher client 按场景无关地回放 `expected_calls`，每类别标记 8/40 失败 ->
+  整体/逐类别 80% 接受，越过 70%/50% 质量门）后 train_export 导出 240 条
+  train.jsonl/sft.jsonl，来源精确对应 teacher/internal_reference；两份 dev-base config
+  各自通过 fake backend + fake hardware provider 跑通 60 条 dev 任务并用真实
+  `load_base_run_evidence` 回读校验、扫描公开报告无任务级泄漏。
+- `tests/test_project_governance.py` 新增 3 个断言：R2 私有/模型/产物路径仍被既有
+  `.gitignore` 规则覆盖（公开 manifest 根相反、不应被忽略）；6 份新 config 解析后的实际
+  取值不含绝对路径/私有根路径字面量/凭据标记；`product_cli.py` 和新 config 不引用 BFCL。
+- 验收：全仓 `.venv/bin/pytest -q` 489 passed（Task 5 收口基线 449 + 本任务新增 40：
+  `test_retail_ops_r2_cli.py` 33、`test_retail_ops_r2_e2e.py` 4（含 1 个双参数化用例）、
+  `test_project_governance.py` 新增 3）；Ruff、
+  `ruff format`、mypy 54 files、`env -u UV_INDEX_URL uv lock --check`、
+  `git diff --cached --check` 全部通过。全程只用 tmp_path 隔离根/fake client/fake
+  backend/fake hardware provider，未生成仓库真正的正式数据集输出位置，未加载真实模型、
+  未访问 CUDA、未发起任何真实网络请求。

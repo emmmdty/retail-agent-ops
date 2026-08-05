@@ -1,0 +1,10 @@
+# R2 teacher_collect smoke: 单 episode/单次尝试的最小探测配置，用于在投入完整
+# 预算前核实 teacher provider 路由与合同可用。--input_dir 必须指向 formal_freeze
+# 产出的私有根目录（data/private/retail_ops/v1/r2/<dataset_version>/）。
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+attempt_id: teacher-smoke-001
+max_episodes_per_task: 1
+max_request_attempts: 1

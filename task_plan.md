@@ -22,7 +22,9 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 - [x] Task 3：实现并复审 provider-agnostic teacher 路由与 OpenAI-compatible client 传输边界（`7153c26`）。
 - [x] Task 4：实现并复审 teacher 采集、回放质检与 train 导出（`1d60af2`）。
 - [x] Task 5：实现 sealed holdout evaluator 合同、formal dev loader、Qwen dev base 证据与可注入硬件测量（CPU/fake backend）。
-- [ ] 实现 Qwen3-1.7B/4B dev base 配置、运行证据和 CLI 分派。
+- [x] Task 6：严格 R2 CLI/config 分发（`product_cli.py` 按 `pipeline` 分派 formal_freeze/
+      teacher_collect/train_export/formal_dev_base，R1 精确 key 集合路径逐字节不变）、
+      6 份新 R2 config 与 CPU 端到端 fake 验收。
 - [ ] 通过 CPU 完整门禁后，逐项进入正式数据、API、下载和远端 GPU 审批门。
 - [ ] 在最终 HEAD 完成审查、文档收口和分支交付。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`uv lock --check`、`git diff --check`；正式阶段另验证重复构建哈希、secret/BFCL/holdout 泄漏扫描、API route snapshot 和远端产物哈希一致性。
@@ -69,6 +71,8 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 | 2026-07-22 | Task 2 修复复审代理的最终输出被平台 cybersecurity 风险过滤器误拦截 | 保留已完成的代码与 284 个测试证据，把复审改写为不描述利用步骤的“数据治理契约回归审查”并复用同一只读 reviewer |
 | 2026-07-22 | Task 3 只读接口检索误读不存在的 `src/veritool_rl/agent/base.py`，导致同一 `&&` 链后的 Qwen 查看未执行 | 改读实际 `agent/qwen.py`、`agent/policy.py`、`agent/runner.py`；未修改代码或环境 |
 | 2026-08-05 | 20 条真实 DeepSeek smoke（会话临时脚本）发现 `run_episode`（`agent/runner.py`）组装的多轮消息历史不是合法 OpenAI wire format：`tool_calls[].function.arguments` 是原始 dict 而非 JSON 字符串，且 assistant `tool_calls[]`/`tool` 消息缺 `id`/`tool_call_id`；本地 Qwen backend 从未触发过 | 判定为 Task 4 前置阻塞：先在 `agent/runner.py` 用 TDD 修复两处 wire format bug 并补回归测试，再开始 `teacher_data.py` 实现；smoke 脚本本身未提交，详见 `docs/PROJECT_LOG.md` LOG-20260805-07 |
+| 2026-08-05 | Task 6 env 边界测试最初用 `monkeypatch.setattr("os.environ", HostileMapping())` 整体替换 `os.environ`，导致 pytest 自身内部读取 `COLUMNS`/`PY_COLORS` 时炸穿并使整个 session 内部报错，而非产品代码问题 | 改用 `monkeypatch.setenv("TEACHER_LLM_PROVIDER", "not a provider name!!")` 只毒化 `load_teacher_route` 真正会读的具体 key，不整体替换 `os.environ`；同时确认没有任何产品代码本身依赖 `COLUMNS`/`PY_COLORS` |
+| 2026-08-05 | Task 6 首个 `--input_dir` 覆盖测试误传相对路径 `"configs/retail_ops_v1_build.yaml"`，但该测试用的 `workspace` fixture 已 `monkeypatch.chdir` 到隔离 tmp 根，仓库真实 `configs/` 在那里不存在 | 改用 `Path(__file__).resolve().parents[1]`（`REPO_ROOT`）拼出绝对路径引用仓库里真正提交的 config 文件，不依赖当前 CWD |
 
 ## Maintenance: Codex 启动简化
 

@@ -292,3 +292,47 @@
 - 公开输出按固定 allowlist 建模：sealed 报告只有聚合指标、运行 provenance 和失败 taxonomy
   计数；测试用私有记录的 task_id/user_request/family_id/order_id/customer_id 和五类指纹做
   子串扫描，确认公开 JSON 里一个都不出现（连 opaque fingerprint 也不出现）。
+
+## R2 Task 6（CLI pipeline 分派与 CPU 端到端验收）
+
+- `product_cli.py` 的 `build`/`evaluate` 现在先看 config 有没有 `pipeline` 字段：没有就
+  逐字节走原 R1 精确 key 集合路径（`_run_release`/`_run_serve` 完全未改一行）；有就分派到
+  四个新流水线函数（`_run_formal_freeze`/`_run_teacher_collect`/`_run_train_export`/
+  `_run_formal_dev_base`），每个流水线各自校验自己的精确 key 集合，互不借用。
+- 唯一允许读 `os.environ` 的地方是 `_run_teacher_collect` 里的一行
+  `env = environ if environ is not None else os.environ`：写在全部 config/治理校验（含
+  dataset_version 与已发布正式数据交叉核对）之后，真正要构造 client 之前才执行。用
+  `monkeypatch.setenv("TEACHER_LLM_PROVIDER", "not a provider name!!")`（不是整体替换
+  `os.environ`——那会连 pytest 自己读终端宽度都炸掉）证明其余四条流水线 + 未改的 R1 路径
+  完全不受影响、也不会因为缺 `TEACHER_LLM_*` 而报错。
+- 两处 CPU 测试无法构造真实依赖的流水线用同一种缝：可选关键字参数
+  （`client_factory`/`backend_factory`/`hardware_provider_factory`），默认值是
+  `None`，函数体内 `factory or _default_xxx` 在调用时才查找模块级默认工厂——这样默认工厂
+  既可以在直接调用内部处理函数时被参数覆盖，也可以在只走 `main()` 时通过
+  `monkeypatch.setattr(product_cli, "_default_xxx", fake)` 在其唯一定义点被替换，不需要
+  额外的"测试模式"开关。生产默认工厂（`_default_teacher_client_factory`、
+  `_default_generation_backend`、`_default_hardware_provider`）分别真实调用
+  `OpenAICompatibleTeacherClient.from_route`、`TransformersBackend.from_pretrained`、
+  `CudaHardwareProvider`。
+- `code_commit`/`uv_lock_sha256` 不放进 config（会在提交后立刻过期）：CLI 用
+  `Path(__file__).resolve().parents[2]` 定位仓库根后现算 `git rev-parse HEAD` 与
+  `uv.lock` 的 SHA-256，与调用方是否把 CWD chdir 到隔离 tmp 根无关（CPU e2e 测试必须
+  chdir 到 tmp 根才能让 config 里的项目相对路径落在隔离目录里）。
+- `train_export` 需要给 `TeacherCollectionConfig` 一个 `route_sha256`，但 `export_formal_train`
+  函数体内实际上从未读取这个字段（核实过——只用于构造合法 config 对象）。没有为此读
+  `os.environ`，而是从已加载的 teacher evidence 里的 `route_sha256` 去重推导；顺带对"同一次
+  导出引用的证据混用了不同 route"这种不该发生的情况加了一道额外校验。
+- teacher_collect 的续采集边界：`load_teacher_checkpoint` 只覆盖"已接受"任务；CLI 自己额外
+  扫描 `<private_root>/teacher-collection/<attempt_id>/*.json`（排除 checkpoint.json）算出
+  "本次运行前已经尝试过"的任务集合并整体跳过——不止跳过已接受的，也跳过已尝试但被拒绝的，
+  因为 `write_teacher_attempt_evidence` 对同一 `(attempt_id, task_id)` 是不可覆盖的。这意味着
+  同一 `attempt_id` 下被拒绝的任务不会被自动重试；要重试必须换一个新 `attempt_id`，与
+  `dev-base`/`sealed-eval` 的 attempt_id 语义（一次运行=一个不可变身份）保持一致。
+- 240 条 train 任务的"受控 pass/fallback 混合"CPU 测试不需要为 6 个场景各写一套脚本：写了
+  一个通用 fake teacher client，把 `record.task.expected_calls`（gold 调用序列）原样回放，
+  被标记为"应失败"的任务永远返回一个不存在的工具名（`ILLEGAL_TOOL`，不被接受）。这依赖
+  `run_episode` 的一个真实机制——`env.record_final_response` 发生在 `compute_reward_breakdown`
+  之前，所以对 `INFORM`/`DENY` 这类没有状态变更调用的场景，"回放完 gold 调用后随便说一句
+  收尾"也能让 `reward.final_state` 变成 1.0 从而落在 `SUCCESS`（不是 `FINAL_RESPONSE`），
+  这正是 `teacher_data.py` 自己的 `_build_reference_trajectory`（`OraclePolicy`）已经在用的
+  同一套机制。

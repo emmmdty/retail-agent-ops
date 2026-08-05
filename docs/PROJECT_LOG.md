@@ -770,3 +770,122 @@ gpu-5090 已下载并哈希校验过 Qwen3-1.7B/4B，Task 7 命令清单应询�
 **后果与下一步**：若用户批准，下一步是把此文件提交或直接用它启动新会话执行 Task 5-7；
 Task 8（正式数据/API/模型/GPU）仍需在 Task 7 产出命令清单后逐条单独批准，不在本文档
 范围内。
+
+### LOG-20260805-10：接受 R2 Task 5-7 执行范围，采用 SDD 流程启动 Task 5
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 5（sealed evaluator + Qwen dev base 证据）
+- 状态：进行中
+- 关联：LOG-20260805-09、`docs/handoffs/2026-08-05-r2-task5-7-execution-prompt.md`、
+  `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`
+
+**背景与难点**：新会话按用户指示，以 `docs/handoffs/2026-08-05-r2-task5-7-execution-prompt.md`
+为执行依据，接管 R2 剩余的 Task 5（sealed evaluator + 双模型 dev base 证据）、Task 6（CLI
+`pipeline` 分派与 CPU 端到端验收）、Task 7（整分支审查与外部审批命令清单），不涉及 Task 8
+的任何实际外部操作。开工前完整读取了 CAREER_CONTEXT/PRODUCT_BRIEF/EXECUTION_PLAN/
+task_plan/findings/progress/PROJECT_LOG（LOG-20260805-05 至 09）/SPEC/R2 设计规格/R2 实现
+计划全文，并核对了只读 preflight（HEAD 是 `a3c748b`、`1d60af2` 的后代；`.venv/bin/pytest -q`
+365 passed；Ruff、mypy、`git diff --check`、`uv lock --check` 全部通过）。工作树内此前会话
+遗留的 `.gitignore`/`docs/PROJECT_LOG.md`（LOG-20260805-09）/handoff 文档三处未提交改动已
+先行提交（`1d8b8b3`），保持后续 Task 5 diff 干净。
+
+**决定与方案**：采用 `superpowers:subagent-driven-development`（SDD）流程执行 Task 5-7：
+在 `.superpowers/sdd/2026-07-22-retailops-v1-r2-formal-data-and-base/progress.md` 建立本次
+会话的 ledger（首行标注计划文件路径，记录 Task 1-4 为此前会话在 SDD 工具外完成、已提交，
+Task 5-7 为本次会话范围，Task 8 显式排除）。已读取该计划文件的 Global Constraints 及 Task
+5/6/7 完整小节，扫描未发现任务间或与全局约束的冲突，按流程规定无需在开工前向用户批注即可
+继续。已生成 Task 5 brief（`task-5-brief.md`），派发一个 opus 模型的 general-purpose
+implementer 子代理在后台执行 Task 5 的 TDD 实现（sealed evaluator 与 Qwen3-1.7B/4B dev base
+证据，`src/veritool_rl/retail_ops/sealed_evaluation.py`/`base_evaluation.py`，扩展
+`agent/qwen.py`），要求其复用 Task 2/4 已审计过的 `_resolve_within`/staging/原子发布/
+trusted-root fd 读取模式，禁止仅做字符串路径检查，禁止在新代码中硬编码任何具体模型
+revision 字面量（因为该 pin 本项目内已经变更过一次，见 findings.md "gpu-5090 环境扩展"
+小节），CPU 测试全程只用 fake backend/fake hardware provider。
+
+**后果与下一步**：等待 Task 5 implementer 完成并进入任务审查 + 修复循环；随后按同一 SDD
+流程执行 Task 6（CLI pipeline 分派与 CPU 端到端验收）与 Task 7（整分支审查、完整 CPU 门禁
+重跑、外部审批命令清单）。Task 7 结束时只能把 R2 状态记录为"CPU 实现完成、外部证据待批准"，
+不得标记 R2 已完成；Task 8 的正式数据、API、模型下载与 GPU 命令仍需逐条另行获得用户批准后
+才能执行。
+
+### LOG-20260805-11：Task 5 独立审查发现 1 项 Important，修复并进入 scoped re-review
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 5（sealed evaluator + Qwen dev base 证据）
+- 状态：进行中
+- 关联：LOG-20260805-10、`06a41f9`、`bea052c`
+
+**背景与难点**：Task 5 implementer（opus）完成 sealed evaluator（`sealed_evaluation.py`）与
+dev base 证据（`base_evaluation.py`，扩展 `agent/qwen.py`）的 TDD 实现，提交 `06a41f9`；
+自审时已自行发现并修复一项 Important 级问题（dev 证据原先信任调用方哈希，现已改为独立
+重新加载校验 `dev.jsonl`）。442 全量测试通过，Ruff/mypy/lock/diff 全绿。
+
+**证据**：独立只读审查（opus）确认治理主干（dev loader 落盘前拒绝、sealed capability 复用、
+allowlist 测试、路径逃逸防护、无硬编码 revision）扎实，但发现 1 项新的 Important：
+`_require_backend_matches_pin` 只核对 `backend.model_dir`/`backend.revision`，未核对 adapter
+状态或实际生成参数——`TransformersBackend` 从未把 adapter_path 或真实 `GenerationSettings`
+暴露给绑定校验，导致挂载了 adapter 或改了采样参数的后端也能通过 `evaluate_formal_dev_base`
+的全部检查，产出与真实 base run 无法区分的证据，恰好是这个 evaluator 存在的核心目的
+（base vs. adapter 区分）失守。另有 8 项 Minor 记入 `.superpowers/sdd/.../progress.md` 留待
+最终整分支审查统一分诊。
+
+**决定与方案**：按 subagent-driven-development 流程，仅这 1 项 Important 触发修复循环
+（Minor 不进入循环）。恢复原 implementer 完成 fix round 1：`TransformersBackend` 现在
+如实发布 `adapter_path` 与 `settings`；`_require_backend_matches_pin` 依次拒绝非空 adapter、
+目录/revision 不符、`settings != config.generation`。新增对抗性回归测试覆盖 adapter 后端、
+四种参数漂移场景与一个正例对照；顺带解决了一项已记录的 Minor（`max_new_tokens` 死代码，
+因整体 settings 比较而自然生效）。提交 `bea052c`；focused 7、四个覆盖文件 99、全量 449
+测试通过，Ruff/mypy/diff 干净。implementer 明确说明未对 sealed evaluator（`evaluate_authorized_holdout`）
+加同样绑定，理由是 R3 需要在正式 holdout 上合法运行挂载 adapter 的候选模型，这属于已记录
+的 Minor（sealed evaluator 按设计不含模型/生成参数绑定），不是同一 Important 的重现。
+已派发 sonnet 模型的 scoped re-review 验证该修复且检查修复本身有无引入新问题。
+
+**后果与下一步**：等待 scoped re-review 结果；若确认 addressed 且无新 Critical/Important，
+Task 5 记为 complete 并进入 Task 6（CLI pipeline 分派与 CPU 端到端验收）。
+
+### LOG-20260805-12：Task 6（CLI pipeline 分派与 CPU 端到端验收）实现完成
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 6（CLI pipeline 分派与 CPU 端到端验收）
+- 状态：进行中（implementer 侧完成，等待独立审查）
+- 关联：LOG-20260805-11、`.superpowers/sdd/2026-07-22-retailops-v1-r2-formal-data-and-base/task-6-brief.md`
+
+**背景与难点**：Task 5 完成后进入 Task 6：把 Task 1-5 已实现但从未接入 CLI 的四条 R2
+库函数（formal_freeze、teacher_collect、train_export、formal_dev_base）以 `pipeline` 字段
+分派方式接入既有稳定 `product_cli.py`，同时不得改变 R1 四个命令在无 `pipeline` 字段时的
+任何行为。其中最安全敏感的一点是 `.env`/环境变量边界：只有 `teacher_collect` 允许读取
+`TEACHER_LLM_*`，且必须证明其余流水线（含全部未改动的 R1 路径）在环境变量被污染时完全
+不受影响、也不会因为缺少这些变量而报错。
+
+**决定与方案**：`build`/`evaluate` 先看 config 有没有顶层 `pipeline` 字段，没有就逐字节走
+原 R1 精确 key 集合路径（`_run_release`/`_run_serve` 未新增任何 R2 路径，一行未改）；有则
+分派到四个独立命名的流水线函数，各自校验自己的精确 key 集合。`teacher_collect` 需要真实
+`TeacherClient` 而 CPU 测试无法构造、`formal_dev_base` 需要真实 `GenerationBackend`/
+`HardwareProvider` 而 CPU 测试同样无法构造，两处都用同一种窄注入缝：可选关键字参数
+（`client_factory`/`backend_factory`/`hardware_provider_factory`，默认 `None`），函数体内
+`factory or _default_xxx` 在调用时才动态查找模块级默认工厂，因此测试既可以直接调用内部
+处理函数并传入 fake，也可以只走 `main()` 并在唯一定义点 monkeypatch 默认工厂，不需要额外
+"测试模式"开关。`code_commit`/`uv_lock_sha256` 不放进 config（提交后立刻过期），改为 CLI
+用 `Path(__file__).resolve().parents[2]` 定位仓库根后现算，与调用方 CWD 是否被测试
+chdir 到隔离 tmp 根无关。
+
+**证据**：TDD 全程：先写 `tests/test_retail_ops_r2_cli.py`（33 用例）确认因
+`_require_config_keys` 拒绝新增 `pipeline`/R2 key、`ImportError`、argparse 未知参数而 RED，
+再实现 `product_cli.py` 与 6 份新 config、`tests/test_retail_ops_r2_e2e.py`（4 用例，含 1 个
+双参数化）。CPU 端到端覆盖：两个隔离 tmp 根各跑一次 formal_freeze 并逐字节比较全部
+公开/私有产物；240 条 train 任务跑一次 teacher_collect（通用 fake teacher client 按
+`task.expected_calls` 回放，不依赖具体场景，每类别标记 8/40 失败，越过 70%/50% 质量门）
+后 train_export 导出 240 条 train.jsonl/sft.jsonl，来源精确对应 teacher 接受与
+internal_reference 回退；两份 dev-base config 各自通过 fake backend/fake hardware provider
+跑通 60 条 dev 任务并用真实 `load_base_run_evidence` 回读校验、扫描无任务级泄漏。
+`tests/test_project_governance.py` 新增 3 个断言：R2 私有/模型/产物路径仍被既有
+`.gitignore` 规则覆盖、6 份新 config 的实际取值不含绝对路径/私有根路径/凭据标记、
+`product_cli.py` 与新 config 不引用 BFCL。`tests/test_retail_ops_cli.py`（R1 CLI 测试）
+diff 为空，逐字节未改。全仓 `.venv/bin/pytest -q` 489 passed（Task 5 收口基线 449 +
+本任务新增 40）；Ruff、`ruff format`、mypy 54 files、`env -u UV_INDEX_URL uv lock --check`、
+`git diff --cached --check` 全部通过。
+
+**后果与下一步**：等待独立审查（reviewer）确认 `.env` 边界、注入缝设计和 R1 等价性无
+Critical/Important 问题；确认后进入 Task 7（整分支审查、完整 CPU 门禁重跑、外部审批命令
+清单）。两份 dev-base config 的 `model.revision`/`file_sha256` 仍是显式标注的占位值——
+真实 Qwen3-1.7B/4B 权重下载与哈希固化仍需用户逐项审批，不在本任务范围内。

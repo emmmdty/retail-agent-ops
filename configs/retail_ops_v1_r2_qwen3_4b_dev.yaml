@@ -1,0 +1,23 @@
+# R2 formal_dev_base: Qwen3-4B 在 60 条正式 dev 任务上的冻结 base 评测
+# （seed=0、5 步预算、无采样、非思考、4-bit NF4，无 adapter 字段）。
+#
+# model.revision / model.file_sha256 是占位值：本仓库尚未下载/固定真实 Qwen3-4B
+# 权重（R2 模型下载仍需用户逐项审批）。真实 GPU 运行前必须把这两处替换为
+# `hash_local_model_files` 对已下载模型目录计算出的真实值，否则
+# `verify_local_model_files` 会在评测开始前直接拒绝。
+pipeline: formal_dev_base
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
+models_root: models
+attempt_id: qwen3-4b-dev-base-001
+model:
+  repo: Qwen/Qwen3-4B
+  revision: "0000000000000000000000000000000000000000"
+  local_dir: Qwen3-4B-pinned
+  file_sha256:
+    config.json: "0000000000000000000000000000000000000000000000000000000000000000"
+    model.safetensors: "0000000000000000000000000000000000000000000000000000000000000000"
+    tokenizer.json: "0000000000000000000000000000000000000000000000000000000000000000"
+generation:
+  max_new_tokens: 256

@@ -1,0 +1,6 @@
+# R2 formal_freeze: 从冻结 bundle 生成正式 240/60/120 任务集。
+# 私有真值写入 CLI 内部推导的 data/private/retail_ops/v1/r2/<dataset_version>/
+# （不是 config 字段）；--output_dir 是公开 answer-free manifest 根目录。
+pipeline: formal_freeze
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722

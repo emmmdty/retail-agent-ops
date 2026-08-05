@@ -1,0 +1,11 @@
+# R2 train_export: 质量门通过后为全部 240 条 train 任务选定轨迹（优先 teacher，
+# 否则回退确定性 internal reference）并导出 train.jsonl/sft.jsonl。
+# teacher_attempt_id 必须指向已经跑过 teacher_collect 的 attempt；--input_dir
+# 复用同一个 formal_freeze 私有根，--output_dir 是本次导出自己的新产物目录
+# （只包含公开聚合 quality.json，不含任务级真值）。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-001

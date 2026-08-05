@@ -1,0 +1,10 @@
+# R2 teacher_collect full: 冻结默认预算（每任务最多 2 个 episode，每次尝试最多
+# 3 次可重试传输重试）的完整 train split 采集。可安全中断续跑：--input_dir 下
+# 已接受任务由 checkpoint 精确哈希校验后跳过，不会重复消耗 teacher 配额。
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+attempt_id: teacher-full-001
+max_episodes_per_task: 2
+max_request_attempts: 3
