@@ -1,3 +1,6 @@
+# ---- Claude Code 本地个人配置（不与团队共享）----
+/.claude/settings.local.json
+
 # ---- Python ----
 __pycache__/
 *.py[cod]

@@ -743,3 +743,30 @@ chat_template 原生支持字符串/字典两种形式，对本地 Qwen 路径�
 teacher 路由与 client、teacher 采集与 train 导出）CPU 实现全部完成并审查。剩余 R2 计划
 Task 5（Qwen3-1.7B/4B dev base 配置与运行证据）和 Task 6（CLI 分派与端到端验收）待开始；
 真实批量 teacher 采集（240 条 train）和模型 dev base 评测仍需分别单独确认后才能执行。
+
+### LOG-20260805-09：写出 R2 Task 5-7 执行提示词（未提交）
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / 阶段交接文档
+- 状态：解决
+- 关联：`docs/handoffs/2026-08-05-r2-task5-7-execution-prompt.md`（未提交）
+
+**背景**：用户要求给出下一阶段的启动提示词，用于在新会话（Claude Code 或 Codex）里继续
+R2 剩余工作。参照 `docs/handoffs/2026-07-22-r2-codex-execution-prompt.md` 的既有格式和
+边界写法产出新版本。
+
+**内容**：新提示词范围限定在 Task 5（sealed evaluator + Qwen3-1.7B/4B dev base 证据，
+CPU fake backend）、Task 6（CLI `pipeline` 分派 + CPU 端到端验收）、Task 7（整分支独立
+审查 + 写出"未执行、逐条待批准"的外部命令清单），明确不包含 Task 8 的任何实际外部操作
+（正式数据生成、API、模型下载、SSH、GPU）。内容里显式指向本次 Task 1-4 已经审计过的
+`_resolve_within`/staging/原子发布模式，要求 Task 5 复用而不是重新实现同类路径校验；
+新增一条硬停止条件：私有产物写入若又退化成纯字符串路径检查，直接算阻塞级问题。同时说明
+gpu-5090 已下载并哈希校验过 Qwen3-1.7B/4B，Task 7 命令清单应询问用户是否复用而不是默认
+重新下载。
+
+**决定与方案**：本轮只创建了提示词文件，未提交、未开始执行 Task 5-7 的任何实现；是否
+提交、是否立即启动 Task 5 均等待用户决定。
+
+**后果与下一步**：若用户批准，下一步是把此文件提交或直接用它启动新会话执行 Task 5-7；
+Task 8（正式数据/API/模型/GPU）仍需在 Task 7 产出命令清单后逐条单独批准，不在本文档
+范围内。
