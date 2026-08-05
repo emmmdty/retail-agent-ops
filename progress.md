@@ -151,3 +151,19 @@ train/dev/holdout、调用模型或进入训练。
   `formal_manifests.py` 里已审计过的 resolve+staging+rollback 模式。最终 365 passed、Ruff、
   mypy 52 files、lock 与 diff 检查通过，提交为 `1d60af2`。R2 CPU 实现的核心数据链路
   （Task 1-4）已完成；剩余 Qwen dev base 配置（对应 R2 计划 Task 5）和最终 R2 收口待开始。
+
+## 2026-08-05 — R2 Task 5（sealed evaluator 与 dev base 证据，CPU 实现）
+
+- 新增 `src/veritool_rl/retail_ops/sealed_evaluation.py`、`src/veritool_rl/retail_ops/base_evaluation.py`，
+  并兼容扩展 `src/veritool_rl/agent/qwen.py`（`GenerationSettings`、`GpuMeasurement`、
+  `HardwareProvider`/`CudaHardwareProvider`、`hash_local_model_files`/`verify_local_model_files`、
+  `TransformersBackend` 的可选 `revision`/`expected_file_sha256`/`settings`）。R1 与 BFCL 的
+  两处 `TransformersBackend.from_pretrained(model_name, adapter_path)` 调用点保持原样可用。
+- TDD：先写 `tests/test_sealed_evaluation.py`、`tests/test_base_evaluation.py` 并确认因缺模块/
+  缺符号而 RED，再实现；`tests/test_qwen_policy.py` 补 7 个模型哈希/revision/硬件测量用例。
+- 自审补漏：dev base 评测改为独立重新加载并哈希校验私有 `dev.jsonl` 后再逐条比对调用方
+  records；`bootstrap_samples` 冻结为 1000 以保证两个模型可比。
+- 验收：`tests/test_sealed_evaluation.py tests/test_base_evaluation.py tests/test_qwen_policy.py
+  tests/test_retail_ops_evaluation.py` 92 passed；全仓 `.venv/bin/pytest -q` 442 passed；
+  Ruff、mypy 54 files、`git diff --check` 通过。本任务全部在 CPU + fake backend/fake hardware
+  provider 上完成，未加载真实模型、未访问 CUDA、未运行任何 API/GPU/下载命令。

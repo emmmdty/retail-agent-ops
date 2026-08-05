@@ -256,3 +256,39 @@
   （当前所有调用点都传枚举值，暂不可利用）。
 - Task 4 最终验收：365 个全仓测试、Ruff、mypy 52 个源文件、`uv lock --check`、
   `git diff --check` 全部通过，提交为 `1d60af2`（`feat: add audited teacher data pipeline`）。
+
+## 2026-08-05 — R2 Task 5：sealed evaluator 与 dev base 证据
+
+- 模块划分：`sealed_evaluation.py` 只放 release 侧密封合同（`SealedEvaluationReport`、
+  `evaluate_authorized_holdout`、`load_sealed_evaluation_report`）；`base_evaluation.py`
+  放 develop 侧（`load_verified_formal_dev`、`ModelArtifact`、`HardwareProvenance`、
+  `BaseEvaluationConfig`、`BaseRunEvidence`、`evaluate_formal_dev_base`、
+  `load_base_run_evidence`）以及两者共用的评测机器（路径防护、staging 原子发布、
+  episode/replay 执行、产物哈希、自哈希 ID）。计划的文件清单只允许这两个新模块，
+  因此共享实现放在 `base_evaluation.py`，`sealed_evaluation.py` 按本包既有约定跨模块
+  引用其模块私有名（同 `formal_governance` 引用 `formal_manifests._parse_and_validate_private_rows`）。
+- 授权边界复用而非重造：`evaluate_authorized_holdout` 只接受 `AuthorizedFormalHoldout`，
+  记录经 `load_authorized_formal_holdout` 重新哈希并逐行校验；伪造实例（`object.__new__`）
+  和任意非授权对象都在任何文件写入之前 `PermissionError`。私有证据固定写到授权时使用的
+  `trusted_private_root/sealed-eval/<attempt_id>/`，调用方无法把完整轨迹重定向到公开路径。
+- dev loader 只固定解析 `<private_root>/dev.jsonl`：purpose 和 `split=dev` 在触碰文件系统
+  之前判定，随后核对私有 artifact SHA-256 并交给已审计的 `_parse_and_validate_private_rows`
+  做行数/类别/顺序/split/五指纹全量校验。传 `FormalHoldoutReceipt`、train manifest、
+  `release`/`build` purpose 或字符串 `"develop"` 全部拒绝，不存在通往 holdout 的开发入口。
+- 自审时补上的真实缺口：`evaluate_formal_dev_base` 原来只按公开 manifest 复核调用方传入的
+  records，`dev_artifact_sha256` 等于调用方的一面之词。已改为在评测前独立重新加载并哈希
+  校验 `dev.jsonl`，再逐条比对内容（`_require_records_match_private_artifact`），并补
+  "加载后篡改磁盘 artifact 即拒绝评测"的回归测试。
+- 模型 pin 只做形状校验、绝不在代码里硬编码 revision：`ModelArtifact.repo/revision/local_dir`
+  是配置数据（`local_dir` 必须是受信 `models_root` 下的安全单一片段），真正的防篡改依据是
+  `verify_local_model_files` 的逐文件 SHA-256 + "未列入清单的文件/子目录/symlink 一律拒绝"。
+  `TransformersBackend` 会声明自身 `model_dir`/`revision`，评测端据此拒绝声明与锁定不一致
+  的后端，避免"证据写着 A 模型、实际跑的是 B 模型"。
+- 硬件测量做成可注入协议（`HardwareProvider`/`GpuMeasurement`），CPU 测试用 fake provider；
+  真实 `CudaHardwareProvider` 只在方法内部导入 torch，并把逻辑 ordinal 通过
+  `CUDA_VISIBLE_DEVICES` 映射回物理 index（非数字条目直接报错，不猜测物理身份）。
+  `test_dev_base_never_imports_cuda_or_model_runtime` 用 `builtins.__import__` 守卫证明
+  整条 CPU 评测路径不导入 torch/transformers/peft/bitsandbytes/pynvml。
+- 公开输出按固定 allowlist 建模：sealed 报告只有聚合指标、运行 provenance 和失败 taxonomy
+  计数；测试用私有记录的 task_id/user_request/family_id/order_id/customer_id 和五类指纹做
+  子串扫描，确认公开 JSON 里一个都不出现（连 opaque fingerprint 也不出现）。
