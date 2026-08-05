@@ -20,7 +20,7 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 - [x] Task 2：实现并复审 schema 2.0 manifest、verified dataset、五维隔离与两阶段 sealed holdout（`e877bd2`、`87a65ff`）。
 - [ ] 实现正式任务、manifest、holdout 治理及密封评测合同。
 - [x] Task 3：实现并复审 provider-agnostic teacher 路由与 OpenAI-compatible client 传输边界（`7153c26`）。
-- [ ] Task 4：实现 teacher 采集、回放质检与 train 导出。
+- [x] Task 4：实现并复审 teacher 采集、回放质检与 train 导出（`1d60af2`）。
 - [ ] 实现 Qwen3-1.7B/4B dev base 配置、运行证据和 CLI 分派。
 - [ ] 通过 CPU 完整门禁后，逐项进入正式数据、API、下载和远端 GPU 审批门。
 - [ ] 在最终 HEAD 完成审查、文档收口和分支交付。

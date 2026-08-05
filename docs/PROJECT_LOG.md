@@ -698,3 +698,48 @@ LOG-20260805-06 的保守预测（预测调用 token 数偏高，是因为参照
 但需在 Task 4 正式实现前修复 `run_episode` 的两个真实 OpenAI 协议 bug（写失败测试固定期望
 的 wire format），并在正式采集前额外对至少一个非 `lookup_status` 类别（比如需要更多步的
 `refund_recovery`）做真实抽样，避免用单一最简类别的数据外推全部 6 类。
+
+### LOG-20260805-08：R2 Task 4 完成，独立审查发现并修复三项数据治理漏洞
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 4 teacher 采集、质量门与 train 导出
+- 状态：解决
+- 关联：`99bc4ec`（run_episode wire format 前置修复）、`1d60af2`
+
+**背景**：在 LOG-20260805-07 的 smoke 测试基础上，先用 TDD 把 `run_episode`（`agent/runner.py`）
+组装多轮消息历史时的两个真实 OpenAI wire format bug（`tool_calls[].function.arguments`
+需为 JSON 字符串、需要 `id`/`tool_call_id`）修复并提交（`99bc4ec`，已确认 Qwen3 真实
+chat_template 原生支持字符串/字典两种形式，对本地 Qwen 路径无回归），随后实现 Task 4 正式
+模块 `teacher_data.py`。
+
+**证据**：
+- `collect_teacher_attempt` 覆盖 8 类结果分类（成功/schema 非法/非法工具/政策违规/步数
+  上限/终态错误/传输耗尽/replay 不一致），每类都有基于真实 formal train 任务的场景测试；
+  dev/holdout 任务在调用 teacher client 前即被拒绝。
+- 新增 `TeacherClientError.retryable` 分类（`teacher_client.py`，靠 `status_code`/异常类名
+  鸭子类型判断可重试传输错误，不硬依赖 openai SDK），供采集循环区分"重试"与"直接判定
+  schema 非法"。
+- 顺带修复 `data/generators.py::trajectory_to_sft_example` 的同一 wire format 问题，因为
+  Task 4 导出路径最终把它的输出写进 `sft.jsonl`。
+- 独立只读审查在测试全绿之后，按 Task 1/2 同等严格度复现三个真实漏洞（均用攻击脚本验证）：
+  1. 私有根路径校验只做字符串成分检查，可被 `..` 穿越、含相同片段的任意绝对路径、或把
+     中间目录做成 symlink 绕过；修复为接收调用方建立的受信 `private_root` + 校验过的简单
+     `attempt_id`/`task_id` 分量，内部 `resolve()` 做逃逸检测，复用 `formal_manifests.py`
+     已审计模式。
+  2. `load_teacher_checkpoint` 解析证据文件后从未与 checkpoint 自身治理哈希/`accepted`/
+     `task_id` 交叉校验，实测替换证据文件内容后 resume 仍会接受；修复为逐字段核对。
+  3. `write_formal_train_export` 四文件顺序写入非原子，中途失败留半成品且无法安全重试；
+     修复为 private 三文件走 staging + 原子 rename，任何后续失败（含公开 `quality.json`
+     冲突）都整体回滚已发布的 private 目录，复用 `write_formal_task_set` 的模式。
+  三处修复均补了对抗性回归测试（路径穿越、intermediate symlink、证据内容篡改、公开产物
+  冲突时的私有目录回滚），非阻塞建议（重试无退避等）判定为可接受风险，记录在 `findings.md`
+  未改代码。
+
+**决定与方案**：Task 4 按 `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`
+第 166-212 行验收，最终 365 个全仓测试、Ruff、mypy 52 个源文件、`uv lock --check`、
+`git diff --check` 全部通过，提交为 `1d60af2`（`feat: add audited teacher data pipeline`）。
+
+**后果与下一步**：R2 核心数据链路（Task 1-4：formal 任务生成、manifest/holdout 治理、
+teacher 路由与 client、teacher 采集与 train 导出）CPU 实现全部完成并审查。剩余 R2 计划
+Task 5（Qwen3-1.7B/4B dev base 配置与运行证据）和 Task 6（CLI 分派与端到端验收）待开始；
+真实批量 teacher 采集（240 条 train）和模型 dev base 评测仍需分别单独确认后才能执行。

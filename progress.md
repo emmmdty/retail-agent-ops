@@ -47,6 +47,9 @@
 | 2026-08-05 | ModelScope Qwen3-1.7B/4B 下载 + 逐文件 SHA256 校验 | `ALL_FILES_VERIFIED_OK`，13/13、14/14 文件全部 `OK`，合计 11.4G |
 | 2026-08-05 | DeepSeek `deepseek-v4-flash` 真实 API smoke | HTTP 200；发现默认 thinking 模式，`extra_body={"thinking":{"type":"disabled"}}` 后确认可关闭 |
 | 2026-08-05 | Task 3 独立审查后最终 `.venv/bin/pytest -q` + Ruff + mypy + `uv lock --check` + `git diff --check` | 323 passed；Ruff passed；mypy 51 files passed；lock 与 diff 均通过 |
+| 2026-08-05 | Task 4 RED（新建 `tests/test_teacher_data.py`） | 缺 `teacher_data` 模块，全部按预期失败 |
+| 2026-08-05 | Task 4 首轮 GREEN | 27 selected passed；360 full passed（新增 runner.py/generators.py wire-format 回归） |
+| 2026-08-05 | Task 4 独立审查后修复三项真实治理漏洞并补对抗性回归测试 | 32 selected passed；365 full passed；Ruff、mypy 52 files、lock、diff 全部通过 |
 
 ## 初始化决策
 
@@ -140,4 +143,11 @@ train/dev/holdout、调用模型或进入训练。
   `[[tool.uv.index]] default = true` 后 `uv.lock` diff 从约 3671 行降到 129 行），独立审查
   发现并修复 `RecursionError` 未捕获导致的崩溃（深层嵌套 JSON 会绕过预期的
   `ValueError`/`TeacherClientError`）。最终 323 passed、Ruff、mypy 51 files、lock 与 diff
-  检查通过，提交为 `7153c26`。Task 4（teacher 采集/回放质检/train 导出）待开始。
+  检查通过，提交为 `7153c26`。
+- Task 4（teacher 采集、回放质检、train 导出）完成：`collect_teacher_attempt` 覆盖 8 类结果
+  分类，`export_formal_train`/`write_formal_train_export` 实现质量门与导出。独立审查发现三个
+  真实治理漏洞（私有根路径校验可被 `..` 穿越/绝对路径/symlink 绕过、checkpoint resume 不
+  校验证据内容、多文件导出非原子写入），均已修复并补对抗性回归测试，复用
+  `formal_manifests.py` 里已审计过的 resolve+staging+rollback 模式。最终 365 passed、Ruff、
+  mypy 52 files、lock 与 diff 检查通过，提交为 `1d60af2`。R2 CPU 实现的核心数据链路
+  （Task 1-4）已完成；剩余 Qwen dev base 配置（对应 R2 计划 Task 5）和最终 R2 收口待开始。

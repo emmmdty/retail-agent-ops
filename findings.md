@@ -220,3 +220,39 @@
   已知限度记录而非修复项。
 - Task 3 最终验收：323 个全仓测试、Ruff、mypy 51 个源文件、`uv lock --check`、
   `git diff --check` 全部通过，提交为 `7153c26`（`feat: add dynamic teacher routing`）。
+
+## R2 Task 4：teacher 采集、质量门与 train 导出（2026-08-05）
+
+- 新增 `src/veritool_rl/retail_ops/teacher_data.py`：`collect_teacher_attempt` 对每条 train
+  任务最多跑 2 个 episode，只对可重试传输错误（`TeacherClientError.retryable`，靠
+  `status_code`/异常类名鸭子类型判断，不硬依赖 openai SDK）重试最多 3 次；八类结果
+  （成功/schema 非法/非法工具/政策违规/步数上限/终态错误/传输耗尽/replay 不一致）全部
+  有真实场景测试覆盖，dev/holdout 任务在调用 client 前就被拒绝。
+- 顺带修复 `src/veritool_rl/data/generators.py::trajectory_to_sft_example`：与 Task 3 对
+  `run_episode` 的修复同一个问题（`tool_calls[].function.arguments` 需要是 JSON 字符串、
+  需要 `id`/`tool_call_id`），因为 Task 4 的导出路径最终会把这个函数的输出写进 `sft.jsonl`。
+- 独立审查在"测试全绿"之后仍然按 Task 1/2 同等严格度复现了三个真实漏洞（都已用攻击脚本验证
+  成立，不是理论推测）：
+  1. 私有根路径校验（原 `_assert_private_root`）只做 `.parts` 里的字符串成分检查，可被
+     `..` 穿越、含相同片段的任意绝对路径、或把中间目录做成 symlink 绕过，已实测三种都能
+     逃出预期目录。修复：写入函数改为接收调用方建立的受信 `private_root` + 校验过的简单
+     `attempt_id`/`task_id` 分量，内部用 `resolve()` 做逃逸检测，复用 `formal_manifests.py`
+     里已经审计过的模式。
+  2. `load_teacher_checkpoint` 会解析 `accepted_task_ids` 引用的每个证据文件，但解析结果
+     直接丢弃，从未跟 checkpoint 自身的六项治理哈希/`accepted`/`task_id` 做交叉校验——实测
+     把某个证据文件替换成 `accepted=False`、哈希全不同的版本后，resume 照样把它当"已接受"
+     任务继续。修复：逐字段核对证据文件内容与 checkpoint 记录一致，不一致就报错。
+  3. `write_formal_train_export` 原来是 `train.jsonl`/`sft.jsonl`/`selection.json`/公开
+     `quality.json` 四个文件顺序写入，中途失败会在 `train-export/<attempt>` 留下不一致的
+     半成品，且无法安全重试（部分文件已存在会直接报 `FileExistsError`）。修复：private 三
+     文件走 staging 目录 + 原子 rename 一次性发布，任何后续步骤（含公开 `quality.json` 冲突）
+     失败都会把已发布的 private 目录整体回滚删除，复用 `formal_manifests.py::write_formal_task_set`
+     的 staging/publish/rollback 模式。
+  三处修复都补了对应的对抗性回归测试（路径穿越、intermediate symlink、证据内容篡改、
+  公开产物冲突时的私有目录回滚），不是只补"正常路径"测试。
+- 非阻塞建议判定为可接受风险、未改代码：重试之间无退避（真实批量采集时才会暴露，留给
+  实际运行观察）；`_classify_outcome` 对"同时命中 unknown_tool 与 invalid_arguments"的
+  优先级未单独测试但逻辑清楚（ILLEGAL_TOOL 优先）；`scenario_by_task_id` 无枚举类型约束
+  （当前所有调用点都传枚举值，暂不可利用）。
+- Task 4 最终验收：365 个全仓测试、Ruff、mypy 52 个源文件、`uv lock --check`、
+  `git diff --check` 全部通过，提交为 `1d60af2`（`feat: add audited teacher data pipeline`）。
