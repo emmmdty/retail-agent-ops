@@ -19,7 +19,8 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 - [x] Task 1：实现并复审 formal family-first 任务生成、五类指纹和 420 条环境语义回归（`83bd0b3`、`dfdb8dd`）。
 - [x] Task 2：实现并复审 schema 2.0 manifest、verified dataset、五维隔离与两阶段 sealed holdout（`e877bd2`、`87a65ff`）。
 - [ ] 实现正式任务、manifest、holdout 治理及密封评测合同。
-- [ ] 实现动态 provider 路由、teacher 采集、回放质检与 train 导出。
+- [x] Task 3：实现并复审 provider-agnostic teacher 路由与 OpenAI-compatible client 传输边界（`7153c26`）。
+- [ ] Task 4：实现 teacher 采集、回放质检与 train 导出。
 - [ ] 实现 Qwen3-1.7B/4B dev base 配置、运行证据和 CLI 分派。
 - [ ] 通过 CPU 完整门禁后，逐项进入正式数据、API、下载和远端 GPU 审批门。
 - [ ] 在最终 HEAD 完成审查、文档收口和分支交付。
@@ -65,6 +66,7 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 | 2026-07-22 | Task 1 独立审查发现 derivation 未绑定实际政策状态、quota 接受重复变体，且 catalog/420 条环境验证未固化为测试 | 判定 NOT PASS；派回实现代理先补 deadline/owner/status/duplicate/tamper/catalog/environment RED，再强化真值投影和 integrity 校验，复审通过前不进入 Task 2 |
 | 2026-07-22 | Task 2 独立审查用攻击脚本复现 public value 泄漏、provenance 断链、重复 variant、非原子双根、symlink 越界和可伪造授权 token 六项 Important | 判定 NOT PASS；统一补固定 Literal、verified dataset、private provenance/variant 重建、failure-atomic staging、trusted-root no-follow 读取和注册 capability 的 RED/GREEN，复审通过前不进入 Task 3 |
 | 2026-07-22 | Task 2 修复复审代理的最终输出被平台 cybersecurity 风险过滤器误拦截 | 保留已完成的代码与 284 个测试证据，把复审改写为不描述利用步骤的“数据治理契约回归审查”并复用同一只读 reviewer |
+| 2026-07-22 | Task 3 只读接口检索误读不存在的 `src/veritool_rl/agent/base.py`，导致同一 `&&` 链后的 Qwen 查看未执行 | 改读实际 `agent/qwen.py`、`agent/policy.py`、`agent/runner.py`；未修改代码或环境 |
 
 ## Maintenance: Codex 启动简化
 

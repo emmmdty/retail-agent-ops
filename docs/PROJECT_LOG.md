@@ -591,3 +591,37 @@ $0.0000145，可忽略。
 
 **后果与下一步**：本次 API 调用为一次性最小 smoke，未进行批量采集或正式 train 导出；Task 3 实现
 和后续真实 teacher 批量采集仍需分别验证。
+
+### LOG-20260805-05：R2 Task 3 完成，独立审查修复 RecursionError 泄漏并修正 uv 索引配置
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 3 provider-agnostic teacher 路由与 client
+- 状态：解决
+- 关联：`d40c43a`、`7153c26`
+
+**背景与难点**：接手时 `teacher_route.py`/`teacher_client.py` 已有前序会话留下的完整实现和
+37 个通过的测试，但从未跑过 Ruff/mypy/独立审查，也没有针对刚确认的 `deepseek-v4-flash`
+thinking 行为的验证。
+
+**证据**：
+- Ruff/mypy 各发现 2 个真实问题（测试 fixture 可变默认参数、import 顺序、
+  `TEACHER_PROTOCOL_ID` 缺 `Literal` 标注导致字段默认值类型不兼容），已修复。
+- 实测证实 `[tool.uv] index-url = "..."` 在 `uv 0.11.8` 下完全不生效（用假域名替换后
+  `uv lock --check` 仍瞬间通过），是本项目反复出现的"镜像 URL 机械改写 uv.lock"问题的根因；
+  改用已验证生效的 `[[tool.uv.index]] url = "..." default = true` 后，`uv.lock` diff 从
+  约 3671 行降到 129 行，`git diff --check`、全量测试、Ruff、mypy、lock check 均通过。
+- 独立只读审查发现 1 项阻塞级问题：`_parse_extra_body`/`_normalize_tool_calls` 的 JSON 解析
+  未捕获 `RecursionError`，几 KB 的深层嵌套输入（未达 16KB 上限）会让加载路径整体崩溃而非
+  返回预期的 `ValueError`/`TeacherClientError`。已用 `"[" * 4000 + "]" * 4000` 复现 RED，
+  补两处 except 元组后 GREEN；三项非阻塞建议（`__context__` 未清空、SDK 无显式
+  timeout/max_retries、secret-key 黑名单可被零宽字符绕过）判定为可接受风险，记录在
+  `findings.md`，未改代码。
+
+**决定与方案**：Task 3 按 `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`
+第 115-165 行验收，先提交环境/DeepSeek 验证文档（`d40c43a`），再提交
+`feat: add dynamic teacher routing`（`7153c26`），最终 323 个全仓测试、Ruff、mypy 51 个源
+文件、`uv lock --check`、`git diff --check` 全部通过。
+
+**后果与下一步**：Task 4（teacher 采集、回放质检与 train 导出）可以开始；采集配置需要复用
+`{"thinking":{"type":"disabled"}}` 的 `extra_body` 模式，避免真实批量采集把预算浪费在
+推理链上。真实批量 teacher 调用仍需单独确认后才能执行。

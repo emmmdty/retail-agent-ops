@@ -184,3 +184,39 @@
     2.0T 可用。上述 ModelScope 提交哈希（`980712f58bdf...`／`8cd0101f70ca...`）现为
     R2 dev base 的正式 pin，取代原 R2 计划中的 HuggingFace revision 记录。落盘路径：
     `/mnt/aidata/tongjiakai/models/Qwen3-1.7B/`、`/mnt/aidata/tongjiakai/models/Qwen3-4B/`。
+
+## R2 Task 3：provider-agnostic teacher 路由与 client（2026-08-05）
+
+- 用户确认正式 teacher 模型为 `deepseek-v4-flash`；只读检索确认其为 DeepSeek 当前在售正式
+  模型，真实 endpoint 为 `{base_url}/chat/completions`（非 `/v1/chat/completions`），与
+  `.env` 现有 `TEACHER_LLM_DEEPSEEK_BASE_URL` 一致。真实 smoke（`max_tokens=8`）返回
+  HTTP 200，但发现 `deepseek-v4-flash` 默认走 thinking 模式：`content` 为空、
+  `reasoning_content` 非空、`finish_reason=length`。追加验证确认在请求体加入
+  `"thinking":{"type":"disabled"}`（`extra_body` 透传）后 `content` 直接返回、
+  `finish_reason=stop`，且只消耗 1 个 completion token；这个模式已经固化进
+  `test_teacher_route.py`/`test_teacher_client.py` 的 fixture，Task 4 采集配置应复用。
+- 接手时 `teacher_route.py`/`teacher_client.py` 已有前序会话留下的完整实现和 37 个通过的
+  测试，但未跑过 Ruff/mypy：`ruff` 报 2 个真实问题（测试 fixture 里 `SimpleNamespace(...)`
+  作为可变默认参数、`test_teacher_route.py` import 顺序），`mypy` 报 2 个真实问题
+  （`TEACHER_PROTOCOL_ID` 模块常量未标注为 `Literal`，导致 pydantic 字段默认值类型不兼容）。
+  四项均已修复，不涉及行为变化。
+- **实测发现 `[tool.uv] index-url = "..."` 在当前 `uv 0.11.8` 下完全不生效**：用一个不存在
+  的域名替换该值后 `uv lock --check` 仍瞬间通过，证明该 key 被静默忽略；已验证的正确写法是
+  `[[tool.uv.index]] url = "..." default = true`（同样用假域名测试，会真的尝试连接并报错，
+  证明生效）。这正是 R1/R2 反复出现的"用户级镜像 URL 机械改写 uv.lock"问题的根因——旧配置
+  没有真正锁定索引。改用正确写法后 `uv lock` 重新生成，`uv.lock` diff 从约 3671 行降到
+  129 行（只剩 openai/distro/jiter 等真实新增依赖），`git diff --check` 与全量测试/Ruff/
+  mypy/lock check 均通过。
+- 独立只读审查（general-purpose agent）发现 1 项阻塞级问题：`_parse_extra_body`
+  （`teacher_route.py`）和 `_normalize_tool_calls`（`teacher_client.py`）的 JSON 解析
+  except 元组未捕获 `RecursionError`，深层嵌套但仅几 KB 的 `EXTRA_BODY_JSON`/tool
+  arguments（未达 16KB 上限）会让加载路径整体崩溃而非返回预期的 `ValueError`/
+  `TeacherClientError`。已用 `"[" * 4000 + "]" * 4000` 复现（RED），补两处 except 元组后
+  确认修复（GREEN）。审查同时给出三项非阻塞建议（`from None` 不清除 `__context__`、未显式
+  设置 SDK timeout/max_retries、`_reject_secret_keys` 是黑名单式子串匹配对零宽字符等极端
+  构造无能为力）——均判定为可接受风险，原因：`__context__` 场景需要脆弱的自引用异常技巧才能
+  完全清除，价值不足；timeout/重试边界属于 Task 4（真正发起批量请求的一方）该决定的参数；
+  黑名单绕过的触发者就是本就控制该 env var 的操作者，不构成外部攻击面。均未改代码，留作
+  已知限度记录而非修复项。
+- Task 3 最终验收：323 个全仓测试、Ruff、mypy 51 个源文件、`uv lock --check`、
+  `git diff --check` 全部通过，提交为 `7153c26`（`feat: add dynamic teacher routing`）。

@@ -43,6 +43,10 @@
 | 2026-07-22 | 正式目录迁移后首次完整质量门 | 211 passed；Ruff passed；mypy 46 files passed；lock 解析 101 packages；diff passed |
 | 2026-07-22 | 迁移路径与资产检查 | 新旧路径、独立 `.git`、R1 ancestry、无 remote、ignored evidence、新 shebang、Gorilla 固定 commit 全部通过 |
 | 2026-07-22 | R2 交接提交 `32b9bf7` 实际 HEAD 复验 | 211 passed；Ruff、mypy、lock、diff、迁移路径、BFCL/敏感路径与提示词静态边界全部通过；工作树干净 |
+| 2026-08-05 | gpu-5090 环境搭建 `uv sync --extra dev --extra train --frozen` | 成功；`torch==2.13.0+cu130`，`torch.cuda.is_available()==True`，识别 `NVIDIA GeForce RTX 5090` |
+| 2026-08-05 | ModelScope Qwen3-1.7B/4B 下载 + 逐文件 SHA256 校验 | `ALL_FILES_VERIFIED_OK`，13/13、14/14 文件全部 `OK`，合计 11.4G |
+| 2026-08-05 | DeepSeek `deepseek-v4-flash` 真实 API smoke | HTTP 200；发现默认 thinking 模式，`extra_body={"thinking":{"type":"disabled"}}` 后确认可关闭 |
+| 2026-08-05 | Task 3 独立审查后最终 `.venv/bin/pytest -q` + Ruff + mypy + `uv lock --check` + `git diff --check` | 323 passed；Ruff passed；mypy 51 files passed；lock 与 diff 均通过 |
 
 ## 初始化决策
 
@@ -120,3 +124,20 @@ train/dev/holdout、调用模型或进入训练。
 - R2 正式规格和逐任务 TDD 计划已经两轮独立只读审阅；content/dev loader/train export/teacher collection 等治理缺口均已收口，最终结论 PASS（无 Critical/Important）。
 - Task 1 以 `83bd0b3` 实现 formal family-first 任务生成；独立审查发现三项 integrity/测试缺口后，以 `dfdb8dd` 修复实际政策状态 derivation、重复变体/五指纹重算和全 catalog/420 条环境回归，复审 PASS。最终 219 passed、Ruff/mypy 通过。
 - Task 2 以 `e877bd2` 实现 formal manifest/holdout；独立审查发现六项治理绕过后，以 `87a65ff` 增加 fixed provenance、统一 verified dataset、private variant 重建、failure-atomic 双根发布、trusted-root 同 fd 读取和 factory-issued capability。复审 PASS；最终 284 passed。
+
+## 2026-08-05 — gpu-5090 环境扩展与 R2 Task 3 完成
+
+- `.env` 修复：`DEEPSEEK_API_KRY` 等三个变量重命名为 `TEACHER_LLM_DEEPSEEK_*`，新增
+  `TEACHER_LLM_PROVIDER=deepseek`，权限 644→600。
+- 新增 `gpu-5090` 为第二远程环境（保留 `gpu-4090`），代码通过 git bundle 迁移，`uv` 环境验证
+  `torch` 正确识别 RTX 5090，ModelScope 下载的 Qwen3-1.7B/4B 逐文件 SHA256 全部校验通过，
+  取代原 HuggingFace revision 作为正式 pin。文档记录提交 `d40c43a`。
+- 确认正式 teacher 模型 `deepseek-v4-flash` 可用，发现其默认 thinking 模式会在 `max_tokens`
+  不足时把预算耗尽在 `reasoning_content` 上，`extra_body={"thinking":{"type":"disabled"}}`
+  可关闭。
+- Task 3（provider-agnostic teacher 路由 + OpenAI-compatible client）完成：修复 Ruff/mypy
+  各 2 项真实问题，修正 `[tool.uv]` 索引配置错误（`index-url` 在 `uv 0.11.8` 下不生效，改用
+  `[[tool.uv.index]] default = true` 后 `uv.lock` diff 从约 3671 行降到 129 行），独立审查
+  发现并修复 `RecursionError` 未捕获导致的崩溃（深层嵌套 JSON 会绕过预期的
+  `ValueError`/`TeacherClientError`）。最终 323 passed、Ruff、mypy 51 files、lock 与 diff
+  检查通过，提交为 `7153c26`。Task 4（teacher 采集/回放质检/train 导出）待开始。
