@@ -625,3 +625,76 @@ thinking 行为的验证。
 **后果与下一步**：Task 4（teacher 采集、回放质检与 train 导出）可以开始；采集配置需要复用
 `{"thinking":{"type":"disabled"}}` 的 `extra_body` 模式，避免真实批量采集把预算浪费在
 推理链上。真实批量 teacher 调用仍需单独确认后才能执行。
+
+### LOG-20260805-06：R2 Task 4 费用/时间预测与 smoke-first 建议
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 4 teacher 采集规划（尚未实现）
+- 状态：进行中（等待用户确认 smoke 规模）
+- 关联：LOG-20260805-05、`docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md` 第 166-212 行
+
+**背景**：Task 3 完成后，用户要求在实现 Task 4（teacher 批量采集/回放质检/train 导出）前先
+估算真实批量调用的费用和时间，用于决定是否批准正式批量 API 调用。
+
+**证据与假设**：train 配额固定 240 条，计划边界为单任务至多 2 episode × 5 步（理论上限
+2400 次调用）；按多数任务在 episode 1 内完成且用不满步数上限，估计实际约 900~1400 次调用
+（中位数 ~1100 次）。Token 假设参考 R1 MiniRetail 实测的 `average_input_tokens≈555-685`、
+`average_output_tokens≈50-60`（更简单的 2 工具版本），R2 正式任务工具/政策更复杂，按
+input≈900、output≈60 token/次估算；未做真实多轮 smoke，此假设未经测量验证。按
+`deepseek-v4-flash` 定价（$0.14/M cache-miss 输入、$0.28/M 输出，未计入可能的 cache-hit
+折扣）估算：中位数场景约 $0.15，理论上限场景约 $0.40-0.45。延迟未实测，按 flash 模型定位
+估计单次 1-3 秒；若串行执行预计 35 分钟到 2 小时，若实现并发可能压缩到 5-15 分钟，取决于
+Task 4 尚未确定的并发设计。
+
+**决定与方案**：本轮只产出预测，未实现 Task 4 代码，未发起任何批量 API 调用。建议正式批量
+采集前先用 10-20 条 train 任务做一次真实 smoke，把上述假设换成实测数字，再据此批准全量
+240 条采集，延续本项目一贯的 API smoke-then-full 节奏。
+
+**后果与下一步**：等待用户确认 smoke 规模；确认后需要先实现 Task 4 的最小采集路径才能执行
+smoke，smoke 结果应回填本记录或新增记录，不得让本预测的假设数字被当作实测结论使用。
+
+### LOG-20260805-07：20 条真实 teacher smoke 完成，发现并绕过两个 runner 真实 bug
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 4 前置 smoke（临时脚本，非正式实现）
+- 状态：解决（smoke 本身）／待处理（runner.py 的两个 bug 尚未在正式代码里修复）
+- 关联：LOG-20260805-06
+
+**背景**：用户要求用 20 条真实 formal train 任务实测 Task 4 的真实费用/时间，并解释预测偏差
+原因和任务本身的作用。用临时脚本（未提交，位于会话 scratchpad）复用已有
+`build_formal_task_set`、`RetailOpsEnv`、`run_episode`、`TeacherClient`、`replay_trajectory`，
+新写一个 `TeacherPolicy`（把 `TeacherResponse` 适配成 `PolicyOutput`，参照 `QwenPolicy` 模式）。
+
+**发现的真实 bug（均在既有共享代码 `src/veritool_rl/agent/runner.py::run_episode` 里，非
+teacher 专属，此前从未被真实 OpenAI 兼容 HTTP API 检验过——本地 Qwen backend 走
+`tokenizer.apply_chat_template` 对此完全宽容）**：
+1. 组装 assistant 消息时 `tool_calls[].function.arguments` 直接放原始 dict，而 OpenAI 协议
+   要求该字段必须是 JSON 编码的字符串；DeepSeek 返回 HTTP 400
+   "invalid type: map, expected a string"。
+2. assistant 的 `tool_calls[]` 条目和随后的 `tool` role 观测消息都没有 `id`/`tool_call_id`
+   字段，同样是真实 OpenAI 兼容 API 会拒绝的缺口（本次因先撞见 bug 1 而未先触发，修复 bug 1
+   后单独复现）。
+- 额外发现（配置而非代码问题）：`.env` 缺少 `TEACHER_LLM_DEEPSEEK_EXTRA_BODY_JSON`，
+  `deepseek-v4-flash` 默认走 thinking 模式，多轮对话下 DeepSeek 要求把上一轮
+  `reasoning_content` 传回去，而 `messages` 历史里没有这个字段，第二轮必现 400。已在 `.env`
+  追加 `TEACHER_LLM_DEEPSEEK_EXTRA_BODY_JSON='{"thinking":{"type":"disabled"}}'`（单引号包裹
+  是因为 `source .env` 会剥掉未加引号值里的双引号，之前漏了这一层）解决。
+
+**处理方式**：三处修复都只做在会话 scratchpad 的临时脚本/本地 `.env` 里（消息级 JSON 字符串化
++ 合成 `id`/`tool_call_id`、thinking 关闭），**没有修改任何已提交代码**；`run_episode` 的两个
+真实 bug 仍原样存在于仓库，需要在 Task 4 正式实现时用 TDD 补齐（这会影响所有未来接入真实
+OpenAI 兼容 API 的 policy，不只是 teacher）。
+
+**实测证据**（修复生效后，20/20 条 `lookup_status` 类真实 train 任务，非全部 6 类的代表性
+抽样——`records("train")` 按 family 顺序排列，前 20 条恰好全部同一类别）：20/20 成功，
+20/20 `replay_trajectory` 校验通过；40 次真实调用（2 次/任务）；实测
+`avg_input_tokens/call≈562`、`avg_output_tokens/call≈76`、`avg_latency≈1061.7ms`；
+20 任务串行墙钟 42.5 秒；实测成本 $0.003996。按同类推算 240 条（**未跨类别外推，其他 5 类
+step 数可能更高**）：约 480 次调用、约 8.5 分钟串行、约 $0.048。均远低于
+LOG-20260805-06 的保守预测（预测调用 token 数偏高，是因为参照了更简单的 MiniRetail 2 工具
+历史数据，且未计入本任务只需 2 步就能完成）。
+
+**后果与下一步**：LOG-20260805-06 的预测已被本条实测数据取代，Task 4 全量费用/时间预期下调；
+但需在 Task 4 正式实现前修复 `run_episode` 的两个真实 OpenAI 协议 bug（写失败测试固定期望
+的 wire format），并在正式采集前额外对至少一个非 `lookup_status` 类别（比如需要更多步的
+`refund_recovery`）做真实抽样，避免用单一最简类别的数据外推全部 6 类。
