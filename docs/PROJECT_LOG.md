@@ -469,3 +469,125 @@ file，在同一 fd 上 `fstat/read/hash`；dataset 与 holdout 采用 factory-i
 **验证与后果**：103 个 Task 2 + R1 回归、284 个全仓测试、Ruff、mypy 和 diff 均通过；最终复审
 无 Critical/Important/Minor。R1 schema/行为未修改，仓库未生成正式数据，也未读取 `.env`、正式
 private/holdout/BFCL 或访问网络/API/SSH/GPU。Task 3 可开始，但真实 API 仍须单独批准。
+
+### LOG-20260805-01：新增 gpu-5090 远程环境并修复 teacher route .env
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / 环境与资源边界扩展
+- 状态：阶段变更
+- 关联：`CLAUDE.md` 第4节、`.env`
+
+**背景与难点**：R2 Task 3（provider-agnostic teacher route，尚未提交）的 `.env` 仍是旧版本命名
+（`DEEPSEEK_API_KRY` 拼写错误、权限 0644），不满足 `teacher_route.py` 的
+`TEACHER_LLM_<PROVIDER>_*` schema。同时用户要求把项目扩展到第二台共享 GPU 服务器
+`gpu-5090`（远端用户 `tongjiakai`），并计划从 ModelScope 下载 Qwen3-1.7B/4B；但 R2 已批准方案
+把这两个模型锁定为具体 HuggingFace revision 用于可复现 base 评测，ModelScope 没有对应
+commit 概念，构成与既有可复现性承诺的冲突，需要用户裁决。
+
+**证据**：`.env` 已重命名为 `TEACHER_LLM_DEEPSEEK_{BASE_URL,API_KEY,MODEL}` 并新增
+`TEACHER_LLM_PROVIDER=deepseek`，权限改为 600；未读取或打印密钥值，`TEACHER_LLM_DEEPSEEK_MODEL`
+实际取值未改动。只读 SSH 侦察确认 `gpu-5090`：RTX 5090 32GB 显存（当前空闲约 27GB，另有 2 个
+进程共占约 4.5GB，证明服务器多人共用）、24 核、62GB 内存（55GB 可用）、`/mnt/aidata` 3.6T
+空闲 2.0T、根分区 962G 空闲 341G，`~/.local/bin/uv 0.11.33` 与系统 `python3` 已就绪，
+`~/.modelscope` 缓存目录已存在。`/mnt/aidata/tongjiakai` 内已有该用户其他项目（`ekg`、
+`embed_server`、`llm-lifecycle-lab`、`ollama`、`SARGE`、`sysroot`、`envs`、`downloads`、`bin`），
+本次未创建或修改任何既有目录。
+
+**决定与方案**：用户逐项确认：（1）`gpu-5090` 作为第二远程环境新增，不替换 `gpu-4090`，两者
+并存，后续任务需在报告中明确使用哪一个；（2）项目远程目录固定为
+`/mnt/aidata/tongjiakai/retail-agent-ops`；（3）Qwen3-1.7B/4B 改用 ModelScope 侧版本标识重新
+锁定作为新的正式 pin，原 HuggingFace revision 记录待替换。`CLAUDE.md` 第4节已更新为两套并列
+远程环境定义，并要求执行前核对显存/进程占用与磁盘余量。
+
+**备选方案与未选择理由**：未把 `gpu-5090` 设为替换 `gpu-4090` 的唯一远程环境，因为用户明确
+要求保留旧配置；未直接复用旧 HuggingFace revision 跳过重新锁定，因为 ModelScope 分发文件不
+保证与 HF revision 字节一致，直接复用会破坏 R2 已批准的“正式运行固定模型版本”要求；未修改
+`.env` 中的 model 取值，因为 agent 不应替用户猜测正式模型标识。
+
+**后果与下一步**：尚未创建远程项目目录、未传输代码、未安装远程环境、未查询或下载任何模型；
+这些均为后续任务，逐项执行前会分别报告命令、工作目录、物理 GPU、预计时长和产物。ModelScope
+版本标识确认后需回填 `findings.md` 的 R2 dev base revision 记录。
+
+### LOG-20260805-02：gpu-5090 环境执行完成，模型下载校验进行中
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / gpu-5090 环境执行
+- 状态：进行中（模型下载校验未最终确认）
+- 关联：LOG-20260805-01、`findings.md` "gpu-5090 环境扩展与 ModelScope 重新锁定" 小节
+
+**背景**：LOG-20260805-01 已批准新增 gpu-5090 远程环境、确定项目路径与 ModelScope 重新锁定
+策略，但当时尚未执行任何远程写入。本条记录该决定的实际执行结果。
+
+**证据**：
+- 代码迁移：本地 `git bundle --all`（仅两个分支的已提交历史，不含本轮未提交的
+  `CLAUDE.md`/`PROJECT_LOG.md`/`findings.md`/`task_plan.md`/`pyproject.toml`/`uv.lock` 改动，
+  也不含未提交的 `teacher_client.py`/`teacher_route.py` 及测试）已传输并在
+  `/mnt/aidata/tongjiakai/retail-agent-ops` clone，远端 HEAD 为 `155d67a`；已删除指向本地
+  bundle 的悬空 `origin` remote。
+- 环境搭建：远端 `uv sync --extra dev --extra train --frozen` 成功（首次因 `teacher` extra
+  未提交而失败，已改用不含 teacher 的组合重试）；`.venv` 5.2G，`torch==2.13.0+cu130` 验证
+  `torch.cuda.is_available()==True` 并正确识别 `NVIDIA GeForce RTX 5090`；同步后
+  `/mnt/aidata` 仍有 2.0T 可用。
+- ModelScope 查询：通过只读 REST API 取得 `Qwen/Qwen3-1.7B`（权重提交
+  `980712f58bdf09497308d37d0e30b535064cde04`，4.08GB）与 `Qwen/Qwen3-4B`（权重提交
+  `8cd0101f70cac4f1efcebc979faf483558e39297`，8.06GB）的逐文件 SHA256 manifest，比单一
+  revision 字符串更严格；用户已确认下载两个模型并存至 `/mnt/aidata/tongjiakai/models`。
+- 下载与校验脚本（`snapshot_download` + 逐文件 SHA256 比对，任一文件缺失/大小/哈希不符即整体
+  判定失败）已在远端后台启动，执行结果尚未返回，本条记录不代表下载已成功。
+
+**决定与方案**：按已批准范围执行，未扩大到 Task 3 之外的其他远程操作；`teacher` extra 留待
+本地 Task 3 提交后再补 `uv sync`。
+
+**后果与下一步**：等待后台下载脚本返回 `ALL_FILES_VERIFIED_OK` 或失败详情；成功后需把
+ModelScope 提交哈希回填为正式 R2 dev base pin（替换原 HuggingFace revision 记录），失败则需
+诊断具体文件并重试，不得在校验不通过时声称模型已就绪。
+
+### LOG-20260805-03：gpu-5090 模型下载全部校验通过，R2 dev base 完成重新锁定
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / gpu-5090 环境执行收尾
+- 状态：解决
+- 关联：LOG-20260805-01、LOG-20260805-02
+
+**证据**：后台下载脚本返回 `ALL_FILES_VERIFIED_OK`；`Qwen/Qwen3-1.7B` 13/13 文件、
+`Qwen/Qwen3-4B` 14/14 文件逐项 `OK`（文件名/大小/SHA256 与 ModelScope API manifest 完全一致，
+无一处缺失或不符）。落盘路径 `/mnt/aidata/tongjiakai/models/{Qwen3-1.7B,Qwen3-4B}/`，实际占用
+3.8G + 7.6G = 11.4G；下载后 `/mnt/aidata` 仍报告 2.0T 可用，对共享服务器磁盘无实质影响。
+
+**决定与方案**：ModelScope 提交哈希
+`980712f58bdf09497308d37d0e30b535064cde04`（Qwen3-1.7B 权重）与
+`8cd0101f70cac4f1efcebc979faf483558e39297`（Qwen3-4B 权重）正式取代 R2 计划原有的
+HuggingFace revision 记录，作为本项目 dev base 的正式模型 pin；已回填至 `findings.md`。
+
+**后果与下一步**：gpu-5090 环境（代码、uv 依赖、GPU 可用性、模型权重）已具备执行 Qwen3-1.7B/4B
+dev base 评测的前置条件；但本轮未运行任何评测或 GPU 推理任务，`teacher` extra 仍待本地 R2
+Task 3 提交后同步。dev base 实际评测运行仍需按 CLAUDE.md 远程协议逐条报告命令、工作目录、
+物理 GPU、预计时长和产物后再执行。
+
+### LOG-20260805-04：DeepSeek teacher 真实 API 首次 smoke 通过，发现 thinking 行为
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 3 provider-agnostic teacher
+- 状态：解决
+- 关联：`.env`、`src/veritool_rl/retail_ops/teacher_route.py`
+
+**背景**：用户确认正式 teacher 模型为 `deepseek-v4-flash`，要求先验证可用性再进入 Task 3 全流程
+开发。`.env` 中 `TEACHER_LLM_DEEPSEEK_MODEL`/`BASE_URL` 已经是该值，未做改动。
+
+**证据**：只读检索确认 `deepseek-v4-flash` 是 DeepSeek 当前在售正式模型（284B 总参数/13B 激活
+MoE，OpenAI 兼容协议，真实 endpoint 为 `{base_url}/chat/completions` 而非 `/v1/chat/completions`，
+与现有 `TEACHER_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com` 一致）。随后用配置的真实凭据发起
+一次最小 smoke 请求（`max_tokens=8`），HTTP 200，响应 `model` 字段回显 `deepseek-v4-flash`；本次
+未读取或打印 API key 明文，仅在 shell 变量中使用。用量 `prompt_tokens=88`、
+`completion_tokens=8`、`total_tokens=96`，按官方定价（输入 $0.14/M、输出 $0.28/M）成本约
+$0.0000145，可忽略。
+
+**发现**：响应包含非空 `reasoning_content` 而 `content` 为空、`finish_reason="length"`——说明
+`deepseek-v4-flash` 默认按 thinking 模式返回，`max_tokens` 预算会被推理链占用。TeacherClient
+实现必须显式处理该字段（提高预算或关闭 thinking），否则会把推理草稿误当空回复处理。
+
+**决定与方案**：模型确认可用，进入 Task 3 全流程 TDD 实现，需要把 thinking/`reasoning_content`
+处理纳入实现和测试范围，而不是假设 provider 总是直接返回 `content`。
+
+**后果与下一步**：本次 API 调用为一次性最小 smoke，未进行批量采集或正式 train 导出；Task 3 实现
+和后续真实 teacher 批量采集仍需分别验证。

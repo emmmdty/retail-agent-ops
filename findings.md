@@ -134,3 +134,53 @@
 - Task 2 独立审查已实证 6 个 Important：自由 public identifier 可承载 request/ID/private path；dataset/split/private provenance 未统一串链；row variant 可改为 `[0,0]`；双根失败留半成品；physical artifact 可经 root 外 symlink 授权；公开 dataclass + module seal 可伪造授权 token。当前不得进入 Task 3。
 - 修复合同应以固定 R2 Literal、同 bytes 的 verified-dataset loader、private row 完整 provenance、family variant 重建、staging 后双根发布、trusted physical root + no-follow fd 读取，以及内部注册 capability 为核心；同进程 Python 私有对象不是密码学安全边界，不应夸大为绝对防伪。
 - Task 2 修复后统一 verified dataset、fixed provenance、private variant 重建、failure-atomic staging/publish、trusted-root 同 fd 读取和 factory-issued capability 均通过契约复审；最终无 Critical/Important/Minor，R1 行为未修改。
+- Task 3 基线尚无 OpenAI SDK 依赖或 `[tool.uv]` 项目索引；`uv.lock` 只有现有 HTTPX。应把 SDK 放入独立 `teacher` optional group并保持 lazy import，核心安装/测试不能因未安装 teacher extra 失败。
+- provider route 的唯一动态入口是 `TEACHER_LLM_PROVIDER` 选择 `TEACHER_LLM_<NORMALIZED>_*`；实现和测试都只能使用传入的 fake environment，不枚举真实进程环境，也不读取 `.env`。API key 只作为 loader 的内存返回值，route snapshot/hash/异常均不得包含它。
+- 现有 agent 抽象实际位于 `agent/qwen.py` 的 `GenerationBackend` 与 `agent/policy.py` 的 `Policy`，不存在 `agent/base.py`。Task 3 的 `TeacherClient` 应保持独立的结构化 Chat Completions 边界，Task 4 再适配 episode/trajectory，避免把 API transport 塞进 Qwen text backend。
+- runner 的 message/tool 形态已经是 OpenAI-compatible 基础结构，但 observation message 没有 tool-call ID；Task 3 只需精确传译输入并规范化响应，不应提前改变 R1 runner 或 Qwen parser。
+
+## gpu-5090 环境扩展与 ModelScope 重新锁定（2026-08-05）
+
+- `.env` 已修复：`DEEPSEEK_API_KRY`（拼写错误）等三个变量重命名为
+  `TEACHER_LLM_DEEPSEEK_{BASE_URL,API_KEY,MODEL}`，新增 `TEACHER_LLM_PROVIDER=deepseek`，
+  权限从 644 收紧为 600；未读取或打印密钥值，`TEACHER_LLM_DEEPSEEK_MODEL` 实际取值未改动，
+  用户仍需确认目标 DeepSeek 模型标识是否需要更新。
+- 用户批准新增 `gpu-5090` 作为第二远程环境（不替换 `gpu-4090`），远端用户 `tongjiakai`，
+  项目路径固定为 `/mnt/aidata/tongjiakai/retail-agent-ops`，模型根为
+  `/mnt/aidata/tongjiakai/models`；`CLAUDE.md` 第4节已更新，两套远程环境并列，之后每次远程
+  操作需在报告中注明使用哪一个。详见 `docs/PROJECT_LOG.md` LOG-20260805-01。
+- gpu-5090 只读侦察结果：RTX 5090 32GB 显存（侦察时空闲约27GB，另有其他用户2个进程共占约
+  4.5GB，证明多人共用）、24 核、62GB 内存、`/mnt/aidata` 3.6T 空闲 2.0T、根分区 962G 空闲
+  341G、驱动 580.126.09、Python 3.12.3、`~/.local/bin/uv 0.11.33` 已就绪。
+  `/mnt/aidata/tongjiakai` 下已有该用户其他项目（`ekg`/`embed_server`/`llm-lifecycle-lab`/
+  `ollama`/`SARGE`/`sysroot`/`envs`/`downloads`/`bin`），迁移只新建 `retail-agent-ops` 子目录，
+  未修改任何既有目录。
+- 代码迁移用 `git bundle --all`（只含两个本地分支的已提交历史，不含本轮未提交的
+  `CLAUDE.md`/`docs/PROJECT_LOG.md`/`findings.md`/`task_plan.md`/`pyproject.toml`/`uv.lock`
+  修改，也不含未提交的 `teacher_client.py`/`teacher_route.py` 及其测试）传输后在远端
+  clone，随后移除指向已删除本地 bundle 文件的 `origin` remote，避免残留悬空引用。远端 HEAD
+  当前停在 `155d67a`（Task 2 治理复审记录），落后本地工作区；`teacher` extra 尚未提交，因此
+  远端首次 `uv sync --extra teacher` 失败（`Extra teacher is not defined`），改为
+  `--extra dev --extra train` 后成功。
+- 远端 `.venv`（5.2G）已验证 `torch==2.13.0+cu130`，`torch.cuda.is_available()` 为
+  `True` 且正确识别 `NVIDIA GeForce RTX 5090`；同步后 `/mnt/aidata` 仍显示 2.0T 可用。
+- ModelScope 侧文件级信息已通过其只读 REST API（`/api/v1/models/{id}/repo/files?Revision=master`）
+  查得，比单一 revision 字符串更严格——直接记录了逐文件 SHA256：
+  - `Qwen/Qwen3-1.7B`：权重文件（`model-00001-of-00002.safetensors` /
+    `model-00002-of-00002.safetensors`）提交哈希 `980712f58bdf09497308d37d0e30b535064cde04`，
+    总大小 4.08GB。
+  - `Qwen/Qwen3-4B`：权重文件（三个 safetensors 分片）提交哈希
+    `8cd0101f70cac4f1efcebc979faf483558e39297`，总大小 8.06GB。
+  - 用户已确认改用 ModelScope 侧标识重新锁定，替代原 R2 计划里的 HuggingFace revision
+    （`70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` / `1cfa9a7208912126459214e8b04321603b3df60c`）；
+    完整逐文件 sha256 manifest 保存在会话 scratchpad
+    `modelscope_manifest.json`，下载后需要回填/替换本文件中原有的 HF revision 记录为正式
+    ModelScope pin。
+  - 下载与校验通过一次性脚本执行：`snapshot_download(revision="master")` 落盘后逐文件重算
+    SHA256 并与上述 manifest 比对，任何文件缺失/大小不符/哈希不符都会使整体判定失败，不接受
+    部分匹配。
+  - **下载已完成并全部校验通过**（`ALL_FILES_VERIFIED_OK`，13/13 与 14/14 文件逐项 `OK`）。
+    实际磁盘占用：`Qwen3-1.7B` 3.8G，`Qwen3-4B` 7.6G，合计 11.4G；`/mnt/aidata` 仍保持
+    2.0T 可用。上述 ModelScope 提交哈希（`980712f58bdf...`／`8cd0101f70ca...`）现为
+    R2 dev base 的正式 pin，取代原 R2 计划中的 HuggingFace revision 记录。落盘路径：
+    `/mnt/aidata/tongjiakai/models/Qwen3-1.7B/`、`/mnt/aidata/tongjiakai/models/Qwen3-4B/`。

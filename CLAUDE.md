@@ -28,8 +28,9 @@ RetailAgentOps 是零售工具 Agent 的单卡领域适配与发布流水线。�
 ## 4. 环境与资源边界
 
 - 本地：WSL/Linux，Python 3.11，`uv` 管理，只做 CPU 开发和轻量验证。
-- 远程：`ssh gpu-4090`，仓库路径 `/data/TJK/internship-projects/veritool-rl`，只允许 `/data/TJK` 和 `/home/TJK`。
-- 远程 uv：`/home/TJK/.local/bin/uv`，缓存 `UV_CACHE_DIR=/data/TJK/uv-cache`。
+- 远程环境 1：`ssh gpu-4090`，仓库路径 `/data/TJK/internship-projects/veritool-rl`，只允许 `/data/TJK` 和 `/home/TJK`；uv 为 `/home/TJK/.local/bin/uv`，缓存 `UV_CACHE_DIR=/data/TJK/uv-cache`。
+- 远程环境 2：`ssh gpu-5090`，仓库路径 `/mnt/aidata/tongjiakai/retail-agent-ops`，只允许 `/mnt/aidata/tongjiakai` 和 `/home/tongjiakai`；该目录同时承载该用户其他项目，不得触碰 `retail-agent-ops` 之外的既有子目录；uv 为 `~/.local/bin/uv`。该服务器多人共用，执行前须核对 GPU 显存/进程占用与磁盘余量，模型下载优先选择满足复现要求的最小体积版本。
+- 两套远程环境均为可用选项，同一任务只使用其中一个，执行前需在报告中明确当前使用的是哪一个。
 - 模型、数据、checkpoint 和大运行产物不进 Git。
 - 未经确认不得运行本地 GPU、远程长任务、批量评测或多 GPU 作业。
 - 远程命令执行前必须报告命令、工作目录、物理 GPU、预计时长和产物。
