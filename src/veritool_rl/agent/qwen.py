@@ -256,13 +256,17 @@ class TransformersBackend:
         *,
         model_dir: Path | None = None,
         revision: str | None = None,
+        adapter_path: str | None = None,
         settings: GenerationSettings | None = None,
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
-        self._settings = settings or GenerationSettings()
+        self.settings = settings or GenerationSettings()
         self.model_dir = model_dir
         self.revision = revision
+        # 公开声明本实例真正加载了什么：正式评测据此拒绝与锁定不符的后端。
+        # adapter_path 非 None 表示模型被 PEFT 包装过，不再是 base 模型。
+        self.adapter_path = adapter_path
 
     @classmethod
     def from_pretrained(
@@ -323,6 +327,7 @@ class TransformersBackend:
             tokenizer,
             model_dir=model_path,
             revision=revision,
+            adapter_path=adapter_path,
             settings=generation,
         )
 
@@ -338,7 +343,7 @@ class TransformersBackend:
             messages,
             tools=tools,
             add_generation_prompt=True,
-            enable_thinking=self._settings.enable_thinking,
+            enable_thinking=self.settings.enable_thinking,
             tokenize=True,
             return_dict=True,
             return_tensors="pt",
@@ -349,7 +354,7 @@ class TransformersBackend:
             output = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=self._settings.do_sample,
+                do_sample=self.settings.do_sample,
                 use_cache=True,
                 pad_token_id=self._tokenizer.eos_token_id,
             )

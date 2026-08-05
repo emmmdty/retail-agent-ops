@@ -9,6 +9,7 @@ import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -80,11 +81,20 @@ class ScriptedBackend:
 
 
 class PinnedBackend(ScriptedBackend):
-    """声明自身模型目录与 revision 的 fake 后端。"""
+    """声明自身模型目录、revision、adapter 与生成参数的 fake 后端。"""
 
-    def __init__(self, model_dir: Path, revision: str) -> None:
+    def __init__(
+        self,
+        model_dir: Path,
+        revision: str,
+        *,
+        adapter_path: str | None = None,
+        settings: Any = None,
+    ) -> None:
         self.model_dir = model_dir
         self.revision = revision
+        self.adapter_path = adapter_path
+        self.settings = GenerationSettings(max_new_tokens=256) if settings is None else settings
 
 
 class FakeHardwareProvider:
@@ -660,6 +670,95 @@ def test_dev_base_rejects_backend_pinned_to_another_model(
             tmp_path,
             backend=PinnedBackend(models_root / "another-model", REVISION),
         )
+
+
+def test_dev_base_rejects_backend_that_loaded_an_adapter(
+    formal: FormalFixture,
+    bundle: LoadedRetailOpsBundle,
+    config: BaseEvaluationConfig,
+    models_root: Path,
+    tmp_path: Path,
+) -> None:
+    """带 adapter 的后端会产出与真实 base 运行难以区分的证据，必须先被拒绝。"""
+    with pytest.raises(ValueError, match="adapter"):
+        _evaluate(
+            formal,
+            bundle,
+            config,
+            models_root,
+            tmp_path,
+            backend=PinnedBackend(
+                models_root / MODEL_DIR_NAME,
+                REVISION,
+                adapter_path="adapters/sft-run-3",
+            ),
+        )
+    assert not (formal.private_dir / "dev-base").exists()
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        GenerationSettings(max_new_tokens=512),
+        SimpleNamespace(
+            max_new_tokens=256,
+            do_sample=True,
+            enable_thinking=False,
+            quantization="nf4",
+        ),
+        SimpleNamespace(
+            max_new_tokens=256,
+            do_sample=False,
+            enable_thinking=True,
+            quantization="nf4",
+        ),
+        SimpleNamespace(
+            max_new_tokens=256,
+            do_sample=False,
+            enable_thinking=False,
+            quantization="int8",
+        ),
+    ],
+)
+def test_dev_base_rejects_backend_with_non_frozen_generation_settings(
+    formal: FormalFixture,
+    bundle: LoadedRetailOpsBundle,
+    config: BaseEvaluationConfig,
+    models_root: Path,
+    tmp_path: Path,
+    settings: Any,
+) -> None:
+    with pytest.raises(ValueError, match="生成参数"):
+        _evaluate(
+            formal,
+            bundle,
+            config,
+            models_root,
+            tmp_path,
+            backend=PinnedBackend(models_root / MODEL_DIR_NAME, REVISION, settings=settings),
+        )
+    assert not (formal.private_dir / "dev-base").exists()
+
+
+def test_dev_base_accepts_backend_declaring_the_frozen_pin(
+    formal: FormalFixture,
+    bundle: LoadedRetailOpsBundle,
+    config: BaseEvaluationConfig,
+    models_root: Path,
+    tmp_path: Path,
+) -> None:
+    """完全一致的声明必须通过，避免新增校验把合法 base 运行也挡掉。"""
+    evidence = _evaluate(
+        formal,
+        bundle,
+        config,
+        models_root,
+        tmp_path,
+        backend=PinnedBackend(models_root / MODEL_DIR_NAME, REVISION),
+    )
+
+    assert evidence.task_count == 60
+    assert evidence.generation == config.generation
 
 
 def test_dev_base_evidence_detects_tampering(

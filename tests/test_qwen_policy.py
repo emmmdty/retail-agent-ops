@@ -209,6 +209,7 @@ def test_transformers_backend_verifies_pins_before_loading_weights(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from veritool_rl.agent.qwen import (
+        GenerationSettings,
         TransformersBackend,
         hash_local_model_files,
         verify_local_model_files,
@@ -238,8 +239,37 @@ def test_transformers_backend_verifies_pins_before_loading_weights(
 
     assert backend.revision == "a" * 40
     assert backend.model_dir == model_path
+    assert backend.adapter_path is None
+    assert backend.settings == GenerationSettings()
     assert model_kwargs["local_files_only"] is True
     verify_local_model_files(model_path, refreshed)
+
+
+def test_transformers_backend_publishes_the_adapter_it_actually_loaded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """加载了 adapter 的后端必须如实声明，正式 base 评测据此拒绝它。"""
+    from veritool_rl.agent.qwen import TransformersBackend
+
+    _install_fake_transformers(monkeypatch)
+    model_path = _write_model_dir(tmp_path)
+    adapter_path = tmp_path / "adapter"
+    adapter_path.mkdir()
+
+    class FakePeftModel:
+        @classmethod
+        def from_pretrained(cls, model: Any, path: str, **kwargs: Any) -> Any:
+            del cls, path, kwargs
+            return model
+
+    peft = ModuleType("peft")
+    peft.PeftModel = FakePeftModel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "peft", peft)
+
+    backend = TransformersBackend.from_pretrained(str(model_path), str(adapter_path))
+
+    assert backend.adapter_path == str(adapter_path)
 
 
 def test_transformers_backend_rejects_malformed_revision(

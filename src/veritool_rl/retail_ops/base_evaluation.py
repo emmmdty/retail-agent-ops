@@ -221,8 +221,9 @@ def evaluate_formal_dev_base(
     不一致的记录绕过治理。完整轨迹只写入私有 attempt 目录，公开报告只包含
     聚合指标与模型/硬件 provenance。
 
-    调用方必须用同一 `config.model` 构造 `backend`；`TransformersBackend`
-    会声明自身的 `model_dir`/`revision`，此处据此拒绝声明与锁定不一致的后端。
+    调用方必须用同一 `config.model` 构造 `backend`；`TransformersBackend` 会声明
+    自身的 `model_dir`/`revision`/`adapter_path`/`settings`，此处据此拒绝任何带
+    adapter、指向其他模型或使用非冻结生成参数的后端。
     """
     _require_dev_manifest(public_manifest)
     _require_matching_bundle(bundle, public_manifest)
@@ -238,7 +239,7 @@ def evaluate_formal_dev_base(
 
     model_dir = _resolve_within(models_root, config.model.local_dir)
     verify_local_model_files(model_dir, config.model.file_sha256)
-    _require_backend_matches_pin(backend, model_dir, config.model.revision)
+    _require_backend_matches_pin(backend, model_dir, config)
 
     policy = QwenPolicy(
         backend,
@@ -533,16 +534,30 @@ def _require_records_match_private_artifact(
 def _require_backend_matches_pin(
     backend: GenerationBackend,
     model_dir: Path,
-    revision: str,
+    config: BaseEvaluationConfig,
 ) -> None:
-    """后端若声明了自身来源，必须与锁定的模型目录和 revision 完全一致。"""
+    """后端若声明了自身来源，必须与锁定的模型目录、revision 和生成参数完全一致。
+
+    最关键的一条是 adapter：dev base 证据没有 adapter 字段，所以一个被 PEFT
+    包装过的后端如果通过了检查，产出的证据会与真正的 base 运行逐字节难以区分。
+    因此只要后端声明了任何非 None 的 adapter 路径就直接拒绝——`config` 侧把
+    seed/步数/采样/思考/量化冻结为 Literal，这里则校验真正跑评测的那个后端。
+    """
+    declared_adapter = getattr(backend, "adapter_path", None)
+    if declared_adapter is not None:
+        msg = f"dev base 评测禁止 adapter：生成后端声明了 adapter 路径 {declared_adapter!r}"
+        raise ValueError(msg)
     declared_dir = getattr(backend, "model_dir", None)
     if declared_dir is not None and Path(declared_dir).resolve() != model_dir.resolve():
         msg = "生成后端加载的模型目录与锁定 local_dir 不一致"
         raise ValueError(msg)
     declared_revision = getattr(backend, "revision", None)
-    if declared_revision is not None and declared_revision != revision:
+    if declared_revision is not None and declared_revision != config.model.revision:
         msg = "生成后端声明的模型 revision 与锁定 revision 不一致"
+        raise ValueError(msg)
+    declared_settings = getattr(backend, "settings", None)
+    if declared_settings is not None and declared_settings != config.generation:
+        msg = "生成后端声明的生成参数与冻结契约不一致"
         raise ValueError(msg)
 
 
