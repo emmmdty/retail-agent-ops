@@ -63,16 +63,22 @@ def run_episode(
             )
         elif output.tool_call is not None:
             observation = env.execute_tool(output.tool_call.name, output.tool_call.arguments)
+            call_id = output.tool_call.call_id or f"call_{index}"
             messages.append(
                 {
                     "role": "assistant",
                     "content": "",
                     "tool_calls": [
                         {
+                            "id": call_id,
                             "type": "function",
                             "function": {
                                 "name": output.tool_call.name,
-                                "arguments": output.tool_call.arguments,
+                                "arguments": json.dumps(
+                                    output.tool_call.arguments,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                ),
                             },
                         }
                     ],
@@ -81,6 +87,7 @@ def run_episode(
             messages.append(
                 {
                     "role": "tool",
+                    "tool_call_id": call_id,
                     "content": json.dumps(
                         observation.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
                     ),
