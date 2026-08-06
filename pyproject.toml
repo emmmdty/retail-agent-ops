@@ -30,6 +30,10 @@ train = [
     "accelerate>=0.33",
     "datasets>=2.20",
     "bitsandbytes>=0.43",
+    # torch>=2.13 的部分算子（如 RoPE 的 bmm_outer_product）默认走 Triton JIT，
+    # 需要系统 C 编译器；无 root/conda 的远端环境用 ziglang 提供用户态 CC，
+    # 见 docs/PROJECT_LOG.md 2026-08-06 R2 Task 8 记录。
+    "ziglang>=0.13",
 ]
 teacher = [
     "openai>=1.0",
