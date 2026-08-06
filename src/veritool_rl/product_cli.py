@@ -643,7 +643,15 @@ def _attempt_id(config: dict[str, Any]) -> str:
 
 
 def _r2_private_root(dataset_version: str) -> Path:
-    return _R2_PRIVATE_ROOT / dataset_version
+    """在受信的 R2 私有根目录下按 `dataset_version` 拼接子目录，拒绝路径穿越。
+
+    `dataset_version` 来自已提交的 config 文件，不是硬编码常量；下游
+    `write_formal_task_set` 恰好也会拒绝非冻结 `dataset_version`，但这条 CLI
+    路径本身不能依赖调用顺序里另一个函数的校验时机——必须自己先做路径安全
+    校验，再拼接受信根目录下的路径。
+    """
+    _validate_path_component(dataset_version, label="dataset_version")
+    return _resolve_within(_R2_PRIVATE_ROOT, dataset_version)
 
 
 def _manifest_content_sha256(manifest: FormalTaskManifest) -> str:

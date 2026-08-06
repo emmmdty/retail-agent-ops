@@ -8,6 +8,8 @@ bundle 拷贝，用于需要"从零开始"跑 formal_freeze 的测试。
 
 from __future__ import annotations
 
+import argparse
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -99,11 +101,35 @@ def _fake_client_factory(route: TeacherRouteSnapshot, api_key: str) -> _AlwaysFa
     return _AlwaysFailTeacherClient()
 
 
+class _CountingAlwaysFailTeacherClient(_AlwaysFailTeacherClient):
+    """和 `_AlwaysFailTeacherClient` 行为一样，但记录被调用了多少次。
+
+    用来证明 resume：已经在磁盘上留下证据文件的 task（不论 accepted 与否）
+    在下一次 `_run_teacher_collect` 调用里绝不会再触发任何 client 调用——这是
+    真正保护已花费 teacher API 预算的机制，`collect_teacher_attempt`（花钱那步）
+    发生在 `write_teacher_attempt_evidence` 的不可覆盖检查之前，所以一旦这层
+    跳过逻辑坏掉，重跑会先把已采集过的任务全部重新计费一遍才在半路报错。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float = 0.0,
+    ) -> TeacherResponse:
+        self.calls += 1
+        return super().complete(messages, tools, temperature=temperature)
+
+
 @pytest.fixture(scope="module")
 def _formal_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("r2-cli-source")
     bundle_dst = root / BUNDLE_REL
-    shutil.copytree(Path("domains/retail_ops/v1"), bundle_dst)
+    shutil.copytree(REPO_ROOT / BUNDLE_REL, bundle_dst)
     bundle = load_bundle(bundle_dst)
     task_set = build_formal_task_set(DATASET_VERSION, seed=0)
     write_formal_task_set(task_set, bundle, root / PRIVATE_REL, root / PUBLIC_REL)
@@ -119,7 +145,7 @@ def workspace(_formal_source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 @pytest.fixture
 def bare_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    shutil.copytree(Path("domains/retail_ops/v1"), tmp_path / BUNDLE_REL)
+    shutil.copytree(REPO_ROOT / BUNDLE_REL, tmp_path / BUNDLE_REL)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -405,6 +431,31 @@ def test_formal_freeze_rejects_wrong_dataset_version(bare_workspace: Path, tmp_p
         )
 
 
+@pytest.mark.parametrize("dataset_version", ["../../../etc/escape", "a/b", "..", "."])
+def test_formal_freeze_rejects_path_traversal_in_dataset_version(
+    bare_workspace: Path, tmp_path: Path, dataset_version: str
+) -> None:
+    """`dataset_version` 驱动私有根目录拼接；必须自己拒绝穿越，不能依赖
+    `write_formal_task_set` 恰好也会拒绝非冻结值这件事——那是另一个函数的
+    校验时机，不是这条 CLI 路径自身的路径安全保证。"""
+    from veritool_rl.product_cli import main
+
+    config_path = bare_workspace / "freeze.yaml"
+    _write_yaml(config_path, _formal_freeze_config(dataset_version=dataset_version))
+
+    with pytest.raises(ValueError, match="安全的单一路径片段"):
+        main(
+            [
+                "build",
+                "--config",
+                str(config_path),
+                "--output_dir",
+                str(tmp_path / "out"),
+            ]
+        )
+    assert not (bare_workspace / "data").exists()
+
+
 def test_formal_freeze_rejects_wrong_seed(bare_workspace: Path, tmp_path: Path) -> None:
     from veritool_rl.product_cli import main
 
@@ -606,10 +657,71 @@ def test_teacher_collect_reads_env_and_calls_injected_client_factory(
     assert (attempt_dir / "checkpoint.json").is_file()
 
 
+def test_teacher_collect_resume_skips_already_evidenced_tasks_without_calling_client(
+    workspace: Path, tmp_path: Path
+) -> None:
+    """重跑同一个 `attempt_id` 时，第一次运行已经留下证据文件的 task 在第二次
+    运行里必须完全跳过 client 调用——这条保护正是为了不在恢复中断的采集时
+    重新花费已经花过的 teacher API 预算。"""
+    from veritool_rl.product_cli import _run_teacher_collect, build_product_parser
+
+    parser = build_product_parser()
+    config_path = workspace / "teacher.yaml"
+    config = _teacher_collect_config()
+    _write_yaml(config_path, config)
+
+    def _args(output_dir: Path) -> argparse.Namespace:
+        return parser.parse_args(
+            [
+                "build",
+                "--config",
+                str(config_path),
+                "--input_dir",
+                str(PRIVATE_REL),
+                "--output_dir",
+                str(output_dir),
+            ]
+        )
+
+    first_client = _CountingAlwaysFailTeacherClient()
+    _run_teacher_collect(
+        _args(tmp_path / "out-1"),
+        config,
+        environ=_VALID_ENVIRON,
+        client_factory=lambda route, api_key: first_client,
+    )
+    assert first_client.calls > 0
+
+    attempt_dir = PRIVATE_REL / "teacher-collection" / "teacher-attempt-001"
+    evidence_files_after_first_run = {
+        p.stem for p in attempt_dir.glob("*.json") if p.name != "checkpoint.json"
+    }
+    assert len(evidence_files_after_first_run) == 240
+
+    second_client = _CountingAlwaysFailTeacherClient()
+    _run_teacher_collect(
+        _args(tmp_path / "out-2"),
+        config,
+        environ=_VALID_ENVIRON,
+        client_factory=lambda route, api_key: second_client,
+    )
+
+    assert second_client.calls == 0
+    summary_after_resume = json.loads((tmp_path / "out-2" / "summary.json").read_text("utf-8"))
+    assert summary_after_resume["processed_this_run"] == 0
+    assert summary_after_resume["already_attempted_before_this_run"] == 240
+
+
 def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
     workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from veritool_rl.product_cli import main
+    """`_poison_teacher_environ` 让任何真的读取 `TEACHER_LLM_*` 的代码路径立刻
+    在 `TeacherRouteSnapshot` 校验阶段炸得清清楚楚。除 `teacher_collect` 外的
+    每条流水线都必须在同一个被投毒的环境下正常跑到底（或者精确按预期原因
+    失败），而不是用宽泛的 `pytest.raises(Exception)` 掩盖"其实读了环境变量
+    然后自己炸了"这种情况。"""
+    from veritool_rl.product_cli import _run_formal_dev_base, build_product_parser, main
+    from veritool_rl.retail_ops.teacher_data import TeacherQualityGateError
 
     _poison_teacher_environ(monkeypatch)
 
@@ -627,11 +739,33 @@ def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
         == 0
     )
 
-    # train_export path (empty evidence -> quality gate fails, but that must
-    # happen without ever touching os.environ)
+    # formal_freeze path: fresh root (no pre-built dataset), must run all the
+    # way to a successful publish under the poisoned environment.
+    freeze_root = tmp_path / "freeze-root"
+    shutil.copytree(workspace / BUNDLE_REL, freeze_root / BUNDLE_REL)
+    monkeypatch.chdir(freeze_root)
+    freeze_config_path = freeze_root / "freeze.yaml"
+    _write_yaml(freeze_config_path, _formal_freeze_config())
+    assert (
+        main(
+            [
+                "build",
+                "--config",
+                str(freeze_config_path),
+                "--output_dir",
+                str(freeze_root / PUBLIC_REL),
+            ]
+        )
+        == 0
+    )
+    assert (freeze_root / PRIVATE_REL / "train.jsonl").is_file()
+    monkeypatch.chdir(workspace)
+
+    # train_export path (empty evidence -> quality gate fails for exactly that
+    # reason, not because of an env read).
     export_config_path = workspace / "export.yaml"
     _write_yaml(export_config_path, _train_export_config())
-    with pytest.raises(Exception):  # noqa: B017 - quality gate error, not an env leak
+    with pytest.raises(TeacherQualityGateError):
         main(
             [
                 "build",
@@ -643,6 +777,33 @@ def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
                 str(tmp_path / "export-out"),
             ]
         )
+
+    # formal_dev_base path (evaluate), through the same injected fake backend
+    # seam used elsewhere in this file, must also run to completion.
+    parser = build_product_parser()
+    file_sha256 = _make_model_files(workspace, "models-env-boundary")
+    dev_config = _formal_dev_base_config(Path("models-env-boundary"))
+    dev_config["model"]["file_sha256"] = file_sha256
+    dev_config_path = workspace / "dev-env-boundary.yaml"
+    _write_yaml(dev_config_path, dev_config)
+    dev_args = parser.parse_args(
+        [
+            "evaluate",
+            "--config",
+            str(dev_config_path),
+            "--input_dir",
+            str(PRIVATE_REL),
+            "--output_dir",
+            str(tmp_path / "dev-base-out"),
+        ]
+    )
+    _run_formal_dev_base(
+        dev_args,
+        dev_config,
+        backend_factory=_dev_base_backend_factory,
+        hardware_provider_factory=_hardware_provider_factory,
+    )
+    assert (tmp_path / "dev-base-out" / "base-report.json").is_file()
 
 
 # ---------------------------------------------------------------------------

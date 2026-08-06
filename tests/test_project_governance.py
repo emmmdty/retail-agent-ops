@@ -1,5 +1,6 @@
 """验证求职工程定位和 Agent 接管文档不会静默漂移。"""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -255,6 +256,25 @@ def test_r2_configs_contain_no_secrets_or_private_paths() -> None:
 def test_product_cli_and_r2_configs_never_reference_bfcl() -> None:
     """R2 CLI 分发代码和新增 config 不得引用 BFCL 固定 200 条 holdout 或其失败样例。"""
     scanned = [ROOT / "src/veritool_rl/product_cli.py"]
+    scanned.extend((ROOT / "src/veritool_rl/retail_ops").rglob("*.py"))
     scanned.extend(ROOT / "configs" / name for name in _R2_CONFIG_NAMES)
     for path in scanned:
         assert "bfcl" not in path.read_text(encoding="utf-8").lower(), path
+
+
+def test_uv_lock_check_succeeds_through_project_level_index_pinning() -> None:
+    """`uv.lock` 必须与 `pyproject.toml`（含项目级 `[[tool.uv.index]] default = true`
+    锁定）保持一致，且这个一致性不依赖进程环境里可能存在的镜像 index 覆盖
+    （`UV_INDEX_URL`，见 `task_plan.md` 里几条相关 Errors 记录）——清掉它之后
+    `uv lock --check` 必须干净通过，不需要任何重写。"""
+    env = dict(os.environ)
+    env.pop("UV_INDEX_URL", None)
+    result = subprocess.run(
+        ["uv", "lock", "--check"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
