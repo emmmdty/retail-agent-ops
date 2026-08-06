@@ -1435,3 +1435,80 @@ Task 1-7 建立的实现后独立复审模式），确认无 Critical/Important 
 **后果与下一步**：修复轮结束。回到 Task 8 Step 2：需要用户决定 (a) 如何处理"6 任务"
 文档描述与 `teacher_collect` 实际行为（无任务数限制）不符的问题，(b) 是否现在批准在修复后
 环境下重新执行 teacher 采集（新 `attempt_id`，真实网络调用与费用）。
+
+### LOG-20260806-11：用户决策——跳过重复 smoke，直接批准完整预算全量采集（结果待补）
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 3（240 任务 teacher 全量采集 + train 导出）
+- 状态：进行中
+- 关联：LOG-20260806-10
+
+**决定**：已把命令清单第 3 节文档更正为准确描述（`teacher_smoke.yaml` 无任务数限制，
+"smoke"/"full" 真实差异只是重试预算 1/1 vs 2/3，两者费用量级相近），提交 `63137aa`。
+用户在此基础上选择跳过重复的 smoke 步骤，直接批准完整预算全量采集（避免对同一批 240 条
+任务重复花费两次真实费用）。
+
+**已批准并启动**：
+```bash
+.venv/bin/retail-agent-ops build \
+  --config configs/retail_ops_v1_r2_teacher_full.yaml \
+  --input_dir data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722 \
+  --output_dir reports/retail_ops/v1/r2/retail_ops_v1_r2_20260722/teacher-full-001
+```
+`attempt_id=teacher-full-001`（新 ID，不复用 `teacher-smoke-001` 的证据/checkpoint）、
+`max_episodes_per_task=2`、`max_request_attempts=3`。命令已转入后台执行，尚未返回结果；
+按系统规则不对仍在运行的任务猜测结果。
+
+**后果与下一步**：等待命令完成后，本条记录将由后续 LOG 条目补充实际结果（teacher
+总/逐类别通过率——重点核实 `refund_denied_window` 是否真的改善、请求数、token 用量、
+费用、耗时），随后批准执行 `train_export`（`teacher_attempt_id=teacher-full-001`，
+质量门 70%/50%，不达标则停止报告，不自动改 prompt/模型/provider）。
+
+### LOG-20260806-12：`teacher-full-001` 完成——环境修复确认有效，`refund_denied_window` 30%→95%
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 3（240 任务 teacher 全量采集）
+- 状态：解决
+- 关联：LOG-20260806-11
+
+**结果（已核实，非估算）**：命令退出码 0，实际耗时 11 分 23 秒。`summary.json`：
+`processed_this_run=240`、`total_accepted=238`。私有证据目录 240 个文件（与 train 任务数
+精确一致，未触碰 dev/holdout）。逐类别通过率：
+- `lookup_status` 40/40=100%、`refund_denied_duplicate` 40/40=100%、
+  `refund_denied_ownership` 40/40=100%、`refund_eligible` 40/40=100%、
+  `refund_recovery` 40/40=100%；
+- **`refund_denied_window` 38/40=95.0%**（LOG-20260806-06 修复前的同预算对照组是
+  12/40=30.0%；本次预算已提升到 2 episode/3 attempt，但提升幅度远超预算差异能解释的量级，
+  确认环境修复是主因）。剩余 2 条失败均为 `episode_index=1`（重试后仍失败）、
+  `violations=refund_not_eligible`，判定为零星推理失误而非系统性问题（95% 远高于 50%
+  每类别门槛，不阻塞）。
+
+整体 238/240=99.2%，outcome 分布 `{success: 238, policy_violation: 2}`，无
+`transport_exhausted`/`schema` 类失败。真实请求 526 次，306,189 prompt + 46,700
+completion tokens，按已记录单价折算约 **$0.0559**（预计 $0.05-0.15 区间内）。质量门
+（整体≥70%、每类别≥50%）大幅通过。
+
+**决定与方案**：结果符合预期，环境修复的有效性已用真实数据验证。进入 `train_export`
+审批门。
+
+### LOG-20260806-13：`train_export` 完成——Task 8 Step 3 收口，240 条正式 train 已导出
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 3（train_export）
+- 状态：解决
+- 关联：LOG-20260806-12
+
+**结果**：批准执行后命令退出码 0（本地 CPU，无真实网络调用）。公开
+`train-export-001/quality.json`：`passes_gate=true`、`overall_pass_rate=0.9917`、
+`refund_denied_window=0.95`（其余五类均 1.0）、`total_accepted=238`/`total_tasks=240`，
+与 `teacher-full-001` 的采集结果逐字段一致。私有
+`train-export/train-export-001/{train.jsonl,sft.jsonl,selection.json}` 各 240 行；
+`selection.json` 来源构成 `teacher=238`、`internal_reference=2`（精确对应
+`refund_denied_window` 剩余的 2 条零星失败，Oracle 回退按设计工作）。
+
+**决定与方案**：Task 8 Step 3（240 任务全量采集 + train 导出）完成。正式 train 数据现已
+就绪：240/60/120 formal 数据集（Step 1）+ 240 条 teacher/internal_reference 混合 train
+轨迹（Step 3），可供后续 R3 QLoRA-SFT 使用（不在本任务范围内）。
+
+**后果与下一步**：进入 Task 8 Step 4（远端只读盘点 + GPU 审批门，gpu-4090/gpu-5090
+二选一）。
