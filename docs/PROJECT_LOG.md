@@ -1512,3 +1512,30 @@ completion tokens，按已记录单价折算约 **$0.0559**（预计 $0.05-0.15 
 
 **后果与下一步**：进入 Task 8 Step 4（远端只读盘点 + GPU 审批门，gpu-4090/gpu-5090
 二选一）。
+
+### LOG-20260806-14：Step 4 只读盘点完成，选定 gpu-5090
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 4（远端只读盘点）
+- 状态：解决
+- 关联：LOG-20260806-13
+
+**决定**：用户选择 gpu-5090（Qwen3-1.7B/4B 已下载并逐文件 SHA256 校验通过，可直接复用，
+无需重新下载 11.4G）。按 CLAUDE.md 第4节记录：本任务本阶段只使用 gpu-5090，不使用
+gpu-4090。
+
+**盘点结果（只读，无副作用）**：
+```
+ssh gpu-5090 'nvidia-smi --query-gpu=... --format=csv'
+→ index=0, uuid=GPU-07af326b-f41d-a706-2150-bc560c7db304, name=NVIDIA GeForce RTX 5090,
+  memory.used=5360 MiB, memory.total=32607 MiB, utilization=0%
+ssh gpu-5090 'nvidia-smi --query-compute-apps=...'
+→ 两个其他用户进程占用（pid 455812/2784MiB、pid 457566/2460MiB），确认多人共用属实
+ssh gpu-5090 'nproc && free -h' → 24 核，62Gi 内存，55Gi 可用
+ssh gpu-5090 'df -h /mnt/aidata' → 3.6T 总量，1.9T 空闲（45% 已用）
+ssh gpu-5090 'whoami && pwd' → tongjiakai / /home/tongjiakai
+```
+物理 GPU 0 空闲显存约 27GB，磁盘空闲 1.9T，均充足支撑 Qwen3-1.7B/4B 4-bit NF4 单卡评测。
+
+**后果与下一步**：进入远端代码同步审批门（`git bundle` 传输已提交历史 + `uv sync --extra
+teacher` + 确认远端工作树干净）。
