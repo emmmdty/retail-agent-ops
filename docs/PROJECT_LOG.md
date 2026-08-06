@@ -1642,3 +1642,24 @@ zig 的 cc 前端用自己打包的一套 glibc shim 库直接构造链接命令
 `evidence_complete=true`、`replayable_count=60`。用 `load_base_run_evidence` 指向私有
 `dev-base/qwen3-1.7b-dev-base-001/run.json` 重新加载并完整校验产物哈希，`run_id` 一致，
 未被篡改。
+
+### LOG-20260807-01：Qwen3-4B dev base 完成，两模型 dev base 均获得完整证据
+
+- 日期：2026-08-07
+- 阶段/任务：R2 / Task 8 Step 4（GPU dev run）
+- 状态：解决
+- 关联：LOG-20260806-18
+
+**结果（`CUDA_VISIBLE_DEVICES=0 TORCH_DISABLE_NATIVE_JIT=1`，同一物理 GPU 0、同一
+bundle/manifest/parser/seed=0/预算，仅 model/attempt_id 不同，可配对比较）**：峰值显存
+2,941,568,000 字节（约2.74GB），wall time 154.0s，`task_success=0.80`、
+`policy_violation_rate=0.133`（8/60，全部为 `refund_denied_window` 或误判场景，高于
+1.7B 的 0）、`schema_valid_rate=0.781`（低于 1.7B 的 0.971）、`invalid_call_rate=0.219`
+（远高于 1.7B 的 0.029）、`recovery_success=0.5`（高于 1.7B 的 0.2）、
+`evidence_complete=true`、`replayable_count=60`。`load_base_run_evidence` 重新加载私有
+`dev-base/qwen3-4b-dev-base-001/run.json` 并完整校验产物哈希通过，`run_id` 一致。
+
+**观察**：4B 相对 1.7B 最终任务成功率更高（0.80 vs 0.70）、恢复能力更强，但 schema
+有效率更低、非法调用率显著更高、政策违规从 0 升到 8——不是单调的"更大模型更好"，是
+真实的 base 权衡信号，原样记录，不做解释或调优（R2 不训练、不调 prompt）。两份 dev base
+现已完整（Task 8 Step 4 GPU 部分完成），进入 Step 5（证据同步）。
