@@ -889,3 +889,191 @@ diff 为空，逐字节未改。全仓 `.venv/bin/pytest -q` 489 passed（Task 5
 Critical/Important 问题；确认后进入 Task 7（整分支审查、完整 CPU 门禁重跑、外部审批命令
 清单）。两份 dev-base config 的 `model.revision`/`file_sha256` 仍是显式标注的占位值——
 真实 Qwen3-1.7B/4B 权重下载与哈希固化仍需用户逐项审批，不在本任务范围内。
+
+### LOG-20260805-13：Task 6 独立审查发现 4 项 Important，修复后进入 scoped re-review
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 6（CLI pipeline 分派与 CPU 端到端验收）
+- 状态：进行中
+- 关联：LOG-20260805-12、`07da971`、`96536c9`
+
+**背景与难点**：独立只读审查（opus）确认 `.env` 边界实现本身、R1 等价性、确定性测试、
+注入缝设计、`export_formal_train`/`route_sha256` 绕行方案均扎实且经代码核实，但发现 4 项
+Important：(1) `_r2_private_root` 直接拼接未校验的 `dataset_version` 字符串，当前仅因下游
+`write_formal_task_set` 恰好先拒绝非冻结值才"意外安全"，不满足"必须自身做 resolve() 逃逸
+检查"的约束；(2) `.env` 边界回归测试用 `pytest.raises(Exception)` 过宽（读到污染环境变量
+并报错也会通过），且名不副实——`formal_freeze`/`formal_dev_base` 从未在污染环境下被实际
+跑过；(3) `teacher_collect` 的 resume/skip 路径零测试覆盖，而 `collect_teacher_attempt`
+（真实计费调用）发生在 `write_teacher_attempt_evidence` 的不可覆盖检查之前，skip 逻辑一旦
+出错会静默重复计费已采集任务；(4) 计划 Step 5 明确要求的 `uv lock --check` 治理扫描未落地
+为自动化测试，只靠手动跑过 Step 6 门禁。另有 10 项 Minor 记入 ledger 留待最终整分支审查。
+
+**决定与方案**：恢复原 implementer 修复全部 4 项 Important。首次恢复因触发本会话 API
+用量限制（提示 3:30am 台北时间重置）在产生任何改动前中断，工作树和报告文件均未受影响；
+未改变任务或方案，直接原样重试恢复同一 agent 后成功完成。修复内容：`_r2_private_root`
+改为调用 `_validate_path_component`/`_resolve_within`（与文件内 `attempt_id` 同一套已审计
+模式）；环境边界测试收紧为 `pytest.raises(TeacherQualityGateError)` 并新增
+`formal_freeze`/`formal_dev_base` 在污染环境下的成功产出断言；新增
+`_CountingAlwaysFailTeacherClient` 与两次运行同一 `attempt_id` 的 resume 测试，断言第二次
+运行客户端调用数为零；`test_project_governance.py` 新增 `uv lock --check` 断言。顺带免费
+解决两项 Minor（测试 fixture 统一用 `REPO_ROOT`、BFCL 扫描范围扩大到
+`src/veritool_rl/retail_ops/`）。提交 `96536c9`；focused 37+12、全量 495 测试通过，
+Ruff/mypy/lock/diff 全部干净。已派发 sonnet 模型的 scoped re-review 验证这 4 项修复且检查
+修复本身有无引入新问题。
+
+**后果与下一步**：等待 scoped re-review 结果；若确认 addressed 且无新 Critical/Important，
+Task 6 记为 complete 并进入 Task 7（整分支审查、完整 CPU 门禁重跑、外部审批命令清单）。
+
+### LOG-20260805-14：Task 6 re-review 通过，标记 complete，进入 Task 7
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 6 → Task 7
+- 状态：解决（Task 6）／进行中（Task 7 启动）
+- 关联：LOG-20260805-13、`96536c9`
+
+**背景与证据**：scoped re-review（sonnet）逐项核对 4 项 Important 修复，全部判定
+ADDRESSED（含独立复核 `_r2_private_root` 的 `resolve()` 逃逸检查确实是使遍历测试失败的
+唯一原因、`formal_freeze`/`formal_dev_base` 在污染环境下真的产出了 `train.jsonl`/
+`base-report.json` 而非静默跳过、resume 测试第二次运行的计数客户端确实零调用），未发现
+新的 Critical/Important。唯一记录项是修复报告把 focused 测试数误写成 37（实际 38，独立
+重跑验证），纯笔误、不影响结论。
+
+**决定与方案**：Task 6 标记 complete（commits `bea052c..96536c9`）。10 项 Minor 加上这条
+计数笔误一并留在 SDD ledger（`.superpowers/sdd/2026-07-22-retailops-v1-r2-formal-data-and-base/
+progress.md`）等最终整分支审查统一分诊。R2 Task 5、6 现已在同一分支
+`feature/r2-formal-data-and-base-eval` 上完成并各自通过独立审查；进入 Task 7：整分支审查
+（`a3c748b..HEAD`）、从头完整 CPU 门禁、临时目录 formal 重复构建哈希比较、仓库级
+secret/BFCL/holdout 泄漏扫描，并撰写 `docs/handoffs/<date>-r2-external-run-commands.md`。
+
+**后果与下一步**：Task 7 结束时只能把 R2 状态记为"CPU 实现完成、外部证据待批准"，不得标记
+R2 已完成；Task 8（正式数据生成、API 全量、模型下载、SSH、GPU 命令）仍需在命令清单产出后
+逐条单独获得用户批准。
+
+### LOG-20260805-15：Task 7 整分支独立审查已派发；主 agent 从头完整 CPU 门禁与仓库级泄漏扫描全部通过
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 7（整分支审查与外部审批命令清单）
+- 状态：进行中
+- 关联：LOG-20260805-14
+
+**背景**：Task 5、6 均已完成并各自通过独立审查（含修复循环）。Task 7 要求：(1) 从每个
+任务基准和整个分支 `a3c748b..HEAD` 生成审查包；(2) 从头跑一遍完整 CPU 门禁 + 临时目录
+formal 重复构建哈希比较 + 仓库级 secret/BFCL/holdout 泄漏扫描；(3) 产出外部审批命令清单；
+(4) 更新阶段记录但不得把 R2 标为已完成。
+
+**证据**：已派发 opus 模型的整分支独立审查，diff 范围 `a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60
+..96536c9`（19 commits、48 files、+12215/-107），要求其聚焦跨任务视角（路径安全模式在 4 处
+独立实现是否等价、`.env` 边界是否在整个分支范围内成立、BFCL/holdout 隔离是否在全分支范围
+内成立、Task 6 是否正确调用了 Task 5 修复轮之后的最终接口、有无硬编码 model revision）
+并对 Task 5/6 遗留的 8+10 项 Minor 逐条给出 must-fix-before-done / acceptable-to-defer 裁决。
+同时主 agent 直接从头跑完整 CPU 门禁：`.venv/bin/pytest -q` 495 passed（含
+`test_retail_ops_r2_e2e.py` 的两次独立 tmp 根 formal_freeze 逐字节重复构建比较）、
+`.venv/bin/ruff check .`、`.venv/bin/mypy`（54 源文件）、`env -u UV_INDEX_URL uv lock
+--check`（105 packages）、`git diff --check` 全部干净。另外手动跑了超出 R2 专属治理测试
+范围的仓库级扫描：`git grep` 未发现任何 secret 形态字面量（`api_key`/`secret`/`password`/
+`token`/`sk-*`/`AKIA*` 模式）；`src/veritool_rl/retail_ops/`、`configs/retail_ops_*` 内
+无任何 BFCL 引用，仓库其余 "bfcl" 命中均为预期的基础设施引用（`.gitignore` 规则、
+`pyproject.toml` 脚本/依赖条目、治理测试自身的断言字符串）；`data/private/`、
+`manifests/retail_ops/v1/`、`reports/retail_ops/` 下均无任何已跟踪文件（Task 8 尚未执行，
+符合预期），且用 `git check-ignore -v` 逐条验证了忽略规则确实覆盖这些路径。
+
+**决定与方案**：等待整分支独立审查结果；有 Critical/Important 发现则进入修复+re-review
+循环，之后按计划撰写 `docs/handoffs/<date>-r2-external-run-commands.md` 并更新阶段记录为
+"CPU 实现完成、外部证据待批准"。
+
+**后果与下一步**：无新决定；证据保存在 SDD 工作区
+`.superpowers/sdd/2026-07-22-retailops-v1-r2-formal-data-and-base/progress.md`（该目录被
+gitignore，不进入 Git，仅供本会话使用），本条 PROJECT_LOG 记录是这些结果的持久留存。
+
+### LOG-20260805-16：整分支审查（a3c748b..HEAD）结论"With fixes"，发现 3 项 Important，修复已派发
+
+- 日期：2026-08-05
+- 阶段/任务：R2 / Task 7（整分支审查）
+- 状态：进行中
+- 关联：LOG-20260805-15、`96536c9`
+
+**背景**：opus 模型对 `a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60..96536c9`（19 commits、
+Task 1-6 全部）做整分支审查。结论：无 Critical，无任何 section 七硬停止条件被违反（无
+split 交叉、无 holdout 内容进 Git/规划/报告、未依据 holdout 调参、无私有写入函数退化为纯
+字符串路径检查、无非 staged 多文件写入、未改配额/算法、未执行任何 GPU/API/下载命令）。
+审查确认路径安全模式的 4 处独立实现行为完全等价（非漂移）、`.env` 边界在全分支范围内成立、
+BFCL/holdout 隔离在全分支范围内成立、Task 6 正确调用了 Task 5 修复轮之后的最终接口、无
+任何硬编码 model revision。对 Task 5（8 项）与 Task 6（10 项+1 项计数笔误）遗留 Minor 逐条
+裁决：多数 acceptable-to-defer（部分已因 Task 5 修复轮而自动解决），Task 5"sealed evaluator
+无模型/硬件绑定"标记为 R3 阻塞项（非 R2 阻塞），Task 6"code_commit 不检查脏工作树"被提升为
+新的 Important。
+
+**发现的 3 项 Important**（完整文本见 SDD 工作区
+`final-review-findings.md`，未进 Git）：
+1. `formal_dev_base` 流水线跳过五维隔离断言——它独立加载 `dev.json`，不像
+   `teacher_collect`/`train_export` 那样经过 `load_verified_formal_dataset` 与
+   `train.json`/`holdout-receipt.json` 交叉校验；`content_fingerprint`/`derivation_fingerprint`
+   刻意不含 `split`/`task_id`，理论上只有这一层交叉隔离断言能挡住被重新贴标签的内容。
+2. `export_formal_train` 接收 `TeacherCollectionConfig` 参数但函数体从未读取它，teacher
+   证据仅凭 `task_id` 与任务记录匹配，未核对 `evidence.task_fingerprint`/
+   `trajectory.task`/`dataset_version`/`bundle_sha256`/`manifest_sha256`；独立 replay 只针对
+   轨迹自带的 `task` 字段重放，两份被互换 trajectory 的证据文件各自都能重放通过。
+3. `code_commit` 可能来自脏工作树（`_current_code_commit` 无 `git status --porcelain`
+   检查，也无 subprocess 超时），与 Task 8 Step 5"任何相关提交后拒绝陈旧运行"的验收要求
+   直接冲突；审查时工作树确实处于脏状态（本会话自己的 PROJECT_LOG 记录），非假设场景。
+
+**决定与方案**：按 SDD 流程，整分支最终审查的修复只有一轮（无第二次完整审查）。已把 3 项
+发现连同建议修法写入 `final-review-findings.md` 并派发一个 opus 模型的修复 agent 一次性
+处理全部 3 项（涉及 Task 4/5/6 跨越的代码，允许跨任务文件修改），要求逐项先写失败测试。
+审查报告另建议的两项优化（dev-base 双跑确定性测试、production factory 的 no-torch 单测）
+标注为非阻塞可选项，不强制本轮完成。
+
+**后果与下一步**：等待修复结果；修复+scoped re-review 通过后（无 Critical/Important 残留
+或已裁决），Task 7 撰写 `docs/handoffs/<date>-r2-external-run-commands.md` 并更新阶段记录为
+"CPU 实现完成、外部证据待批准"，不得标记 R2 已完成。
+
+### LOG-20260806-01：整分支审查 3 项 Important 已修复；dev-base 现在拒绝脏工作树
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 7（整分支审查修复轮）
+- 状态：解决
+- 关联：LOG-20260805-16、`96536c9`
+
+**背景**：按 LOG-20260805-16 派发的一次性修复轮（无第二次完整审查），逐项先写失败测试
+再实现最小闭环，修复整分支审查发现的 3 项 Important。
+
+**实现与判断**：
+1. `_run_formal_dev_base` 改为先 `load_verified_formal_dataset(dev_manifest_path.parent)`
+   （与 `teacher_collect`/`train_export` 同一条路径），再单独解析 `dev_manifest_path` 并要求
+   它与 `dataset.dev_manifest` 完全相等，最后用 `dataset.dev_manifest` 作为公开 manifest。
+   保留 `dev_manifest_path` 这个 config key（不改 schema，已提交的两份 dev config 无需改动，
+   其 parent 本就含 `dataset.json`）；保留原有 `dataset_version` 交叉检查。先加载数据集再
+   解析单文件的顺序是刻意的：holdout receipt 被当作 dev manifest 传入时仍按原样抛
+   `ValidationError`，既有拒绝测试行为不变。
+2. `export_formal_train` 新增 `_require_evidence_binds_record`，在选用某条 teacher 证据之前
+   核对 `task_fingerprint`/`trajectory.task`/`dataset_version`/`bundle_sha256`/`manifest_sha256`。
+   **判断项（审查留给实现方决定）：不一致时直接抛 `ValueError` 而不是静默退回
+   internal_reference**——证据目录被替换/混用属完整性事件，静默降级会产出一份与正常导出
+   逐字节难以区分的产物；抛错发生在 `write_formal_train_export` 之前，不违反"绝不半途导出"
+   契约。刻意不比较 `config_sha256`/`seed`（导出侧用默认预算字段与导出 seed 重建 config，
+   与采集时本就允许不同，比较它们会变成永远失败的断言），也不比较 `route_sha256`
+   （`_teacher_evidence_route_sha256` 正是从证据自身推导该值，比较是同义反复）。
+3. `_current_code_commit` 先跑 `git status --porcelain`，非空即抛 `ValueError` 并列出脏路径
+   （未跟踪文件同样算脏），并把两次 git 调用收敛到 `_run_readonly_git`：统一 30 秒超时，
+   把 `CalledProcessError`/`TimeoutExpired` 转成含 stderr 的可读错误。不做 `-dirty` 后缀式
+   降级：`BaseEvaluationConfig.code_commit` 是严格 40 位十六进制。
+   为此给 `_run_formal_dev_base` 增加 `code_commit_factory` 注入缝（与既有
+   `backend_factory`/`hardware_provider_factory` 同一模式），使 CPU 测试不依赖跑测试时仓库
+   恰好处于什么 git 状态；`main()` 默认路径不注入，守卫始终生效。
+
+**对 Task 8 的直接影响（须写进外部审批命令清单）**：远程 GPU 环境必须是干净的 git checkout。
+两份 dev-base config 里的 `model.revision`/`file_sha256` 目前是占位值，把真实哈希填进 YAML
+后必须提交，不能只在远程工作树里就地改——否则 `formal_dev_base` 会在评测开始前拒绝运行。
+这正是期望行为：config 属于冻结运行契约的一部分。
+
+**验证**：新增 11 条测试（隔离交叉/manifest 脱钩、证据调包/治理上下文/预算字段差异豁免、
+脏工作树 modified+untracked/干净仓库/超时上界/git 失败信息、默认路径拒绝脏工作树），每条
+先确认 RED 原因正确。全量 `.venv/bin/pytest -q` 506 passed（修复前 495，净增 11），
+Ruff/mypy/`uv lock --check`/`git diff --check` 全部干净。
+
+**残留观察（未修，不阻塞）**：`compute_teacher_quality_report` 仍会把 attempt 目录里全部证据
+计入通过率，包括 `accepted=True` 但 `trajectory=None` 的条目；由于 `scenario_by_task_id`
+查表对陌生 task_id 会直接 KeyError，可利用面很窄，且不属本轮 3 项发现范围。
+
+**后果与下一步**：交回 Task 7 做 scoped re-review 与整合评审，之后撰写
+`docs/handoffs/<date>-r2-external-run-commands.md`。

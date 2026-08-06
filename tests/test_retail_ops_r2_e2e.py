@@ -335,6 +335,11 @@ def _fake_hardware_factory() -> _FakeHardwareProvider:
     return _FakeHardwareProvider()
 
 
+def _fake_code_commit_factory() -> str:
+    """CPU 测试注入缝：默认路径会拒绝脏工作树，这里与仓库 git 状态解耦。"""
+    return "1" * 40
+
+
 @pytest.mark.parametrize(
     "config_name",
     ["retail_ops_v1_r2_qwen3_1_7b_dev.yaml", "retail_ops_v1_r2_qwen3_4b_dev.yaml"],
@@ -378,6 +383,7 @@ def test_both_qwen_dev_base_configs_run_through_fake_backends(
         config,
         backend_factory=_fake_backend_factory,
         hardware_provider_factory=_fake_hardware_factory,
+        code_commit_factory=_fake_code_commit_factory,
     )
 
     report_path = output_dir / "base-report.json"

@@ -542,6 +542,98 @@ def test_export_rejects_duplicate_task_ids() -> None:
         export_formal_train([record, record], evidences, _env_factory, _config(), scenarios, seed=0)
 
 
+def _accepted_evidence(record: FormalTaskRecord, config: TeacherCollectionConfig) -> Any:
+    """真正跑一次成功采集，得到与 record/config 完全绑定的合法证据。"""
+    client = _ScriptedTeacherClient(
+        [_response(tool_calls=(_get_order_call(record),)), _response(content="已查到状态")]
+    )
+    evidence = collect_teacher_attempt(record, client, _env_factory, config)
+    assert evidence.accepted is True
+    return evidence
+
+
+def _gate_filler(count: int) -> tuple[list[FormalTaskRecord], list[TeacherAttemptEvidence]]:
+    """补齐若干"已接受但无轨迹"的任务，只为让 70% 质量门通过。
+
+    这些证据走 internal_reference 分支，不参与 teacher 轨迹绑定校验。
+    """
+    records = _real_train_records([TaskScenario.LOOKUP_STATUS])[2 : 2 + count]
+    return records, [_evidence(record.task.task_id, accepted=True) for record in records]
+
+
+def test_export_rejects_teacher_evidence_whose_trajectory_belongs_to_another_task() -> None:
+    """按 task_id 取到的证据必须自证属于这条记录，否则拒绝导出。
+
+    `validate_teacher_trajectory` 用 `trajectory.task` 自建环境重放，所以两条被
+    互换过 trajectory 的证据各自都能重放成功——只有把证据内嵌的
+    `task_fingerprint`/`trajectory.task` 与当前记录对照才能发现调包。
+    """
+    config = _config()
+    first_record, second_record = _real_train_records([TaskScenario.LOOKUP_STATUS])[:2]
+    first_evidence = _accepted_evidence(first_record, config)
+    second_evidence = _accepted_evidence(second_record, config)
+
+    swapped_first = first_evidence.model_copy(
+        update={
+            "trajectory": second_evidence.trajectory,
+            "task_fingerprint": second_record.task_fingerprint,
+        }
+    )
+    swapped_second = second_evidence.model_copy(
+        update={
+            "trajectory": first_evidence.trajectory,
+            "task_fingerprint": first_record.task_fingerprint,
+        }
+    )
+    filler_records, filler_evidences = _gate_filler(8)
+
+    all_records = [first_record, second_record, *filler_records]
+    all_evidences = [swapped_first, swapped_second, *filler_evidences]
+    scenarios = {record.task.task_id: record.task.scenario.value for record in all_records}
+
+    with pytest.raises(ValueError, match="证据"):
+        export_formal_train(
+            all_records, all_evidences, _env_factory, config, scenarios, seed=0
+        )
+
+
+def test_export_rejects_teacher_evidence_from_another_governance_context() -> None:
+    """证据内嵌的 dataset_version/bundle/manifest 哈希必须与本次导出上下文一致。"""
+    config = _config()
+    record = _real_train_records([TaskScenario.LOOKUP_STATUS])[0]
+    evidence = _accepted_evidence(record, config)
+    stale = evidence.model_copy(update={"manifest_sha256": "f" * 64})
+    filler_records, filler_evidences = _gate_filler(9)
+
+    all_records = [record, *filler_records]
+    all_evidences = [stale, *filler_evidences]
+    scenarios = {r.task.task_id: r.task.scenario.value for r in all_records}
+
+    with pytest.raises(ValueError, match="证据"):
+        export_formal_train(all_records, all_evidences, _env_factory, config, scenarios, seed=0)
+
+
+def test_export_accepts_teacher_evidence_when_config_budget_fields_differ() -> None:
+    """`config_sha256`/`seed` 不参与绑定校验：导出侧会用默认预算重建 config。"""
+    collect_config = _config(max_episodes_per_task=1, max_request_attempts=1)
+    record = _real_train_records([TaskScenario.LOOKUP_STATUS])[0]
+    evidence = _accepted_evidence(record, collect_config)
+    export_config = _config()  # 默认预算字段 -> 不同的 config_sha256
+    assert evidence.config_sha256 != export_config.config_sha256
+    filler_records, filler_evidences = _gate_filler(9)
+
+    all_records = [record, *filler_records]
+    all_evidences = [evidence, *filler_evidences]
+    scenarios = {r.task.task_id: r.task.scenario.value for r in all_records}
+
+    _, selections, _, _ = export_formal_train(
+        all_records, all_evidences, _env_factory, export_config, scenarios, seed=1
+    )
+
+    selection_by_task = {selection.task_id: selection.source for selection in selections}
+    assert selection_by_task[record.task.task_id] == "teacher"
+
+
 def test_export_prefers_teacher_trajectory_and_falls_back_to_reference() -> None:
     lookup_records = _real_train_records([TaskScenario.LOOKUP_STATUS])[:2]
     accepted_record, fallback_record = lookup_records

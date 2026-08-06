@@ -517,6 +517,10 @@ def export_formal_train(
     优先使用已接受且 replay 通过的 teacher 轨迹；否则退回该任务的确定性
     internal reference（Oracle）。质量门不通过时抛 TeacherQualityGateError，
     不产出任何导出文件。
+
+    `config` 是本次导出的治理上下文：每条被选中的 teacher 证据都要先通过
+    `_require_evidence_binds_record`，证明它确实属于当前记录（而不只是 task_id
+    对得上），否则整次导出失败。
     """
     report = compute_teacher_quality_report(evidences, scenario_by_task_id)
     if not report.passes_gate:
@@ -542,6 +546,7 @@ def export_formal_train(
         trajectory: Trajectory
         source: str
         if evidence is not None and evidence.accepted and evidence.trajectory is not None:
+            _require_evidence_binds_record(evidence, record, config)
             trajectory = evidence.trajectory
             source = "teacher"
         else:
@@ -568,6 +573,48 @@ def export_formal_train(
         raise ValueError(msg)
 
     return report, selections, train_rows, sft_rows
+
+
+def _require_evidence_binds_record(
+    evidence: TeacherAttemptEvidence,
+    record: FormalTaskRecord,
+    config: TeacherCollectionConfig,
+) -> None:
+    """按 task_id 取到的 teacher 证据必须自证属于这条记录和本次导出上下文。
+
+    `validate_teacher_trajectory` 通过 `replay_trajectory(trajectory, env_factory)`
+    重放，而环境是用 `trajectory.task`（轨迹自带的任务，不是记录里的任务）建的，
+    所以两份被互换过 `trajectory` 的证据各自都能自洽地重放成功，最终会导出一条
+    prompt 与其声称的 manifest 行对不上的 `sft.jsonl`。只有把证据内嵌的绑定字段
+    与当前记录/配置对照才能发现这种"文件名对得上、内容对不上"的调包。
+
+    不一致时直接抛错而不是退回 internal_reference：证据目录被替换/混用是完整性
+    事件，不是"这条任务恰好没有 teacher 数据"。静默降级会产出一份和正常导出
+    逐字节难以区分的产物，只在 `selection.json` 里留下一个来源标签。抛错发生在
+    任何写盘之前（`write_formal_train_export` 尚未调用），因此不违反本流程
+    "绝不半途导出"的契约。
+
+    刻意不比较 `config_sha256` 和 `seed`：`_run_train_export` 用默认预算字段
+    （`max_episodes_per_task`/`max_request_attempts`）和导出侧 seed 重建
+    `TeacherCollectionConfig`，采集时用的是 YAML 里的实际预算与采集 seed，两者
+    本就允许不同——把它们纳入比较会变成永远失败的断言。
+    """
+    task_id = record.task.task_id
+    if evidence.task_fingerprint != record.task_fingerprint:
+        msg = f"teacher 证据 task_fingerprint 与导出记录不一致: {task_id}"
+        raise ValueError(msg)
+    if evidence.trajectory is None or evidence.trajectory.task != record.task:
+        msg = f"teacher 证据 trajectory.task 与导出记录不一致: {task_id}"
+        raise ValueError(msg)
+    if evidence.dataset_version != config.dataset_version:
+        msg = f"teacher 证据 dataset_version 与本次导出上下文不一致: {task_id}"
+        raise ValueError(msg)
+    if evidence.bundle_sha256 != config.bundle_sha256:
+        msg = f"teacher 证据 bundle_sha256 与本次导出上下文不一致: {task_id}"
+        raise ValueError(msg)
+    if evidence.manifest_sha256 != config.manifest_sha256:
+        msg = f"teacher 证据 manifest_sha256 与本次导出上下文不一致: {task_id}"
+        raise ValueError(msg)
 
 
 def _build_reference_trajectory(

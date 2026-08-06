@@ -78,6 +78,16 @@ def _hardware_provider_factory() -> HardwareProvider:
     return _FakeHardwareProvider()
 
 
+def _fake_code_commit_factory() -> str:
+    """CPU 测试注入缝：把 `code_commit` 与仓库真实 git 状态解耦。
+
+    默认路径 `_current_code_commit` 会拒绝脏工作树，而开发中的工作树几乎总是
+    脏的。除专门验证脏树守卫的那几条用例外，其余测试都注入这个固定值，
+    保证测试结果不依赖跑测试时仓库恰好处于什么 git 状态。
+    """
+    return "1" * 40
+
+
 class _AlwaysFailTeacherClient:
     """任意消息都返回非法工具调用——快速产出 ILLEGAL_TOOL/未接受证据。"""
 
@@ -802,6 +812,7 @@ def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
         dev_config,
         backend_factory=_dev_base_backend_factory,
         hardware_provider_factory=_hardware_provider_factory,
+        code_commit_factory=_fake_code_commit_factory,
     )
     assert (tmp_path / "dev-base-out" / "base-report.json").is_file()
 
@@ -1021,6 +1032,103 @@ def test_formal_dev_base_rejects_holdout_receipt_as_dev_manifest(
         )
 
 
+def _poison_public_dev_manifest_isolation(workspace: Path, rel_dir: Path) -> Path:
+    """复制一份公开数据集，并让 `dev.json` 的 task 指纹与 holdout receipt 交叉。
+
+    `content_fingerprint`/`derivation_fingerprint` 刻意不含 `split`/`task_id`，
+    所以一份被重贴标签的 dev manifest 单独看处处自洽；只有跨 manifest 的
+    `assert_formal_split_isolation` 会发现它和封存 holdout 共享任务。这里同步
+    修好 `dataset.json` 里的 `public_files_sha256`，确保测试真正命中隔离断言，
+    而不是提前被文件哈希校验拦下。
+    """
+    from veritool_rl.artifacts import canonical_json, sha256_file
+
+    source = workspace / PUBLIC_REL
+    target = workspace / rel_dir
+    shutil.copytree(source, target)
+
+    dev = json.loads((target / "dev.json").read_text("utf-8"))
+    holdout = json.loads((target / "holdout-receipt.json").read_text("utf-8"))
+    dev["task_fingerprints"] = holdout["task_fingerprints"][: len(dev["task_fingerprints"])]
+    (target / "dev.json").write_text(canonical_json(dev) + "\n", encoding="utf-8")
+
+    receipt = json.loads((target / "dataset.json").read_text("utf-8"))
+    receipt["public_files_sha256"]["dev.json"] = sha256_file(target / "dev.json")
+    (target / "dataset.json").write_text(canonical_json(receipt) + "\n", encoding="utf-8")
+    return target
+
+
+def test_formal_dev_base_rejects_dev_manifest_that_overlaps_sealed_holdout(
+    workspace: Path, tmp_path: Path
+) -> None:
+    """dev base 必须和 teacher_collect/train_export 一样走统一的公开数据集校验。
+
+    只加载 `dev.json` 是不够的：一份和封存 holdout 共享任务指纹的 dev manifest
+    在单文件层面完全合法，只有 `load_verified_formal_dataset` 的跨 manifest
+    五维隔离断言能拦住它。
+    """
+    from veritool_rl.product_cli import main
+
+    poisoned_rel = Path("manifests/retail_ops/v1/poisoned")
+    _poison_public_dev_manifest_isolation(workspace, poisoned_rel)
+    config = _formal_dev_base_config(
+        Path("models"), dev_manifest_path=str(poisoned_rel / "dev.json")
+    )
+    config_path = workspace / "dev.yaml"
+    _write_yaml(config_path, config)
+
+    with pytest.raises(ValueError, match="交叉"):
+        main(
+            [
+                "evaluate",
+                "--config",
+                str(config_path),
+                "--input_dir",
+                str(PRIVATE_REL),
+                "--output_dir",
+                str(tmp_path / "out"),
+            ]
+        )
+    assert not (tmp_path / "out").exists()
+
+
+def test_formal_dev_base_rejects_dev_manifest_detached_from_published_receipt(
+    workspace: Path, tmp_path: Path
+) -> None:
+    """`dev.json` 必须就是 `dataset.json` 绑定的那一份，不能是旁边的另一个文件。"""
+    from veritool_rl.artifacts import canonical_json
+    from veritool_rl.product_cli import main
+
+    detached_rel = Path("manifests/retail_ops/v1/detached")
+    source = workspace / PUBLIC_REL
+    target = workspace / detached_rel
+    shutil.copytree(source, target)
+    dev = json.loads((target / "dev.json").read_text("utf-8"))
+    (target / "other-dev.json").write_text(canonical_json(dev) + "\n", encoding="utf-8")
+    # 让 dataset.json 绑定的 dev.json 与实际传入的 other-dev.json 内容不同。
+    dev["artifact_sha256"] = "cd" * 32
+    (target / "other-dev.json").write_text(canonical_json(dev) + "\n", encoding="utf-8")
+
+    config = _formal_dev_base_config(
+        Path("models"), dev_manifest_path=str(detached_rel / "other-dev.json")
+    )
+    config_path = workspace / "dev.yaml"
+    _write_yaml(config_path, config)
+
+    with pytest.raises(ValueError, match="dev manifest"):
+        main(
+            [
+                "evaluate",
+                "--config",
+                str(config_path),
+                "--input_dir",
+                str(PRIVATE_REL),
+                "--output_dir",
+                str(tmp_path / "out"),
+            ]
+        )
+
+
 def test_formal_dev_base_rejects_wrong_dataset_version(workspace: Path, tmp_path: Path) -> None:
     from veritool_rl.product_cli import main
 
@@ -1086,6 +1194,151 @@ def test_formal_dev_base_rejects_absolute_models_root(workspace: Path, tmp_path:
         )
 
 
+# ---------------------------------------------------------------------------
+# code_commit provenance: 脏工作树必须拒绝盖章
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(root: Path) -> None:
+    """在 tmp 目录建一个只含一次提交的干净 git 仓库。"""
+    import subprocess
+
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "tracked.txt").write_text("v1\n", encoding="utf-8")
+    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "add", "tracked.txt", "uv.lock"],
+        [
+            "git",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=test",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+    ):
+        subprocess.run(command, cwd=root, check=True, capture_output=True, text=True, timeout=30)
+
+
+def test_current_code_commit_returns_head_on_clean_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import veritool_rl.product_cli as product_cli
+
+    repo = tmp_path / "clean-repo"
+    _init_git_repo(repo)
+    monkeypatch.setattr(product_cli, "_repo_root", lambda: repo)
+
+    commit = product_cli._current_code_commit()
+
+    assert len(commit) == 40
+    assert all(character in "0123456789abcdef" for character in commit)
+
+
+@pytest.mark.parametrize("dirt", ["modified", "untracked"])
+def test_current_code_commit_rejects_dirty_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dirt: str
+) -> None:
+    """脏工作树上盖出的 `code_commit` 会声称跑了并没有真的跑过的代码。"""
+    import veritool_rl.product_cli as product_cli
+
+    repo = tmp_path / f"dirty-repo-{dirt}"
+    _init_git_repo(repo)
+    if dirt == "modified":
+        (repo / "tracked.txt").write_text("v2\n", encoding="utf-8")
+    else:
+        (repo / "scratch.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(product_cli, "_repo_root", lambda: repo)
+
+    with pytest.raises(ValueError, match="工作树"):
+        product_cli._current_code_commit()
+
+
+def test_current_code_commit_reports_git_failure_with_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """不是 git 仓库时要给出可读错误，而不是不含 stderr 的裸 CalledProcessError。"""
+    import veritool_rl.product_cli as product_cli
+
+    not_a_repo = tmp_path / "not-a-repo"
+    not_a_repo.mkdir()
+    monkeypatch.setattr(product_cli, "_repo_root", lambda: not_a_repo)
+
+    with pytest.raises(ValueError, match="git status --porcelain 失败"):
+        product_cli._current_code_commit()
+
+
+def test_current_code_commit_bounds_every_git_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """每个 git 调用都必须带 timeout，卡死的 git 进程不能挂住整条 CLI。"""
+    import subprocess
+
+    import veritool_rl.product_cli as product_cli
+
+    repo = tmp_path / "timeout-repo"
+    _init_git_repo(repo)
+    monkeypatch.setattr(product_cli, "_repo_root", lambda: repo)
+
+    seen: list[Any] = []
+    real_run = subprocess.run
+
+    def recording_run(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("timeout"))
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(product_cli.subprocess, "run", recording_run)
+    product_cli._current_code_commit()
+
+    assert len(seen) == 2
+    assert all(isinstance(timeout, int | float) and timeout > 0 for timeout in seen)
+
+
+def test_formal_dev_base_refuses_to_run_from_dirty_worktree(
+    workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """默认（无注入）路径必须在跑任何评测之前拒绝脏工作树。"""
+    import veritool_rl.product_cli as product_cli
+    from veritool_rl.product_cli import _run_formal_dev_base, build_product_parser
+
+    repo = tmp_path / "dirty-repo"
+    _init_git_repo(repo)
+    (repo / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+    monkeypatch.setattr(product_cli, "_repo_root", lambda: repo)
+
+    parser = build_product_parser()
+    file_sha256 = _make_model_files(workspace, "models")
+    config = _formal_dev_base_config(Path("models"))
+    config["model"]["file_sha256"] = file_sha256
+    config_path = workspace / "dev.yaml"
+    _write_yaml(config_path, config)
+    args = parser.parse_args(
+        [
+            "evaluate",
+            "--config",
+            str(config_path),
+            "--input_dir",
+            str(PRIVATE_REL),
+            "--output_dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="工作树"):
+        # 刻意不注入 code_commit_factory：这条用例验证的正是默认路径的守卫。
+        _run_formal_dev_base(
+            args,
+            config,
+            backend_factory=_dev_base_backend_factory,
+            hardware_provider_factory=_hardware_provider_factory,
+        )
+    assert not (tmp_path / "out" / "base-report.json").exists()
+
+
 def test_formal_dev_base_runs_through_injected_fake_backend_and_hardware(
     workspace: Path, tmp_path: Path
 ) -> None:
@@ -1114,6 +1367,7 @@ def test_formal_dev_base_runs_through_injected_fake_backend_and_hardware(
         config,
         backend_factory=_dev_base_backend_factory,
         hardware_provider_factory=_hardware_provider_factory,
+        code_commit_factory=_fake_code_commit_factory,
     )
 
     report_path = tmp_path / "out" / "base-report.json"
@@ -1146,6 +1400,7 @@ def test_formal_dev_base_rejects_output_overwrite(workspace: Path, tmp_path: Pat
         config,
         backend_factory=_dev_base_backend_factory,
         hardware_provider_factory=_hardware_provider_factory,
+        code_commit_factory=_fake_code_commit_factory,
     )
 
     with pytest.raises(FileExistsError):
@@ -1154,4 +1409,5 @@ def test_formal_dev_base_rejects_output_overwrite(workspace: Path, tmp_path: Pat
             config,
             backend_factory=_dev_base_backend_factory,
             hardware_provider_factory=_hardware_provider_factory,
+            code_commit_factory=_fake_code_commit_factory,
         )

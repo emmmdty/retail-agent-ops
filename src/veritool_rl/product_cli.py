@@ -69,6 +69,7 @@ from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot, load_teac
 
 _R2_PRIVATE_ROOT = Path("data/private/retail_ops/v1/r2")
 _SAFE_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_GIT_TIMEOUT_SECONDS = 30.0
 
 
 def build_product_parser() -> argparse.ArgumentParser:
@@ -485,9 +486,9 @@ def _load_teacher_attempt_evidences(
 def _teacher_evidence_route_sha256(evidences: Sequence[TeacherAttemptEvidence]) -> str:
     """从已采集证据推导 route_sha256，不读取环境变量。
 
-    `export_formal_train` 当前实现里 `TeacherCollectionConfig` 这个字段并不会
-    被读取（只用于构造合法的 config 对象），但仍要求它是合法 SHA-256；这里
-    额外做了一次证据自洽性检查：同一次导出引用的证据不允许混用不同 route。
+    `export_formal_train` 会核对证据的 dataset_version/bundle/manifest 绑定，但
+    不核对 `route_sha256`——那在这里是同义反复，因为本函数正是从证据自身推导
+    出该值的。真正的保护在这一步：同一次导出引用的证据不允许混用不同 route。
     """
     distinct = sorted({evidence.route_sha256 for evidence in evidences})
     if not distinct:
@@ -538,12 +539,14 @@ def _run_formal_dev_base(
     *,
     backend_factory: Callable[[BaseEvaluationConfig, Path], GenerationBackend] | None = None,
     hardware_provider_factory: Callable[[], HardwareProvider] | None = None,
+    code_commit_factory: Callable[[], str] | None = None,
 ) -> None:
     """在 60 条已验证 formal dev 任务上跑一次冻结 base 评测，绝不读取环境变量。
 
-    `backend_factory`/`hardware_provider_factory` 是 CPU 测试的注入缝：直接
-    调用本函数并传入 fake 实现即可绕开真实模型/CUDA；`main()` 走的默认路径
-    使用模块级 `_default_generation_backend`/`_default_hardware_provider`。
+    `backend_factory`/`hardware_provider_factory`/`code_commit_factory` 是 CPU
+    测试的注入缝：直接调用本函数并传入 fake 实现即可绕开真实模型/CUDA/仓库
+    git 状态；`main()` 走的默认路径使用模块级 `_default_generation_backend`/
+    `_default_hardware_provider`/`_current_code_commit`（后者会拒绝脏工作树）。
     """
     _require_config_keys(config, _FORMAL_DEV_BASE_KEYS)
     if args.seed != 0:
@@ -558,7 +561,14 @@ def _run_formal_dev_base(
     generation_value = _config_mapping(config, "generation")
 
     bundle = load_bundle(bundle_dir)
-    public_manifest = load_formal_task_manifest(dev_manifest_path)
+    # 和 teacher_collect/train_export 一样走统一的公开数据集校验：只有跨 manifest
+    # 的 `assert_formal_split_isolation` 能发现一份"单文件自洽、内容却与封存
+    # holdout 重叠"的 dev manifest（content/derivation 指纹刻意不含 split/task_id）。
+    dataset = load_verified_formal_dataset(dev_manifest_path.parent)
+    declared_manifest = load_formal_task_manifest(dev_manifest_path)
+    if declared_manifest != dataset.dev_manifest:
+        raise ValueError("formal_dev_base 的 dev manifest 不是 dataset.json 绑定的那一份")
+    public_manifest = dataset.dev_manifest
     if public_manifest.dataset_version != dataset_version:
         raise ValueError("formal_dev_base 配置的 dataset_version 与公开 dev manifest 不一致")
 
@@ -571,7 +581,7 @@ def _run_formal_dev_base(
         dataset_version=dataset_version,
         model=model_artifact,
         generation=generation_settings,
-        code_commit=_current_code_commit(),
+        code_commit=(code_commit_factory or _current_code_commit)(),
         uv_lock_sha256=_current_uv_lock_sha256(),
     )
 
@@ -666,14 +676,47 @@ def _repo_root() -> Path:
 
 
 def _current_code_commit() -> str:
+    """返回 HEAD commit，并且只在工作树完全干净时才允许盖这个章。
+
+    脏工作树上盖出的 `code_commit` 会让证据声称跑了并没有真的跑过的代码，
+    下游"任何相关提交之后的运行一律作废"的判定也就失去依据。这里按项目
+    一贯的 fail-closed 约定直接报错并列出脏路径，不做静默降级（例如附加
+    `-dirty` 后缀），因为 `BaseEvaluationConfig.code_commit` 是严格 40 位
+    十六进制，任何降级表示都只会在更远的地方以更难解释的形式失败。
+
+    未跟踪文件同样算脏：包内新增一个未提交的 .py 就足以改变实际运行行为。
+    每个 git 调用都带 timeout，卡死的 git 进程不能无限期挂住 CLI。
+    """
     root = _repo_root()
-    result = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
+    dirty = _run_readonly_git(root, "status", "--porcelain").strip()
+    if dirty:
+        raise ValueError(f"工作树不干净，拒绝为本次运行盖 code_commit：\n{dirty}")
+    return _run_readonly_git(root, "rev-parse", "HEAD").strip()
+
+
+def _run_readonly_git(root: Path, *args: str) -> str:
+    """在仓库根跑一条只读 git 命令，必有超时上界，失败一律转成可读错误。
+
+    `subprocess.CalledProcessError` 的字符串形式不含 stderr，而这条路径最常见的
+    失败（不是 git 仓库、dubious ownership、HEAD 不存在）全部只在 stderr 里说得
+    清楚；直接抛裸异常会让远程运行的排障成本高得没有必要。
+    """
+    command = ["git", "-C", str(root), *args]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        msg = f"git {' '.join(args)} 超过 {_GIT_TIMEOUT_SECONDS} 秒未返回: {root}"
+        raise ValueError(msg) from error
+    except subprocess.CalledProcessError as error:
+        msg = f"git {' '.join(args)} 失败（{root}）: {(error.stderr or '').strip()}"
+        raise ValueError(msg) from error
+    return result.stdout
 
 
 def _current_uv_lock_sha256() -> str:
