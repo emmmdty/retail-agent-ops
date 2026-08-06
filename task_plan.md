@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型 dev base 已完成方案审批，当前在独立功能分支执行 CPU 实现。
+R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型 dev base 已完成方案审批，独立功能分支的 CPU 实现（Task 1-7）已完成并通过独立审查，正等待用户逐项批准 Task 8 的正式数据、API、模型下载与远端 GPU 命令（命令清单见 `docs/handoffs/2026-08-06-r2-external-run-commands.md`）。
 
 ## Current Task
 
@@ -18,15 +18,21 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 - [x] 写入并自审 R2 正式设计与逐任务 TDD 实施计划。
 - [x] Task 1：实现并复审 formal family-first 任务生成、五类指纹和 420 条环境语义回归（`83bd0b3`、`dfdb8dd`）。
 - [x] Task 2：实现并复审 schema 2.0 manifest、verified dataset、五维隔离与两阶段 sealed holdout（`e877bd2`、`87a65ff`）。
-- [ ] 实现正式任务、manifest、holdout 治理及密封评测合同。
 - [x] Task 3：实现并复审 provider-agnostic teacher 路由与 OpenAI-compatible client 传输边界（`7153c26`）。
 - [x] Task 4：实现并复审 teacher 采集、回放质检与 train 导出（`1d60af2`）。
-- [x] Task 5：实现 sealed holdout evaluator 合同、formal dev loader、Qwen dev base 证据与可注入硬件测量（CPU/fake backend）。
+- [x] Task 5：实现并复审 sealed holdout evaluator 合同、formal dev loader、Qwen dev base 证据与可注入硬件测量（CPU/fake backend）；独立审查发现 1 项 Important（backend↔pin 未绑定 adapter/生成参数）已修复复审通过（`06a41f9`、`bea052c`）。
 - [x] Task 6：严格 R2 CLI/config 分发（`product_cli.py` 按 `pipeline` 分派 formal_freeze/
       teacher_collect/train_export/formal_dev_base，R1 精确 key 集合路径逐字节不变）、
-      6 份新 R2 config 与 CPU 端到端 fake 验收。
-- [ ] 通过 CPU 完整门禁后，逐项进入正式数据、API、下载和远端 GPU 审批门。
-- [ ] 在最终 HEAD 完成审查、文档收口和分支交付。
+      6 份新 R2 config 与 CPU 端到端 fake 验收；独立审查发现 4 项 Important（私有根路径校验、
+      `.env` 边界回归测试过宽、teacher_collect resume 零覆盖、缺 `uv lock --check` 治理测试）
+      已修复复审通过（`07da971`、`96536c9`）。
+- [x] Task 7：整分支审查（`a3c748b..HEAD`）发现 3 项 Important（`formal_dev_base` 跳过五维
+      隔离断言、`export_formal_train` 仅凭 `task_id` 匹配证据、`code_commit` 可能来自脏工作树）
+      已修复复审通过（`c4d7fdc`）；从头完整 CPU 门禁 + 仓库级 secret/BFCL/holdout 泄漏扫描
+      通过；产出 `docs/handoffs/2026-08-06-r2-external-run-commands.md`。
+- [ ] 逐项进入正式数据生成、API、模型下载和远端 GPU 审批门（Task 8，命令清单见上，均未执行，
+      需用户逐条批准）。
+- [ ] Task 8 全部证据回收并在最终 HEAD 复验后完成分支收口（merge/no-merge 由用户决定）。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`uv lock --check`、`git diff --check`；正式阶段另验证重复构建哈希、secret/BFCL/holdout 泄漏扫描、API route snapshot 和远端产物哈希一致性。
 
 ## Task Rules
@@ -73,6 +79,9 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
 | 2026-08-05 | 20 条真实 DeepSeek smoke（会话临时脚本）发现 `run_episode`（`agent/runner.py`）组装的多轮消息历史不是合法 OpenAI wire format：`tool_calls[].function.arguments` 是原始 dict 而非 JSON 字符串，且 assistant `tool_calls[]`/`tool` 消息缺 `id`/`tool_call_id`；本地 Qwen backend 从未触发过 | 判定为 Task 4 前置阻塞：先在 `agent/runner.py` 用 TDD 修复两处 wire format bug 并补回归测试，再开始 `teacher_data.py` 实现；smoke 脚本本身未提交，详见 `docs/PROJECT_LOG.md` LOG-20260805-07 |
 | 2026-08-05 | Task 6 env 边界测试最初用 `monkeypatch.setattr("os.environ", HostileMapping())` 整体替换 `os.environ`，导致 pytest 自身内部读取 `COLUMNS`/`PY_COLORS` 时炸穿并使整个 session 内部报错，而非产品代码问题 | 改用 `monkeypatch.setenv("TEACHER_LLM_PROVIDER", "not a provider name!!")` 只毒化 `load_teacher_route` 真正会读的具体 key，不整体替换 `os.environ`；同时确认没有任何产品代码本身依赖 `COLUMNS`/`PY_COLORS` |
 | 2026-08-05 | Task 6 首个 `--input_dir` 覆盖测试误传相对路径 `"configs/retail_ops_v1_build.yaml"`，但该测试用的 `workspace` fixture 已 `monkeypatch.chdir` 到隔离 tmp 根，仓库真实 `configs/` 在那里不存在 | 改用 `Path(__file__).resolve().parents[1]`（`REPO_ROOT`）拼出绝对路径引用仓库里真正提交的 config 文件，不依赖当前 CWD |
+| 2026-08-05 | Task 6 修复轮首次派发因触发本会话 API 用量限制中断，未产生任何改动（工作树、报告文件均未受影响） | 原样重新恢复同一 implementer agent（未改变任务或方案），重试后成功完成 |
+| 2026-08-06 | Task 7 整分支审查发现 `formal_dev_base` 独立加载 `dev.json` 未走 `load_verified_formal_dataset`，跳过五维隔离交叉断言；`export_formal_train` 接收 `TeacherCollectionConfig` 却从未读取，teacher 证据仅凭 `task_id` 匹配记录；`code_commit` 可能来自脏工作树且 git 子进程无超时 | 三项均用 TDD 修复：`_run_formal_dev_base` 改为先 `load_verified_formal_dataset` 再取其 `dev_manifest`；新增 `_require_evidence_binds_record` 在 export 循环内核对 `task_fingerprint`/`trajectory.task`/`dataset_version`/`bundle_sha256`/`manifest_sha256`，不匹配即硬失败（非静默回退）；`_current_code_commit` 先查 `git status --porcelain` 非空即拒绝，git 调用统一加 30s 超时；复审确认 3 项均已解决、3 个关键判断均合理（`c4d7fdc`） |
+| 2026-08-06 | Task 7 复审发现 `manifests/retail_ops/v1/` 未被 `.gitignore` 覆盖（不同于 `data/`/`models/`/`reports/retail_ops/`），导致 `formal_freeze` 产出的公开 manifest 若不提交，会被新的脏树检查判定为"未跟踪=脏"从而阻塞 `formal_dev_base` | 非代码缺陷，是正式执行顺序的前置条件；已写入 `docs/handoffs/2026-08-06-r2-external-run-commands.md` 第 0 节，要求 `formal_freeze` 产出必须先提交再进入 `formal_dev_base` |
 
 ## Maintenance: Codex 启动简化
 

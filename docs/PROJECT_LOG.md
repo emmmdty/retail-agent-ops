@@ -1077,3 +1077,46 @@ Ruff/mypy/`uv lock --check`/`git diff --check` 全部干净。
 
 **后果与下一步**：交回 Task 7 做 scoped re-review 与整合评审，之后撰写
 `docs/handoffs/<date>-r2-external-run-commands.md`。
+
+### LOG-20260806-02：Task 7 收口——R2 CPU 实现（Task 1-7）完成，外部证据待批准
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 7 完成
+- 状态：阶段变更
+- 关联：LOG-20260805-10 至 LOG-20260806-01，`c4d7fdc`
+
+**背景**：整分支修复轮（LOG-20260806-01）之后，Task 7 的 scoped re-review（opus，完整深度）
+确认 3 项 Important 全部 ADDRESSED、3 个关键判断均合理，无新 Critical/Important 代码缺陷；
+唯一遗留项是文档性的——外部命令清单必须完整写出脏树检查带来的执行顺序前提。
+
+**收口证据**：
+- 从头在实际最终 HEAD 重跑完整 CPU 门禁：`.venv/bin/pytest -q` 506 passed、
+  `.venv/bin/ruff check .` 通过、`.venv/bin/mypy` 54 源文件通过、
+  `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check` 通过（105 packages）、
+  `git diff --check` 干净。
+- 超出 R2 专属治理测试范围的仓库级人工扫描：`git grep` 未发现任何 secret 形态字面量；
+  `src/veritool_rl/retail_ops/`、`configs/retail_ops_*` 内无 BFCL 引用（仓库其余命中均为
+  `.gitignore`/`pyproject.toml`/治理测试自身断言字符串等预期基础设施引用）；
+  `data/private/`、`manifests/retail_ops/v1/`、`reports/retail_ops/` 下均无已跟踪文件
+  （Task 8 尚未执行）；`git check-ignore -v` 逐条验证忽略规则确实覆盖 R2 私有/产物路径。
+- formal 重复构建哈希比较已包含在 CPU 门禁内（`test_retail_ops_r2_e2e.py` 的两根逐字节
+  比较）。
+- 产出 `docs/handoffs/2026-08-06-r2-external-run-commands.md`：分节列出 formal freeze、
+  `.env` preflight、6 任务/240 任务 teacher API 调用、只读 SSH 盘点（gpu-4090/gpu-5090
+  二选一，注明 gpu-5090 已下载并校验过 Qwen3-1.7B/4B 可复用）、远端代码同步、模型下载、
+  单任务/60 任务 GPU dev run、证据同步与最终验收，每条命令均标注"未执行"；第 0 节写明
+  本会话整分支修复引入的真实前置条件：`formal_freeze` 公开产物须先提交（`manifests/
+  retail_ops/v1/` 不在 `.gitignore` 覆盖范围）才能进入 `formal_dev_base`，dev-base config
+  的真实 `model.revision`/`file_sha256` 须提交而非远端临时编辑，所有 `--output_dir` 须指向
+  已忽略路径。
+- `task_plan.md`/`findings.md`/`progress.md` 已同步更新（Task 5-7 独立审查发现与修复的完整
+  记录、Errors 表新增 3 条）；`docs/EXECUTION_PLAN.md` 的 R2 状态**保持"当前"不变**——没有
+  验收目标获得实际数据支撑的证据，不属于"已完成"。
+
+**决定与方案**：R2 阶段状态记为"CPU 实现（Task 1-7）完成，独立审查全部通过；外部证据
+（正式数据、teacher 全量、双模型 dev base）待用户逐项批准 Task 8 命令后生成"。不合并、
+不 push、不标记 R2 完成。
+
+**后果与下一步**：等待用户按 `docs/handoffs/2026-08-06-r2-external-run-commands.md` 逐条
+批准 Task 8 命令；批准前 agent 不得执行清单中的任何一条外部命令。分支处置（是否/何时
+merge）留待 Task 8 全部证据回收并在最终 HEAD 复验通过后，由用户决定。

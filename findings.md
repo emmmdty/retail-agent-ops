@@ -336,3 +336,58 @@
   收尾"也能让 `reward.final_state` 变成 1.0 从而落在 `SUCCESS`（不是 `FINAL_RESPONSE`），
   这正是 `teacher_data.py` 自己的 `_build_reference_trajectory`（`OraclePolicy`）已经在用的
   同一套机制。
+
+## R2 Task 5/6 独立审查与 Task 7 整分支审查（2026-08-05/06）
+
+- Task 5 独立审查（在实现代理自己发现并修复"dev artifact hash 信任调用方"之后）另外发现
+  1 项 Important：`_require_backend_matches_pin` 只核对 `backend.model_dir`/`backend.revision`，
+  未核对 adapter 状态或实际生成参数——`TransformersBackend` 原先从不发布这两项，导致挂载
+  adapter 或改了采样参数的后端也能通过 dev base 全部检查。修复：`TransformersBackend` 如实
+  发布 `adapter_path`/`settings`，绑定校验依次拒绝非空 adapter、目录/revision 不符、
+  `settings != config.generation`（`bea052c`）。8 项 Minor 记入 SDD 工作区 ledger（未进 Git）
+  留待整分支审查统一分诊。
+- Task 6 独立审查发现 4 项 Important：私有根 `_r2_private_root` 直接拼接未校验的
+  `dataset_version`（当时仅因下游 `write_formal_task_set` 恰好先拒绝非冻结值才"意外安全"）；
+  `.env` 边界回归测试用 `pytest.raises(Exception)` 过宽且 `formal_freeze`/`formal_dev_base`
+  从未在污染环境下被实际跑过；`teacher_collect` 的 resume/skip 路径零测试覆盖（而
+  `collect_teacher_attempt` 真实计费调用发生在不可覆盖检查之前）；计划 Step 5 明确要求的
+  `uv lock --check` 治理扫描未落地为自动化测试。四项均修复并补对抗性回归测试（`96536c9`）；
+  首次修复派发因触发本会话 API 用量限制中断（未产生任何改动），原样重试后成功。10 项 Minor
+  同样记入 ledger。
+- Task 7 整分支审查（`a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60..96536c9`，19 commits）确认：
+  路径安全模式在 `formal_manifests.py`/`teacher_data.py`/`base_evaluation.py`/`product_cli.py`
+  四处独立实现行为完全等价（非漂移，只是错误消息文案不同）；`.env` 边界、BFCL/holdout 隔离
+  在全分支范围内成立；无任何硬编码 model revision；无 hard-stop 条件被违反。另发现 3 项新
+  Important（跨任务视角才能看到，单任务审查无法发现）：
+  1. `formal_dev_base` 独立加载 `dev.json`，未像 `teacher_collect`/`train_export` 那样经过
+     `load_verified_formal_dataset`，跳过五维隔离交叉断言——`content_fingerprint`/
+     `derivation_fingerprint` 刻意不含 `split`/`task_id`，理论上只有这层交叉断言能挡住被
+     重新贴标签的内容（当前不可达，因为 dataset_version/generator/seed 是冻结 `Literal` 且
+     生成过程确定性，但属于"央定不变量在这条路径未被重申"）。
+  2. `export_formal_train` 接收 `TeacherCollectionConfig` 参数但函数体从未读取，teacher 证据
+     仅凭 `task_id` 与任务记录匹配——独立 replay 只针对轨迹自带的 `task` 字段重放，两份被
+     互换 `trajectory` 的证据文件（同一 `task_id` key）各自都能重放通过并被导出。
+  3. `code_commit` 可能来自脏工作树（`_current_code_commit` 无 `git status --porcelain`
+     检查，也无 subprocess 超时），与 Task 8"任何相关提交后拒绝陈旧运行"的验收要求冲突。
+  三项均用 TDD 修复：`_run_formal_dev_base` 改为先 `load_verified_formal_dataset(dev_manifest_path.parent)`
+  取其 `dataset.dev_manifest`，且要求独立解析的 `declared_manifest` 与之相等（不静默丢弃
+  `dev_manifest_path`）；新增 `_require_evidence_binds_record` 校验
+  `task_fingerprint`/`trajectory.task`/`dataset_version`/`bundle_sha256`/`manifest_sha256`，
+  故意排除 `config_sha256`/`seed`（export 端用不同预算/seed 重建 config）与 `route_sha256`
+  （从 evidence 自身推导，比较是同义反复），均在代码注释里写明排除理由避免被"修复"成恒假断言；
+  发现证据不匹配时硬失败（非静默回退到 internal_reference）——`export_formal_train` 本身不
+  做任何磁盘写入（纯函数返回 rows，写入都在 `write_formal_train_export`），因此硬失败不违反
+  "不允许半成品导出"的既有约定。`_current_code_commit` 先查 `git status --porcelain`（未跟踪
+  文件也算脏）非空即拒绝，git 子进程统一收敛到 `_run_readonly_git`（30 秒超时 + 可读错误）；
+  新增 `code_commit_factory` 注入缝（与既有 `backend_factory`/`hardware_provider_factory`
+  同一套模式，`main()` 从不传入，信任级别与已有的 `backend_factory` 相同）。复审（opus，
+  完整深度，因为整分支审查按流程只有一轮修复）确认 3 项均已解决、3 个关键判断（硬失败而非
+  回退；排除三个哈希字段；`code_commit_factory` 作用域）均合理，无新 Critical/Important
+  代码缺陷（`c4d7fdc`）。
+- Task 7 复审额外发现一处**运行流程**问题（非代码缺陷）：`manifests/retail_ops/v1/` 不在
+  `.gitignore` 覆盖范围内（不同于 `data/`/`models/`/`reports/retail_ops/`），意味着
+  `formal_freeze` 产出的 4 个公开文件若不提交，会被新的脏树检查判定为"未跟踪=脏"从而阻塞
+  `formal_dev_base`——已写入正式执行顺序：`formal_freeze` → 提交公开 manifest →
+  才能跑 `formal_dev_base`；两份 dev-base config 的真实 `model.revision`/`file_sha256` 也
+  必须提交而不能只在远端临时编辑。完整清单见
+  `docs/handoffs/2026-08-06-r2-external-run-commands.md`。

@@ -198,3 +198,30 @@ train/dev/holdout、调用模型或进入训练。
   `git diff --cached --check` 全部通过。全程只用 tmp_path 隔离根/fake client/fake
   backend/fake hardware provider，未生成仓库真正的正式数据集输出位置，未加载真实模型、
   未访问 CUDA、未发起任何真实网络请求。
+
+## 2026-08-05/06 — R2 Task 5-7 独立审查、修复与整分支收口
+
+- Task 5、6 各自完成一轮独立审查 + 修复 + scoped re-review：Task 5 发现 1 项 Important
+  （backend↔pin 未绑定 adapter/生成参数，`bea052c` 修复）；Task 6 发现 4 项 Important
+  （私有根路径未校验、`.env` 边界测试过宽、teacher_collect resume 零覆盖、缺
+  `uv lock --check` 治理测试，`96536c9` 修复，其中一次修复派发因触发会话用量限制中断后
+  原样重试成功）。均复审通过，无残留 Critical/Important；Minor 记入 SDD 工作区 ledger。
+- Task 7 整分支审查（`a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60..96536c9`，19 commits、
+  48 files、+12215/-107）发现 3 项新 Important（`formal_dev_base` 跳过五维隔离断言、
+  `export_formal_train` 仅凭 task_id 匹配证据未核验内容、`code_commit` 可能来自脏工作树），
+  按流程只有一轮修复+复审：`c4d7fdc` 修复全部 3 项并补 TDD 回归测试，复审（opus 全深度）
+  确认全部 ADDRESSED、3 个关键判断（硬失败 vs 回退、排除的哈希字段、注入缝作用域）均合理，
+  无新 Critical/Important。
+- Task 7 另完成：从头重跑完整 CPU 门禁（`.venv/bin/pytest -q` 506 passed、Ruff、mypy 54
+  files、`uv lock --check`、`git diff --check` 全绿，含 `test_retail_ops_r2_e2e.py` 的
+  formal_freeze 两根逐字节重复构建比较）；超出 R2 专属治理测试范围的仓库级人工扫描
+  （secret 形态字面量、BFCL 引用、holdout 内容跟踪状态）全部干净。
+- 产出 `docs/handoffs/2026-08-06-r2-external-run-commands.md`：formal freeze、`.env`
+  preflight、6 任务/240 任务 API 调用、只读 SSH 盘点、远端代码同步、模型下载（复用
+  gpu-5090 已下载校验过的 Qwen3-1.7B/4B，或全新下载）、单任务/60 任务 GPU dev run、证据
+  同步与最终验收，逐节写明"未执行"，并把整分支审查/复审发现的两条真实执行前提（`formal_freeze`
+  公开产物需先提交才能进 `formal_dev_base`——`manifests/retail_ops/v1/` 不在 `.gitignore`
+  覆盖范围；两份 dev-base config 的真实 model revision/hash 必须提交而非远端临时编辑）
+  写入第 0 节。
+- R2 阶段状态：CPU 实现（Task 1-7）完成，独立审查全部通过；Task 8（正式数据生成、API
+  全量、模型下载、SSH、GPU 命令）仍需逐条单独批准，R2 未标记为已完成。
