@@ -1623,3 +1623,22 @@ gpu-5090 上 `gcc`/`cc`/`g++` 均不存在，也没有免密 sudo 或 conda—�
 新增 `ziglang`（pip 可装的用户态 C 编译器）依赖，并新增仓库脚本 `scripts/zig-cc`
 包装 `python -m ziglang cc`，通过 `CC=$(pwd)/scripts/zig-cc` 环境变量提供给 triton。
 `pyproject.toml`/`uv.lock` 已提交（`7cea3dc`），远端已 `uv sync` 安装。
+
+**修正**：zig-cc 实际用上后暴露新问题——它能编译，但链接阶段报
+`ld.lld: error: unable to find library -l:libcuda.so.1`；手动加 `-v` 复现确认根因是
+zig 的 cc 前端用自己打包的一套 glibc shim 库直接构造链接命令，完全不转发 `-L` 参数去
+搜索宿主系统目录（即便 `libcuda.so.1` 确实存在于 `/lib/x86_64-linux-gnu/`），不是常规
+编译器行为，短期内无法可靠修好。改为直接读 `torch._native/triton_utils.py` 源码，
+发现 `TORCH_DISABLE_NATIVE_JIT=1` 是官方预留的开关（`check_native_jit_disabled()`），
+设置后会跳过这整条 Triton override 注册，RoPE 计算回退到普通 PyTorch 实现，完全不需要
+任何编译器。验证通过后，ziglang 依赖和 `scripts/zig-cc` 判定为不再需要，已回退移除
+（`pyproject.toml`/`uv.lock` 恢复、脚本删除），508 测试/Ruff/mypy/diff 全绿。
+
+**结果（Qwen3-1.7B dev base，`CUDA_VISIBLE_DEVICES=0 TORCH_DISABLE_NATIVE_JIT=1`）**：
+物理 GPU 0（RTX 5090，`GPU-07af326b-f41d-a706-2150-bc560c7db304`），峰值显存
+1,525,927,936 字节（约1.42GB，4-bit NF4），wall time 75.7s（总耗时约89.5s，含模型加载），
+60/60 任务、`task_success=0.70`、`policy_violation_rate=0.0`、`schema_valid_rate=0.971`、
+`argument_accuracy=0.7`、`tool_selection_accuracy=0.696`、`recovery_success=0.2`、
+`evidence_complete=true`、`replayable_count=60`。用 `load_base_run_evidence` 指向私有
+`dev-base/qwen3-1.7b-dev-base-001/run.json` 重新加载并完整校验产物哈希，`run_id` 一致，
+未被篡改。

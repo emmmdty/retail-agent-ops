@@ -1,6 +1,0 @@
-#!/bin/sh
-# User-space C compiler shim for torch/triton JIT builds on hosts without a
-# system compiler or root access (e.g. gpu-5090). Forwards to the ziglang
-# pip package's bundled `zig cc` via this repo's own venv interpreter.
-# Usage: CC="$(pwd)/scripts/zig-cc" <gpu command>
-exec "$(dirname "$0")/../.venv/bin/python" -m ziglang cc "$@"
