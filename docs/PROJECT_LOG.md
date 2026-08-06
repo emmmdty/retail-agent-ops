@@ -1539,3 +1539,23 @@ ssh gpu-5090 'whoami && pwd' → tongjiakai / /home/tongjiakai
 
 **后果与下一步**：进入远端代码同步审批门（`git bundle` 传输已提交历史 + `uv sync --extra
 teacher` + 确认远端工作树干净）。
+
+### LOG-20260806-15：远端代码同步完成，gpu-5090 HEAD 快进到 `f3543e7`
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 4（远端代码同步）
+- 状态：解决
+- 关联：LOG-20260806-14
+
+**结果**：`git bundle create` 只含已提交历史（无未提交改动混入）；`scp` 传输到
+`gpu-5090:/tmp/`；远端 `git fetch` 到 `incoming` 分支后核对 `incoming` HEAD
+（`f3543e7afe13951997fba90fb4be57d65c2b5e51`）与本地 HEAD 完全一致，且确认远端原分支
+（`155d67a`，Task 2 治理复审记录）是 `incoming` 的祖先，可安全快进。用户批准后执行
+`git merge --ff-only incoming`（Fast-forward，44 files changed），删除临时 `incoming`
+分支。`uv sync --extra dev --extra train --extra teacher --frozen` 成功，新增
+`openai==2.46.0`/`distro`/`jiter`/`sniffio`。同步后核实：远端工作树干净
+（`git status --porcelain` 空）、`openai 2.46.0` 可导入、`torch 2.13.0+cu130` 且
+`cuda.is_available()=True` 不受影响。
+
+**后果与下一步**：进入模型审批门——先问用户是否复用 gpu-5090 已下载并校验过的
+Qwen3-1.7B/4B（而非重新下载）。
