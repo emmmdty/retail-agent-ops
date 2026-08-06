@@ -1392,3 +1392,46 @@ Task 1-7 建立的实现后独立复审模式），确认无 Critical/Important 
 **后果与下一步**：修复完成，进入独立审查（复用 Task 1-7 的实现后独立复审标准）；通过后
 提交，再恢复 Task 8 Step 2（在修复后的环境下重新执行 teacher smoke，同时需要用户对
 "6 任务"文档描述不符的问题给出处理方式）。
+
+### LOG-20260806-10：独立审查 PASS，`environment.py` 修复无 Critical/Important 问题
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 修复轮 → 独立审查
+- 状态：解决
+- 关联：LOG-20260806-09、`11029bb`
+
+**审查范围**：`git show 11029bb` 全量 diff、`environment.py`、`agent/runner.py`、
+`agent/qwen.py`、`trajectory/schema.py`、`trajectory/replay.py`、`rewards/verifier.py`、
+`formal_tasks.py`/`formal_manifests.py`、`envs/mini_retail.py`，以及全仓
+`get_order`/`.content`/`current_day`/`refund_deadline` 引用点；独立重跑
+`.venv/bin/pytest -q`（508 passed）、Ruff、mypy 确认干净。
+
+**结论：PASS，无 Critical/Important**。逐项核实：
+1. 正确性：暴露的 `current_day`/`refund_deadline` 与 `_refund_order` 内部判定逻辑
+   （`current_day > refund_deadline`）完全一致，含边界情况（`_MARGINS` 固定为
+   `(1,2,3,5,7,10,14)`，永远 ≥1，边界相等场景在冻结数据中不会出现，但设计本身在边界处
+   一致，不是近似）。
+2. 无信息泄漏：`_CURRENT_DAY=20` 是所有任务/场景/split 共享的全局常量，非任务级机密；
+   ownership 分支仍在 `current_day` 那行之前就以 `not_found` 短路，跨客户泄漏不受影响。
+3. 一致性：`perturb_schema`/`_get_store_hours`/`_deny` 均无需同步修改。一项 Minor（超出
+   本次范围）：legacy `src/veritool_rl/envs/mini_retail.py`（未接入 R2 流水线，
+   `product_cli.py` 不引用）有相同潜在缺口，留作后续可选项，不阻塞本次修复。
+4. 无回归：`Observation.content` 是 `Any` 类型、无 Pydantic 精确字段集合校验；
+   `rewards/verifier.py` 的 reward 计算读内部 `_state` 而非 `Observation.content`；
+   数据生成路径不 import `environment.py`，已提交公开 manifest 确认不受影响。唯一需要
+   注意（非本次缺陷）：`trajectory/replay.py` 会精确比较 `Observation`，意味着修复前
+   `teacher-smoke-001` 采集的 240 条证据无法用修复后的环境重放——这与 LOG-20260806-08/09
+   已记录的处置一致（该批证据保留仅供审计，Step 3 用独立新 `attempt_id` 重新采集）。
+5. 测试充分性：第一个新测试偏同义反复（CPU 测试无法证明"模型能推理"，只能证明管线正确），
+   第二个跨场景测试是真正有效的防护（防止"只在 window 场景加字段"这种会重新引入不一致的
+   捷径修法）。
+6. 替代设计：`formal_tasks.py::_normalized_order` 里已有 `refund_deadline_offset`（相对值，
+   仅用于 fingerprint 去重，不面向模型）说明相对天数是一个真实存在过的备选方案；用户已在
+   LOG-20260806-08 明确选择绝对双字段暴露，非遗漏步骤。唯一开放点：`SYSTEM_PROMPT`
+   未显式解释这两个字段的语义，属于合理的"让模型自己从字段名推断"的赌注，审查建议：
+   若接下来的 Step 2 重跑里这一类别仍因"读错字段"类原因欠佳，下一步应先补
+   `SYSTEM_PROMPT` 说明而非怀疑环境修复本身失败。
+
+**后果与下一步**：修复轮结束。回到 Task 8 Step 2：需要用户决定 (a) 如何处理"6 任务"
+文档描述与 `teacher_collect` 实际行为（无任务数限制）不符的问题，(b) 是否现在批准在修复后
+环境下重新执行 teacher 采集（新 `attempt_id`，真实网络调用与费用）。

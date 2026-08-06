@@ -37,10 +37,13 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
       （12/40=30%，低于 50% 门槛）根因是环境设计缺陷而非 teacher 能力问题——
       `environment.py::_get_order` 从未把 `current_day` 暴露给模型，该场景对任何推理式
       agent 事实上不可解（见 LOG-20260806-06/07）。已停止，未请求 Step 3 批准。
-- [ ] Task 8 修复轮：TDD 修复 `environment.py::_get_order`，统一在返回内容中加入
-      `current_day` 字段（不需要重新冻结数据，`current_day`/`refund_deadline` 已在 Step 1
-      冻结的 `initial_state` 中）；需要更新对 `get_order` 返回内容做精确断言的现有测试；
-      完成后走一轮独立审查（同 Task 1-7 标准），通过后恢复 Task 8 Step 2/3（LOG-20260806-08）。
+- [x] Task 8 修复轮：TDD 修复 `environment.py::_get_order`，统一在返回内容中加入
+      `current_day` 字段（未重新冻结数据）；新增 2 个测试；508 passed、Ruff/mypy/diff 全绿
+      （`11029bb`）。独立审查 PASS，无 Critical/Important，一项 Minor（legacy
+      `envs/mini_retail.py` 同类缺口，未接入 R2 流水线，不阻塞）（LOG-20260806-09/10）。
+- [ ] 恢复 Task 8 Step 2：需用户决定如何处理"6 任务"文档描述与 `teacher_collect` 实际行为
+      （无任务数限制）不符的问题，并批准在修复后环境下重新执行 teacher 采集（新
+      `attempt_id`）。
 - [ ] 逐项进入正式数据生成、API、模型下载和远端 GPU 审批门（Task 8 剩余步骤，命令清单见上，
       需用户逐条批准）。
 - [ ] Task 8 全部证据回收并在最终 HEAD 复验后完成分支收口（merge/no-merge 由用户决定）。
