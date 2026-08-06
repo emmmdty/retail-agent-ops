@@ -1585,3 +1585,41 @@ mypy（54 源文件）、`git diff --check` 全部通过。按命令清单第 0 
 
 **后果与下一步**：需要把这个新提交同步到 gpu-5090（重复第 6 节的 bundle/fetch/ff-only
 流程），之后才能进入单任务 GPU smoke。
+
+### LOG-20260806-17：Qwen3-1.7B dev run 首次尝试因符号链接触发路径逃逸检查失败
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 4（GPU dev run）
+- 状态：阻塞（等待用户确认修复方式）
+
+**决定**：跳过命令清单第 8 节设想的"单任务 smoke"（CLI 无任务数限制机制，同 Step 2 教训），
+直接对 Qwen3-1.7B 批准执行完整 60 任务 dev run（gpu-5090 物理 GPU 0）。
+
+**失败**：命令在模型加载后立即失败：
+`ValueError: 目标路径逃逸出受信根目录: models/Qwen3-1.7B-pinned`。根因是
+`base_evaluation.py::_resolve_within`（Task 5 审计过的安全检查）对 `models_root` 拼接结果
+做 `resolve()` 并拒绝任何解析后逃逸出受信根目录的路径，专门用来挡"中间某段是指向仓库外的
+符号链接"——而命令清单文档第 7 节建议的"用符号链接指回真实存储路径，不复制 11.4G"方案
+（`models/Qwen3-1.7B-pinned -> /mnt/aidata/tongjiakai/models/Qwen3-1.7B`，指向仓库外）
+正是这条检查设计要拦截的情况。这是命令清单文档与已审计安全实现之间的真实冲突，不是产品
+缺陷，不应绕过或放宽这条检查。
+
+**解决**：不放宽检查。删除两个符号链接，改为 `cp -r` 把模型文件真实复制进
+`models/Qwen3-{1.7B,4B}-pinned/`（受信根目录内），用 config 里的真实哈希重新
+`verify_local_model_files` 通过。状态改为解决。
+
+### LOG-20260806-18：gpu-5090 缺系统 C 编译器，装 ziglang 作为用户态 CC
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 4（GPU dev run）
+- 状态：解决
+
+**背景**：修复符号链接问题后重跑 Qwen3-1.7B，模型加载成功，但真实推理（RoPE 计算）失败：
+`torch==2.13.0+cu130` 的 `bmm_outer_product` 算子走 Triton JIT 编译，需要系统 C 编译器；
+gpu-5090 上 `gcc`/`cc`/`g++` 均不存在，也没有免密 sudo 或 conda——这是该服务器第一次真正
+跑模型 `generate()`（此前只验证过 `torch.cuda.is_available()`），暴露出真实基础设施缺口。
+
+**决定**：不在共享服务器上装系统包（需要 root，会影响其他用户）。改为给 `train` extra
+新增 `ziglang`（pip 可装的用户态 C 编译器）依赖，并新增仓库脚本 `scripts/zig-cc`
+包装 `python -m ziglang cc`，通过 `CC=$(pwd)/scripts/zig-cc` 环境变量提供给 triton。
+`pyproject.toml`/`uv.lock` 已提交（`7cea3dc`），远端已 `uv sync` 安装。
