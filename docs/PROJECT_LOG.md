@@ -1559,3 +1559,29 @@ teacher` + 确认远端工作树干净）。
 
 **后果与下一步**：进入模型审批门——先问用户是否复用 gpu-5090 已下载并校验过的
 Qwen3-1.7B/4B（而非重新下载）。
+
+### LOG-20260806-16：复用 gpu-5090 已有模型，回填并提交真实 model pin
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 4（模型审批门）
+- 状态：解决
+- 关联：LOG-20260806-15
+
+**决定**：用户选择复用 gpu-5090 已下载并逐文件 SHA256 校验过的 Qwen3-1.7B/4B（3.8G/7.6G，
+2026-08-05 下载），不重新下载 11.4G。
+
+**执行**：`ssh gpu-5090 'ls -la .../models/Qwen3-{1.7B,4B}/'` 确认文件存在（各 14 个文件，
+含 `.gitattributes`）；批准后创建符号链接 `models/Qwen3-{1.7B,4B}-pinned` 指向
+`/mnt/aidata/tongjiakai/models/Qwen3-{1.7B,4B}/`（不复制数据）。用
+`hash_local_model_files` 重新逐文件计算 SHA-256（不信任旧的整仓库级 ModelScope commit
+哈希）：1.7B 12 个文件、4B 13 个文件（额外一个 safetensors 分片），逐文件哈希已记录在
+两份 config 里。回填本地 `configs/retail_ops_v1_r2_qwen3_{1_7b,4b}_dev.yaml` 的
+`model.revision`（ModelScope commit `980712f5...`/`8cd0101f...`）与 `model.file_sha256`
+（真实逐文件值，替换原占位 3 键示例为完整 12/13 键列表）。
+
+**验证**：YAML 解析确认 revision/file 数量正确；`.venv/bin/pytest -q` 508 passed，Ruff、
+mypy（54 源文件）、`git diff --check` 全部通过。按命令清单第 0 节第 2 点，改完立即提交
+（`06af683`）——不提交会导致远端 `formal_dev_base` 因工作树/config 与本地不一致被拒绝。
+
+**后果与下一步**：需要把这个新提交同步到 gpu-5090（重复第 6 节的 bundle/fetch/ff-only
+流程），之后才能进入单任务 GPU smoke。
