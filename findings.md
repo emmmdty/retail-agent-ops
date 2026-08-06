@@ -391,3 +391,37 @@
   才能跑 `formal_dev_base`；两份 dev-base config 的真实 `model.revision`/`file_sha256` 也
   必须提交而不能只在远端临时编辑。完整清单见
   `docs/handoffs/2026-08-06-r2-external-run-commands.md`。
+
+## R2 Task 8 Step 1-2：正式数据冻结与 teacher smoke 首次真实执行（2026-08-06）
+
+- Step 1 formal freeze 已批准执行并提交（`89e8039`）：正式 240/60/120 数据集生成，
+  `dataset.json` 内嵌 `public_files_sha256` 与外部 `sha256sum` 核对一致，六类配额精确为
+  train 40/dev 10/holdout 20（`seed=0`，`dataset_version=retail_ops_v1_r2_20260722`）。
+- **重大发现**：`configs/retail_ops_v1_r2_teacher_smoke.yaml`（`pipeline: teacher_collect`）
+  没有任何任务数量限制字段，只降低了 `max_episodes_per_task=1`/`max_request_attempts=1`；
+  它会处理 `--input_dir` 私有根目录下 `train.jsonl` 的全部记录，不是命令清单文档描述的
+  "每类别 1 条、共 6 条"。批准执行后实际处理了全部 240 条 train 任务（519 次真实请求，
+  299,956 prompt + 45,893 completion tokens，约 $0.055，而非 <$0.01）。命令清单文档
+  （`docs/handoffs/2026-08-06-r2-external-run-commands.md` 第 3 节）对这条命令行为的描述
+  是错误的，需要用户决定是否/如何修正；这是文档准确性问题，不是 `teacher_collect` 代码
+  本身的缺陷。
+- 该次运行（reduced episode/attempt 预算）产出的真实类别信号：整体 211/240=87.9% 通过
+  （高于 70% 门槛），但 `refund_denied_window` 仅 12/40=30.0%（低于 50% 每类别门槛）；
+  全部 28 条失败样本的 `termination` 均为 `policy_violation`、`violations` 均为
+  `refund_not_eligible`。
+- **根因已确认（非模型能力问题，是任务/环境设计缺陷）**：`refund_denied_window` 是三个
+  DENY 场景里唯一"disqualifying 信号无法从 `get_order` 响应直接推断"的场景。
+  `environment.py::_get_order` 对 ownership 不匹配直接返回 `error_code=not_found`，对
+  duplicate 直接原样返回 `refund_status="refunded"`，模型都能拿到明确信号；但 window
+  场景只返回裸整数 `refund_deadline`（如 19），环境内部用于判定的参照值
+  `current_day`（固定常量 20，`formal_tasks.py::_CURRENT_DAY`）从未通过 `SYSTEM_PROMPT`、
+  `user_request` 或任何工具响应暴露给模型——任何推理式 agent 都无法仅凭对话历史判断订单
+  是否过期，只能靠试探性调用 `refund_order`（试探本身即被记为 `policy_violation`）或猜测。
+  Task 1-7 的 506 个 CPU 测试和多轮独立审查从未发现，因为测试路径只用 Oracle policy（直接
+  读 `expected_decision` 真值，不受此信息缺口影响）或脚本化 fake client，从未让"只能看
+  对话历史"的真实推理 agent 独立解这个场景。影响范围：train/dev/holdout 各 40/10/20 条
+  （六类中的 1/6）；其余 5 类不受影响。详见 `docs/PROJECT_LOG.md` LOG-20260806-07。
+- 本会话已停止，未请求 Step 3（240 任务正式全量）批准，也未修改
+  `environment.py`/`formal_tasks.py`/prompt/parser/模型/provider/阈值，等待用户对补救
+  方向的决策（是否修复环境暴露 `current_day`/相对天数信息、是否需要重新冻结受影响
+  split、如何处理已产生的 `teacher-smoke-001` 证据）。

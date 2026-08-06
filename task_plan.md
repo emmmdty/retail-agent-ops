@@ -30,7 +30,18 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
       隔离断言、`export_formal_train` 仅凭 `task_id` 匹配证据、`code_commit` 可能来自脏工作树）
       已修复复审通过（`c4d7fdc`）；从头完整 CPU 门禁 + 仓库级 secret/BFCL/holdout 泄漏扫描
       通过；产出 `docs/handoffs/2026-08-06-r2-external-run-commands.md`。
-- [ ] 逐项进入正式数据生成、API、模型下载和远端 GPU 审批门（Task 8，命令清单见上，均未执行，
+- [x] Task 8 Step 1：formal freeze 已批准执行并提交公开 manifest（`89e8039`）。
+- [x] Task 8 Step 2（首次执行）：`.env` preflight + route snapshot 确认；批准的 6 任务
+      smoke 命令实际处理了全部 240 条 train（`configs/retail_ops_v1_r2_teacher_smoke.yaml`
+      无任务数量限制，命令清单文档描述有误）；诊断发现 `refund_denied_window`
+      （12/40=30%，低于 50% 门槛）根因是环境设计缺陷而非 teacher 能力问题——
+      `environment.py::_get_order` 从未把 `current_day` 暴露给模型，该场景对任何推理式
+      agent 事实上不可解（见 LOG-20260806-06/07）。已停止，未请求 Step 3 批准。
+- [ ] Task 8 修复轮：TDD 修复 `environment.py::_get_order`，统一在返回内容中加入
+      `current_day` 字段（不需要重新冻结数据，`current_day`/`refund_deadline` 已在 Step 1
+      冻结的 `initial_state` 中）；需要更新对 `get_order` 返回内容做精确断言的现有测试；
+      完成后走一轮独立审查（同 Task 1-7 标准），通过后恢复 Task 8 Step 2/3（LOG-20260806-08）。
+- [ ] 逐项进入正式数据生成、API、模型下载和远端 GPU 审批门（Task 8 剩余步骤，命令清单见上，
       需用户逐条批准）。
 - [ ] Task 8 全部证据回收并在最终 HEAD 复验后完成分支收口（merge/no-merge 由用户决定）。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`uv lock --check`、`git diff --check`；正式阶段另验证重复构建哈希、secret/BFCL/holdout 泄漏扫描、API route snapshot 和远端产物哈希一致性。

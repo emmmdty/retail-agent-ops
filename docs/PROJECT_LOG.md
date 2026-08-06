@@ -1148,3 +1148,247 @@ Task 7 修复引入的新检查（`formal_dev_base` 因工作树不干净被拒�
 **后果与下一步**：若用户批准，下一步是把此文件提交或直接用它启动新会话执行 Task 8；
 所有正式数据生成、API、模型下载、SSH 与 GPU 命令仍需逐条单独审批，不因为提示词存在而
 预先获得批准。
+
+### LOG-20260806-04：Task 8 Step 1 完成——正式 240/60/120 数据集已生成并提交
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 1（formal freeze）
+- 状态：解决
+- 关联：LOG-20260806-03、`docs/handoffs/2026-08-06-r2-task8-execution-prompt.md`、`89e8039`
+
+**背景**：新会话按 Task 8 执行提示词接手。先完整读取固定上下文恢复顺序（CAREER_CONTEXT、
+PRODUCT_BRIEF、EXECUTION_PLAN、task_plan/findings/progress、PROJECT_LOG 近期记录、SPEC、
+R2 spec/plan 的 Task 8 小节、外部命令清单、提示词本身），再执行只读 preflight。
+
+**Preflight 结果**：HEAD `665e6c8`（是 `7f77f0a`/`c4d7fdc` 的后代，工作树干净）；
+`.venv/bin/pytest -q` 506 passed；Ruff、mypy（54 源文件）、`git diff --check`、
+`env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`（105 packages）全部通过；`.env`
+权限 `600`，变量名精确匹配预期五项 `TEACHER_LLM_PROVIDER`/`TEACHER_LLM_DEEPSEEK_{BASE_URL,
+API_KEY,MODEL,EXTRA_BODY_JSON}`。均与命令清单预期基线一致，未发现环境问题。
+
+**Step 1 执行**：用户对精确命令单独批准（含"批准后紧接着提交公开 manifest"）后执行：
+
+```bash
+.venv/bin/retail-agent-ops build \
+  --config configs/retail_ops_v1_r2_formal_freeze.yaml \
+  --output_dir manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+```
+
+产出私有 `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/{train,dev,holdout}.jsonl`
+（240/60/120 行，与批准的方案 A 配额一致）与公开
+`manifests/retail_ops/v1/retail_ops_v1_r2_20260722/{train.json,dev.json,holdout-receipt.json,
+dataset.json}`。`dataset.json` 内嵌 `public_files_sha256` 与外部 `sha256sum` 结果逐一核对
+一致；`split_category_counts` 六类均为 train 40/dev 10/holdout 20，`seed=0`，
+`dataset_version=retail_ops_v1_r2_20260722`，`schema_version=2.0`，均符合冻结配额。
+
+**决定与方案**：按命令清单第 0 节前置条件，批准执行后立即提交公开 manifest（`89e8039`：
+"data: freeze RetailOps v1 R2 formal answer-free manifests"），避免后续 `formal_dev_base`
+因未跟踪文件被判定工作树不干净而拒绝。私有数据保持在 ignored 路径，未进入 Git。
+
+**后果与下一步**：Step 1 完成。进入 Step 2（`.env` preflight 只读检查 + 6 任务 teacher
+API smoke，真实网络调用，预计费用 <$0.01），需用户对该节精确命令单独批准。
+
+### LOG-20260806-05：Step 2 只读检查通过，6 任务 teacher smoke 已获批准并启动（结果待补）
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 2（`.env` preflight + 6 任务 API smoke）
+- 状态：进行中
+- 关联：LOG-20260806-04
+
+**背景与证据**：`.env` 只读检查（权限 `600`，五个变量名精确匹配预期）经用户确认无误后，
+本地加载并打印不含密钥的 route snapshot：`provider=deepseek`、
+`base_url=https://api.deepseek.com`、`model=deepseek-v4-flash`、
+`extra_body={"thinking":{"type":"disabled"}}`、`route_sha256=e47b1c0da206a327afb64a868b13ca8
+26d311bfbae8d07a8c5fa5595891e88a6`——与 2026-08-05 记录的正式 teacher 模型确认一致。用户
+随后对命令清单第 3 节精确命令单独批准（6 条 train 任务、预计费用 <$0.01、预计耗时数秒到
+约 1 分钟）。
+
+**决定与方案**：已启动：
+```bash
+.venv/bin/retail-agent-ops build \
+  --config configs/retail_ops_v1_r2_teacher_smoke.yaml \
+  --input_dir data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722 \
+  --output_dir reports/retail_ops/v1/r2/retail_ops_v1_r2_20260722/teacher-smoke-001
+```
+命令超过预计上限（120 秒未返回），已转入后台继续执行，未被中断或重试；按系统规则不对
+仍在运行的后台任务猜测或伪造结果。
+
+**后果与下一步**：等待命令自然完成后，本条记录将被后续 LOG 条目补充实际结果（route
+snapshot 复核、6/6 结构成功率、环境成功率、总请求数、token 用量、错误分类）；结果确认
+"符合预期"后才能请求 Step 3（240 任务全量）批准。
+
+### LOG-20260806-06：Step 2 命令实际处理了全部 240 条 train（非文档描述的 6 条），发现
+`refund_denied_window` 类别真实通过率 30%——已停止，未请求 Step 3 批准
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 2（发现文档/配置不一致 + teacher 质量信号）
+- 状态：阻塞（等待用户决定）
+- 关联：LOG-20260806-05、`configs/retail_ops_v1_r2_teacher_smoke.yaml`、
+  `docs/handoffs/2026-08-06-r2-external-run-commands.md` 第 3 节
+
+**发现（文档/配置不一致，非代码缺陷）**：命令完成后 `summary.json` 显示
+`processed_this_run=240`、`train_task_count=240`，而不是命令清单第 3 节承诺的"每类别 1
+条、共 6 条"。核实私有 `teacher-collection/teacher-smoke-001/` 目录，确认写入 241 个文件
+（240 条任务证据 + `checkpoint.json`），逐一比对 `data/private/.../train.jsonl` 的 240 个
+`task_id` 全部命中。根因：`configs/retail_ops_v1_r2_teacher_smoke.yaml` 的 `pipeline:
+teacher_collect` 没有任何任务数量限制字段（只有 `max_episodes_per_task: 1`、
+`max_request_attempts: 1` 降低了单任务重试预算），`teacher_collect` 代码本身也没有"6 任务"
+筛选逻辑——它会处理 `--input_dir` 私有根目录下 `train.jsonl` 的全部记录。命令清单第 3 节
+"6 条"的描述是文档层面的错误设想，从未与实际实现核对过。本会话在派发这条命令给用户批准前
+展示了文档里的"6 任务"描述，但未在批准前先读 `.yaml` 文件核实数量——这是本会话自己的
+verification 缺口，而非用户批准范围之外的越权执行（用户确实批准了这条精确命令；只是命令
+实际行为与展示给用户的描述不符）。
+
+**真实影响（已核实，非估算）**：
+- 未触碰 dev/holdout——证据文件数与 train 记录数精确一致（240），isolation 未被违反。
+- 真实网络请求：519 次（`request_attempts` 汇总），299,956 prompt tokens + 45,893
+  completion tokens；按 2026-08-05 记录的 DeepSeek 单价（$0.14/M 输入、$0.28/M 输出）
+  折算约 **$0.055**，而非承诺的 "<$0.01"（约 5.5 倍，绝对金额仍很小，CAREER_CONTEXT 明确
+  成本非硬约束）。
+- outcome 分布：`success=211`、`policy_violation=28`、`transport_exhausted=1`（总 240）。
+- 整体通过率 211/240=87.9%（高于 70% 门槛），但**逐类别聚合发现
+  `refund_denied_window` 仅 12/40=30.0%，低于 50% 每类别门槛**；其余 5 类
+  （`lookup_status` 39/40、其余 4 类均 40/40）全部远高于门槛。
+- 对 28 条 `refund_denied_window` 失败样本做了不含原始任务内容的聚合诊断（只读
+  `trajectory.violations`/`termination`，未打印 user_request/order_id 等字段）：全部 28
+  条的 `termination=policy_violation`、`violations=('refund_not_eligible',)`——即 teacher
+  在窗口已过期、任务期望拒绝退款的场景下，仍然真实执行了 `refund_order`。28 条失败模式
+  完全一致（同一违规码），不是随机传输错误，提示这更像 teacher 对退款窗口边界政策的系统性
+  误判，而不是本次 `max_episodes_per_task=1`/`max_request_attempts=1` 降低重试预算导致的
+  偶发失败——但尚未用完整预算（2 episode/3 attempt）验证这个判断，不能排除部分样本在更多
+  重试下会转为成功。
+
+**决定与方案**：按 CLAUDE.md 第 1 节"发现冲突或高影响信息缺失时，停止并询问用户，不得自行
+扩展方向"与 Task 8 提示词硬停止条件（"teacher 总通过率<70%或任一类别<50%——停止并报告，
+不自动换 provider/model/prompt"），本会话已停止，**未请求 Step 3（240 任务正式全量采集）
+批准**，也未修改 prompt/parser/模型/provider/阈值。已把发现原样报告给用户，交由用户决定：
+(a) 是否需要先修正命令清单文档对 `teacher_collect` 行为的描述（不影响产品代码，只是文档
+准确性）；(b) 是否仍要在完整预算（`teacher_full.yaml`：`max_episodes_per_task=2`、
+`max_request_attempts=3`，独立 `attempt_id=teacher-full-001`，不复用本次 checkpoint）下
+正式运行 Step 3 以获得权威质量门判定，还是先诊断/等待 `refund_denied_window` 问题再决定；
+(c) 本次 `teacher-smoke-001` 采集的私有证据是否保留（未提交 Git，产品代码不会用它替代
+正式 `teacher-full-001` 的质量门判定，`export_formal_train` 只按调用方传入的证据集合计算
+质量门，不会跨 attempt_id 静默合并）。
+
+**后果与下一步**：Task 8 Step 2 暂停在"结果不符合预期"状态，未获得用户对 Step 3 的确认，
+不进入 Step 3 审批门。
+
+### LOG-20260806-07：确认 `refund_denied_window` 失败根因是任务/环境设计缺陷，非模型能力问题
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 Step 2（诊断，用户指示"先诊断 refund_denied_window 失败样本"）
+- 状态：阻塞（等待用户对补救方案决策）
+- 关联：LOG-20260806-06、`src/veritool_rl/retail_ops/formal_tasks.py`、
+  `src/veritool_rl/retail_ops/environment.py`、`src/veritool_rl/agent/runner.py`
+
+**诊断过程**：只读检索 `domains/retail_ops/v1/tools.yaml`（`refund_order` 工具描述只写
+"为符合政策的订单办理退款"，未说明窗口规则）、`agent/runner.py` 的 `SYSTEM_PROMPT`
+（"退款前必须查询订单，遇到 transient_error 时可以重试"，未提及窗口/日期）、
+`formal_tasks.py::_user_request`（`refund_denied_window` 场景文案为中性的"请检查订单
+{order_id} 是否能因 {reason} 退款"，不含任何日期/时长提示）、`environment.py::_get_order`
+（返回 `copy.deepcopy(order)`，`order` 字典只有 `customer_id`/`status`/`refund_deadline`/
+`refund_status` 四个字段，**不含 `current_day`**）、`formal_tasks.py::_materialize_task`
+（`current_day` 只写入 `initial_state`，从未通过任何工具响应或消息暴露给模型）。抽查一条
+真实失败轨迹（train 私有数据，非 holdout）验证：`get_order` 返回
+`{"refund_deadline": 19, "refund_status": "none", "status": "delivered", ...}`，不含
+`current_day`；模型随即调用 `refund_order` 被环境拒绝（`error_code=policy_denied`，
+`error="订单已超过退款期限"`），这次调用本身被 `environment.py::_refund_order` 记为
+`_deny("refund_not_eligible", ...)` 违规。
+
+**根因**：`refund_denied_window` 是唯一一个"disqualifying 信号不可从 `get_order` 响应直接
+推断"的 DENY 类别。对照另外两个 DENY 类别可确认差异：`refund_denied_ownership` 时
+`environment.py::_get_order` 会在 `order.customer_id != state.customer_id` 时直接返回
+`ok=False, error_code=not_found`——模型第一步就拿到明确信号，不需要额外参照；
+`refund_denied_duplicate` 时 `get_order` 直接把 `refund_status="refunded"` 字段原样返回，
+同样是可直接读出的信号。只有 `refund_denied_window` 需要比较 `refund_deadline`（如 19）
+与"今天"（`current_day=20`，固定常量）的大小关系，而"今天"这个参照值在系统提示词、
+`user_request` 和全部工具响应中都不存在——**任何模型，无论能力强弱，都无法仅凭对话历史
+判断这个订单是否过期**，只能靠调用 `refund_order` 试探（试探本身就被记为策略违规）或纯粹
+猜测。这不是 teacher 模型（`deepseek-v4-flash`）的能力缺陷，是 `formal_tasks.py`/
+`environment.py` 的任务设计缺口：该场景对真实推理式 agent 事实上不可解，只有直接读取
+`expected_decision` 的 Oracle policy（R1-R7 CPU 测试和 internal_reference 回退用的都是
+Oracle）才会"看起来正确"，因为 Oracle 作弊读取真值而不是从暴露信息推理。这解释了为什么
+Task 1-7 长达 506 个测试和多轮独立审查都未发现——CPU 测试从未让一个"只能看对话历史"的
+真实推理 agent 独立解出这个场景。
+
+**范围**：三个 DENY 场景共享同一套 `_materialize_task`/`_get_order` 实现，`current_day`
+的缺失只影响 `refund_denied_window`（train/dev/holdout 各 40/10/20 条，占六类总量的
+1/6）；其余 5 个场景不受影响。若不修复，该场景对训练数据（teacher 或 internal_reference
+都无法提供可泛化学习信号——internal_reference 端也只是把不可推断的真值直接搬进 SFT 目标）
+和后续评测（候选模型大概率同样系统性答错）都会造成不可解的固定失分，与"教师能力不足"或
+"budget 不够"是完全不同性质的问题，无法通过换模型/加预算解决。
+
+**决定与方案**：未修改任何代码。按 CLAUDE.md 第 3 节"重大产品、模型、数据、算法和部署
+选择先给至少两个方案，等待用户决定"，把根因和至少两个候选补救方向原样报告给用户，
+不自行选择方向或开始实现。
+
+**后果与下一步**：等待用户决策后续路径（是否修复环境暴露 `current_day`/相对天数信息、
+是否重新冻结受影响 split、如何处理已产生的 `teacher-smoke-001` 证据）；在决策前不请求
+Step 3 批准，不修改 `environment.py`/`formal_tasks.py`/prompt/parser。
+
+### LOG-20260806-08：用户决策——修复 `environment.py::_get_order` 暴露 `current_day`，无需重新冻结数据
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 修复轮（`refund_denied_window` 环境设计缺陷）
+- 状态：进行中
+- 关联：LOG-20260806-07
+
+**决定**：用户选择"修复环境暴露日期信息"方向（而非保留现状记录为已知限制，也未选择
+"相对剩余天数"的替代表达）。技术方案已与用户逐条确认：`environment.py::_get_order` 的
+`Observation.content` 统一（不区分场景）额外加入 `current_day` 字段（来自
+`self._state.get("current_day")`），与已有 `refund_deadline` 字段并列返回，让推理式
+agent 能直接比较两者判断是否过期。
+
+**关键判断（本会话核实，非用户逐字指示）**：`content_fingerprint`/`derivation_fingerprint`
+和已冻结的 task manifest 只依赖 `TaskSpec`（`initial_state`/`target_state`/
+`expected_calls` 等），不依赖 `environment.py` 运行时如何构造工具响应；`current_day` 早已
+写入 `_materialize_task` 产出的 `initial_state`（`formal_tasks.py` 第 380 行），只是运行时
+从未通过任何工具响应暴露出来。因此本次修复**不需要重新生成或重新冻结 train/dev/holdout**，
+Step 1 已提交的公开 manifest（`89e8039`）和私有 jsonl 保持有效，只需修复
+`environment.py` 的运行时行为。
+
+**范围**：按 CLAUDE.md 第 6 节先写 `task_plan.md`，再走 TDD（先写失败测试确认真实原因，
+再最小实现），修改点集中在 `src/veritool_rl/retail_ops/environment.py::_get_order` 及其
+覆盖测试（`tests/test_retail_ops_environment.py` 等 grep 命中的相关测试文件，逐一核实是否
+对 `get_order` 返回内容做了不含 `current_day` 的精确断言）。完成后需要独立审查（复用
+Task 1-7 建立的实现后独立复审模式），确认无 Critical/Important 后再恢复 Task 8 Step 2/3
+的真实 API 调用。已产生的 `teacher-smoke-001` 私有证据（240 条，基于修复前环境采集）
+保留在原地供审计追溯，但不会被当作正式 teacher 采集结果使用——Step 3 的官方全量采集会
+用独立的新 `attempt_id`（`teacher-full-001`）在修复后的环境下重新进行。
+
+**后果与下一步**：进入 TDD 实现；完成并通过全套质量门 + 独立审查后，回到 Task 8 Step 2/3
+外部命令审批门（在修复后的环境下重新执行，并需要重新明确"6 任务"描述与实际
+`teacher_collect` 行为不符的文档问题该如何处理）。
+
+### LOG-20260806-09：`environment.py::_get_order` 修复完成，TDD 通过，等待独立审查
+
+- 日期：2026-08-06
+- 阶段/任务：R2 / Task 8 修复轮
+- 状态：进行中
+- 关联：LOG-20260806-08
+
+**实现**：`src/veritool_rl/retail_ops/environment.py::_get_order` 在 `Observation.content`
+里统一追加 `content["current_day"] = self._state.get("current_day")`（紧跟已有的
+`refund_deadline` 等字段），`_refund_order`/`_get_store_hours`/`not_found` 分支未改。
+`tests/test_retail_ops_environment.py` 新增两个测试：
+`test_get_order_exposes_current_day_so_window_denial_is_inferable`（REFUND_DENIED_WINDOW
+场景断言 `get_order` 返回内容同时含 `current_day`/`refund_deadline`，且与
+`task.initial_state` 中的真值一致）与
+`test_get_order_current_day_matches_env_state_for_every_scenario`（REFUND_ELIGIBLE 场景
+交叉验证暴露不区分场景）。TDD 全程：先确认 RED（`KeyError: 'current_day'`，原因正确），
+再最小实现。
+
+**验证**：
+- `.venv/bin/pytest -q` 508 passed（基线 506 + 新增 2 条），`.venv/bin/ruff check .`、
+  `.venv/bin/ruff format --check`、`.venv/bin/mypy`（54 源文件）、`git diff --check` 全部
+  通过。全仓搜索确认没有测试对 `get_order` 返回内容做精确 dict 相等断言会被新字段破坏。
+- **关键判断已验证（非假设）**：`grep` 确认 `formal_tasks.py`/`formal_manifests.py`
+  完全不 import `environment.py`——数据生成/冻结流水线与 `RetailOpsEnv` 运行时完全独立，
+  修复 `_get_order` 不可能影响已冻结的 `train/dev/holdout.jsonl` 或已提交的公开 manifest。
+  （原计划用"临时目录重新生成再比对哈希"做实证验证，但 `build_formal_task_set()` 本身不
+  接收 `bundle` 参数、不产出 bundle 印章字段，直接跟磁盘文件比对会产生误报差异；改用更
+  直接的静态引用检查，结论同样成立且更可靠。）
+
+**后果与下一步**：修复完成，进入独立审查（复用 Task 1-7 的实现后独立复审标准）；通过后
+提交，再恢复 Task 8 Step 2（在修复后的环境下重新执行 teacher smoke，同时需要用户对
+"6 任务"文档描述不符的问题给出处理方式）。
