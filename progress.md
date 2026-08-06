@@ -225,3 +225,16 @@ train/dev/holdout、调用模型或进入训练。
   写入第 0 节。
 - R2 阶段状态：CPU 实现（Task 1-7）完成，独立审查全部通过；Task 8（正式数据生成、API
   全量、模型下载、SSH、GPU 命令）仍需逐条单独批准，R2 未标记为已完成。
+
+## 2026-08-06/07 — R2 Task 8（审批门控执行）
+
+- Step 1-3（本地）：正式 240/60/120 formal 数据集生成并提交公开 manifest（`89e8039`）；
+  teacher 全量采集 238/240 通过质量门（`refund_denied_window` 修复后 95%）；train_export
+  导出 240 条正式 train。过程中发现并修复一个真实环境设计缺陷（`environment.py::_get_order`
+  未暴露 `current_day`，导致窗口过期场景对推理式 agent 不可解），独立审查 PASS。
+- Step 4-5（远端 gpu-5090）：只读盘点确认物理 GPU 0（RTX 5090）可用；代码/模型/私有 dev
+  数据同步；排查两个真实基础设施问题（符号链接触发路径逃逸安全检查、`torch>=2.13` Triton
+  JIT 缺系统编译器，最终用 `TORCH_DISABLE_NATIVE_JIT=1` 解决）；Qwen3-1.7B/4B 60 任务
+  dev base 均完整跑通并通过证据重载校验，公开报告已同步回本地且哈希核对一致。
+- Step 6：完整 CPU 门禁在实际最终 HEAD 重跑通过；仓库级 secret/BFCL/holdout 泄漏扫描干净；
+  Task 8 阶段独立复审进行中。

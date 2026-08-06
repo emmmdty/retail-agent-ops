@@ -41,12 +41,23 @@ R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型
       `current_day` 字段（未重新冻结数据）；新增 2 个测试；508 passed、Ruff/mypy/diff 全绿
       （`11029bb`）。独立审查 PASS，无 Critical/Important，一项 Minor（legacy
       `envs/mini_retail.py` 同类缺口，未接入 R2 流水线，不阻塞）（LOG-20260806-09/10）。
-- [ ] 恢复 Task 8 Step 2：需用户决定如何处理"6 任务"文档描述与 `teacher_collect` 实际行为
-      （无任务数限制）不符的问题，并批准在修复后环境下重新执行 teacher 采集（新
-      `attempt_id`）。
-- [ ] 逐项进入正式数据生成、API、模型下载和远端 GPU 审批门（Task 8 剩余步骤，命令清单见上，
-      需用户逐条批准）。
-- [ ] Task 8 全部证据回收并在最终 HEAD 复验后完成分支收口（merge/no-merge 由用户决定）。
+- [x] 恢复 Task 8 Step 2/3：用户批准跳过重复 smoke，直接在修复后环境下用完整预算
+      （`teacher-full-001`，2 episode/3 attempt）重新采集，238/240 通过质量门
+      （`refund_denied_window` 30%→95%，确认环境修复有效）；`train_export` 导出 240 条
+      正式 train（`d0adbd7`）。文档描述已更正（`63137aa`）。
+- [x] Task 8 Step 4：远端只读盘点选定 gpu-5090（物理 GPU 0，RTX 5090）；代码/模型/私有
+      dev 数据同步；排查并解决两个真实基础设施问题（符号链接触发路径逃逸安全检查——改真实
+      复制；`torch>=2.13` Triton JIT 缺系统编译器——最终用 `TORCH_DISABLE_NATIVE_JIT=1`
+      环境变量解决，中途尝试的 ziglang 依赖已回退清理）；Qwen3-1.7B（task_success=0.70）
+      与 Qwen3-4B（task_success=0.80）60 任务 dev base 均完整跑通，证据哈希重载校验通过。
+- [x] Task 8 Step 5：两份公开 `base-report.json` 同步回本地，本地/远端 SHA-256 逐一核对
+      一致；本地重新加载校验通过。
+- [x] Task 8 Step 6：最终 HEAD（`5b3b45f`）重跑完整 CPU 门禁（508 passed、Ruff、mypy、
+      lock、diff 全绿）；仓库级 secret/BFCL/holdout 泄漏扫描干净；独立复审
+      （`c4d7fdc..HEAD`）PASS，无 Critical/Important（含从公开 `dev.json` 独立重算哈希
+      验证证据链未被篡改）（LOG-20260807-01/02）。
+- [ ] R2 是否满足 `docs/EXECUTION_PLAN.md` 验收目标、能否标记已完成，以及分支处置
+      （merge/no-merge），交由用户最终确认。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`uv lock --check`、`git diff --check`；正式阶段另验证重复构建哈希、secret/BFCL/holdout 泄漏扫描、API route snapshot 和远端产物哈希一致性。
 
 ## Task Rules

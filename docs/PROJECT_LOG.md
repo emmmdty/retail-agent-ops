@@ -1663,3 +1663,26 @@ bundle/manifest/parser/seed=0/预算，仅 model/attempt_id 不同，可配对�
 有效率更低、非法调用率显著更高、政策违规从 0 升到 8——不是单调的"更大模型更好"，是
 真实的 base 权衡信号，原样记录，不做解释或调优（R2 不训练、不调 prompt）。两份 dev base
 现已完整（Task 8 Step 4 GPU 部分完成），进入 Step 5（证据同步）。
+
+### LOG-20260807-02：Task 8 Step 6 独立复审 PASS，CPU 门禁在最终 HEAD 重跑通过
+
+- 日期：2026-08-07
+- 阶段/任务：R2 / Task 8 Step 6（最终验证与收口）
+- 状态：解决
+- 关联：LOG-20260807-01
+
+**验证**：最终 HEAD（`5b3b45f`）重跑 `.venv/bin/pytest -q`（508 passed）、
+`.venv/bin/ruff check .`、`.venv/bin/mypy`（54 源文件）、`uv lock --check`、
+`git diff --check` 全部通过；仓库级 secret/BFCL/holdout 泄漏扫描干净（`holdout-receipt.json`
+仅含指纹/计数，无任务内容）。独立复审（`c4d7fdc..HEAD`）**结论 PASS**：核实 PROJECT_LOG
+数字声明与实际产物字段（`dataset.json`/`quality.json`/两份 `base-report.json`）逐一吻合；
+`environment.py` 自 `11029bb` 后未被改动；从公开 `dev.json` **独立重算**
+`dev_manifest_sha256` 与两份 `base-report.json` 记录逐字符一致（排除哈希编造可能）；
+ziglang 加入又移除干净无残留；两份 dev-base config 的 `model.revision`/`file_sha256`
+为真实值且与 `base-report.json` 一致；未发现任何 Critical/Important 问题。
+
+**收口证据清单**：正式 240/60/120 formal 数据集（五维隔离，manifest 哈希闭合）；teacher
+全量 238/240 通过质量门（六类全部 ≥50%）；两份 Qwen3-1.7B/4B dev base（60/60 任务，
+证据完整、哈希重载校验通过、GPU/commit/config provenance 齐全）；仓库级泄漏扫描干净；
+完整 CPU 门禁在最终 HEAD 通过。是否满足 `docs/EXECUTION_PLAN.md` R2 验收目标、能否标记
+R2 已完成，交由用户最终确认。

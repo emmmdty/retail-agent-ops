@@ -425,3 +425,28 @@
   `environment.py`/`formal_tasks.py`/prompt/parser/模型/provider/阈值，等待用户对补救
   方向的决策（是否修复环境暴露 `current_day`/相对天数信息、是否需要重新冻结受影响
   split、如何处理已产生的 `teacher-smoke-001` 证据）。
+
+## R2 Task 8 Step 3-6：teacher 全量、GPU dev base 与最终收口（2026-08-06/07）
+
+- 用户选择修复环境（暴露 `current_day`）而非放宽验收；修复不需要重新冻结数据（`current_day`
+  早已写入 `_materialize_task` 产出的 `initial_state`，`formal_tasks.py`/`formal_manifests.py`
+  从不 import `environment.py`）。修复后 `teacher-full-001`（完整 2 episode/3 attempt 预算）
+  重新采集：`refund_denied_window` 30%→95%，整体 238/240=99.2%，确认修复有效非偶然。
+- gpu-5090 首次真正跑模型 `generate()`（此前只验证过 `torch.cuda.is_available()`）暴露两个
+  真实基础设施问题：(1) 复用已下载模型时用符号链接指回仓库外真实存储路径，被
+  `base_evaluation.py::_resolve_within`（Task 5 审计过的路径逃逸检查）正确拦截——不应放宽
+  这类安全检查，正确修复是把模型文件真实复制进受信根目录；(2) `torch==2.13.0+cu130` 的
+  RoPE 计算（`bmm_outer_product`）默认走 Triton JIT，需要系统 C 编译器，gpu-5090 无
+  gcc/sudo/conda；中途尝试用 `ziglang`（pip 装的用户态编译器）当 `CC`，编译能过但 zig 的
+  cc 前端用自带 glibc shim 库构造链接命令、完全不转发 `-L` 去搜宿主系统库目录，链接
+  `libcuda.so.1` 失败；最终发现 `torch._native/triton_utils.py` 读取的
+  `TORCH_DISABLE_NATIVE_JIT=1` 是官方预留开关，设置后跳过整条 Triton override 注册，
+  回退纯 PyTorch 实现，不需要任何编译器——比 ziglang 方案简单，无新依赖，已把 ziglang
+  相关改动干净回退。
+- 两份 dev base 结果不是单调的"更大模型更好"：Qwen3-4B 任务成功率更高（0.80 vs 1.7B 的
+  0.70）、恢复能力更强，但 schema 有效率更低、非法调用率和政策违规率都显著更高——原样记录
+  为真实的 base 权衡信号，R2 不做调优或解释。
+- Task 8 独立复审（`c4d7fdc..HEAD`）用**独立重算**而非文本比对验证了哈希闭合性（从公开
+  `dev.json` 重新计算 `dev_manifest_sha256`，逐字符匹配两份 `base-report.json` 的记录），
+  结论 PASS，无 Critical/Important。R2 是否达到 `docs/EXECUTION_PLAN.md` 验收目标、能否
+  标记已完成，交由用户最终确认。
