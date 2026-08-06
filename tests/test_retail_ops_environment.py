@@ -138,3 +138,54 @@ def test_duplicate_refund_is_denied_without_mutating_state() -> None:
     assert result.error_code == "policy_denied"
     assert env.get_state() == before
     assert env.check_policy() == ["duplicate_refund"]
+
+
+def test_get_order_exposes_current_day_so_window_denial_is_inferable() -> None:
+    """`get_order` 必须同时返回 `refund_deadline` 与 `current_day`，否则一个只能看
+    工具响应、不能读内部状态的推理式 agent 无法判断退款窗口是否已过期——`refund_deadline`
+    是一个没有参照系的裸整数，只有和 `current_day` 并列出现才可比较。"""
+    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.trajectory import TaskScenario
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        task
+        for task in build_qualification_tasks(seed=0)
+        if task.scenario is TaskScenario.REFUND_DENIED_WINDOW
+    )
+    env = RetailOpsEnv(task, bundle)
+    order_id = task.metadata["order_id"]
+
+    result = env.execute_tool("get_order", {"order_id": order_id})
+
+    assert result.ok is True
+    assert result.content is not None
+    assert result.content["current_day"] == task.initial_state["current_day"]
+    assert (
+        result.content["refund_deadline"]
+        == task.initial_state["orders"][order_id]["refund_deadline"]
+    )
+
+
+def test_get_order_current_day_matches_env_state_for_every_scenario() -> None:
+    """`current_day` 暴露不区分场景：eligible/recovery/denied_* 都应看到同一环境状态。"""
+    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.trajectory import TaskScenario
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        task
+        for task in build_qualification_tasks(seed=0)
+        if task.scenario is TaskScenario.REFUND_ELIGIBLE
+    )
+    env = RetailOpsEnv(task, bundle)
+    order_id = task.metadata["order_id"]
+
+    result = env.execute_tool("get_order", {"order_id": order_id})
+
+    assert result.content is not None
+    assert result.content["current_day"] == env.get_state()["current_day"]

@@ -64,12 +64,8 @@ class RetailOpsEnv(ToolEnv):
             ExpectedDecision.INFORM,
             ExpectedDecision.DENY,
         }:
-            return float(
-                reads_complete and self._terminal_response and state_matches and clean
-            )
-        return float(
-            reads_complete and state_matches and clean and self._refund_applied
-        )
+            return float(reads_complete and self._terminal_response and state_matches and clean)
+        return float(reads_complete and state_matches and clean and self._refund_applied)
 
     def check_policy(self) -> list[str]:
         return list(self._violations)
@@ -116,7 +112,9 @@ class RetailOpsEnv(ToolEnv):
                 error_code="not_found",
                 error="订单不存在或不可见",
             )
-        return Observation(ok=True, content=copy.deepcopy(order))
+        content = copy.deepcopy(order)
+        content["current_day"] = self._state.get("current_day")
+        return Observation(ok=True, content=content)
 
     def _refund_order(self, arguments: dict[str, Any]) -> Observation:
         if not self._valid_arguments(arguments, {"order_id", "reason"}):
@@ -171,9 +169,7 @@ class RetailOpsEnv(ToolEnv):
             return {}
         return orders
 
-    def _record_expected_call(
-        self, name: str, arguments: Mapping[str, Any]
-    ) -> None:
+    def _record_expected_call(self, name: str, arguments: Mapping[str, Any]) -> None:
         if self._matched_calls >= len(self._task.expected_calls):
             return
         expected = self._task.expected_calls[self._matched_calls]
