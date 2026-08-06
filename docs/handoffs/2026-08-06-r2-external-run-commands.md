@@ -87,9 +87,10 @@ grep -o '^[A-Z_]*=' .env
   只打印不含凭据的 route snapshot（provider/base_url/model/extra_body/route_sha256），验证
   `.env` 能被正确解析、且 `extra_body` 确实含 `{"thinking":{"type":"disabled"}}`。
 
-## 3. 六任务 API smoke（本地，真实网络调用，产生真实费用）
+## 3. teacher smoke（本地，真实网络调用，产生真实费用）
 
-**未执行。** 精确命令：
+**已于 2026-08-06 执行一次（`teacher-smoke-001`，见 `docs/PROJECT_LOG.md`
+LOG-20260806-05/06），本节描述已按实际行为更正。** 精确命令：
 
 ```bash
 cd /home/tjk/myProjects/internship-projects/retail-agent-ops
@@ -101,7 +102,14 @@ set -a; source .env; set +a
 ```
 
 - 工作目录：本地 WSL（这是纯 API 调用，不需要 GPU）。
-- 每类别 1 条、共 6 条 train 任务，`max_episodes_per_task=1`、`max_request_attempts=1`。
+- **更正**：`configs/retail_ops_v1_r2_teacher_smoke.yaml`（`pipeline: teacher_collect`）
+  没有任何任务数量限制字段，会处理 `--input_dir` 私有根目录下 `train.jsonl` 的**全部
+  240 条**任务，只是把 `max_episodes_per_task`/`max_request_attempts` 降到 `1`/`1`
+  （相对 teacher_full 的 `2`/`3`）。"每类别 1 条、共 6 条"是本文档原稿的错误设想，
+  从未与 `teacher_collect` 实现核对过；`teacher_collect` 当前不支持按数量抽样，"更便宜
+  的 smoke"和"全量采集"唯一的区别只是重试预算，不是任务数量。这条命令的真实费用/耗时量级
+  与第 4 节相近（首次真实执行：519 次请求、约 $0.055、耗时约 12 分钟，而非本节曾经承诺的
+  "<$0.01、数秒到约 1 分钟"），不是可忽略的探测性调用。
 - 预计耗时：数秒到约 1 分钟（参照 2026-08-05 20 条真实 smoke 实测单次调用约 1 秒）。
 - 预计费用：按 2026-08-05 实测单价推算 < $0.01（6 次调用，远小于 20 条 smoke 的
   $0.003996）。
