@@ -6,68 +6,49 @@
 
 ## Current Phase
 
-R2 已完成并经用户确认（LOG-20260807-03）。当前阶段为 R3「单卡适配与服务 v1」。本次任务是 R3
-的第一个纵向切片：把已有 QLoRA-SFT 训练器接入正式 CLI，并对 **Qwen3-4B**（用户 2026-08-07 选定
-方案 A）完成一次真实单卡 QLoRA-SFT。正式 holdout 评测、release GO/NO-GO 与 serve 不在本次范围。
-执行提示词见 `docs/handoffs/2026-08-07-r3-sft-execution-prompt.md`。
+R3「单卡适配与服务 v1」。Task 1（SFT 训练接入与首次真实 QLoRA-SFT）已完成（`e9cb95b`），
+产出候选 adapter `reports/retail_ops/v1/r3/sft-001/adapter/`。当前任务是 R3 Task 2：
+**对 60 条 dev 任务做候选评测，与已有 Qwen3-4B base 配对比较**。正式 120 条 holdout、
+release GO/NO-GO 与 serve 仍不在范围内。
 
 ## Current Task
 
-- 输入：干净基线 `1af7b32`（508 passed、Ruff/mypy/lock/diff 全绿）；已冻结数据版本
-  `retail_ops_v1_r2_20260722`；已产出私有 train SFT 数据
-  `train-export/train-export-001/sft.jsonl`（240 条 `messages+tools`）；已下载并逐文件哈希
-  校验的 Qwen3-4B（gpu-5090 `models/Qwen3-4B-pinned/`，revision `8cd0101f...`，13 文件哈希
-  已在 `configs/retail_ops_v1_r2_qwen3_4b_dev.yaml`）；已有 `training/sft.py::run_sft` 完整
-  QLoRA-SFT 执行器与 R2 Task 6 的 `pipeline` 分派 + factory 注入缝模式。
-- 输出：`ModelSettings` provenance 锁定（`revision`/`file_sha256` + `verify_local_model_files`）；
-  dev 侧 Oracle-only SFT 导出（60 条）；`product_cli.py` 新增 `dev_sft_export`/`sft` 两条 build
-  流水线；4 份 R3 config；治理测试补充；Qwen3-4B tokenizer token 长度审计报告；GPU smoke →
-  小样本 overfit → 全量 SFT 三级验证证据（adapter + metrics.json + 可重载性）。
-- 非目标：不打开/评测正式 120 条 holdout，不调用 `evaluate_authorized_holdout`/
-  `sealed_evaluation.py`；不触碰 BFCL 固定 200 条及其失败样例；不做 release 决策、不部署 serve；
-  不改 240/60 数据配额、LoRA 目标模块、损失口径或模型选择；不绕过
-  `_ensure_new_training_output`；不自动 push/merge/发布；不全仓重命名 `veritool_rl`。
-- 影响文件：`src/veritool_rl/training/sft.py`、`src/veritool_rl/retail_ops/dev_sft_export.py`
-  （新增）、`src/veritool_rl/product_cli.py`、`tests/test_sft_config.py`、
-  `tests/test_dev_sft_export.py`（新增）、`tests/test_retail_ops_r3_cli.py`（新增）、
-  `tests/test_project_governance.py`、`configs/retail_ops_v1_r3_*.yaml`（新增 4 份）、
-  三份 planning 文件与 `docs/PROJECT_LOG.md`；私有产物落在 ignored
-  `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-sft/` 与训练输出目录。
-- 失败模式：训练悄悄跑在未哈希校验的模型目录上；dev-sft 误用 teacher/非 dev split；
-  `max_seq_len=1024` 不足导致静默截断；smoke 通过但 assistant mask 覆盖错导致 loss 不下降；
-  正式训练目录被覆盖；train/eval loss 出现 NaN/Inf 而流程继续；远端命令未逐条批准即执行。
-- [x] A：`ModelSettings` provenance 锁定：新增必填 `revision`/`file_sha256`，`run_sft` 在
-      任何写盘与任何重量级 import 之前调用 `verify_local_model_files`；3 条 RED（字段缺失、
-      篡改文件、清单外多余文件）已转 GREEN。副作用：4 份 legacy SFT config 现在 fail-closed，
-      已在文件头注明需回填真实哈希。
-- [x] B：新增 `retail_ops/dev_sft_export.py`（`build_dev_sft_rows`/`write_dev_sft_export`）；
-      公开接口不接受任何 client 参数，结构上无法对 dev 发起 teacher 请求；复用已审计的
-      路径安全/staging-publish/失败回滚；14 个测试。
-- [x] C：`product_cli.py` 新增 `dev_sft_export`/`sft` 两条 build 流水线，各自精确 key 集合；
-      `trainer_factory` 注入缝（默认工厂就是真实 `run_sft`）；28 个 CPU 测试。
-- [x] D：4 份 R3 config；训练数据只写私有根内相对路径（`*_relpath`），私有根前缀由
-      `--input_dir` 运行时提供，与 R2 同一约定。
-- [x] E：治理测试补 4 项（R3 config 无 secret/绝对路径/私有根；不引用 BFCL/holdout；
-      SFT config 必须带 provenance pin；dev-sft/adapter/checkpoints 路径仍被 ignore）。
-- [x] F：本地 CPU 真实导出 60 条 dev SFT 数据（0.39s，无模型/无网络/无 API）；
-      `sha256sum` 独立核对与公开摘要一致（`41ae6409...`），六类各 10 条、与 train 无 ID 交叉。
-- [x] G（审批门 1）：代码 ff-only 同步到 `ec9cad5`；私有 SFT 数据 679KB 同步并逐一核对
-      SHA-256 一致（240 + 60 条）。
-- [x] H（审批门 2）：token 审计通过——train max=730/dev max=727，0/300 超 1024，`max_seq_len`
-      保持 1024；assistant mask 无空行、end-of-turn 进 mask。顺带确认 dev eval loss 因
-      Oracle 常量回复而失真，用户决定保持现状并写明口径（LOG-20260807-06）。
-- [x] I（审批门 3）：GPU smoke 通过——未复现 Triton JIT 问题，train/eval loss 有限
-      （1.4479/2.3065），峰值 5.13 GiB，adapter 23.6 MB 且离线重载 `loaded: true`。
-- [x] J（审批门 4）：overfit 通过——train loss 1.2729→0.0168（76x，单调），token acc
-      0.8605→0.9965，证明 label/assistant mask 无系统性缺陷。
-- [x] K（审批门 5）：全量 SFT 完成——train_loss 0.3722（曲线 1.1916→0.2074），eval_loss
-      0.5266/0.5603/0.5797（三 epoch），全部有限；wall time 134.25s，峰值 5.16 GiB，
-      adapter 23.6 MB，离线重载 `loaded: true`。
-- [x] L（审批门 6）：11 个产物 rsync 回本地，本地/远端 SHA-256 逐一一致；`git check-ignore`
-      确认全部被忽略、无权重进 Git；运行内嵌 model pin 与 R2 dev-base config 完全一致。
+- 输入：候选 adapter（7 文件，`adapter_model.safetensors` =
+  `34544fac3ec9afae10f9212f730aaf275bc86b536ffaeecfb4fe0eeb745e8748`）；已有 Qwen3-4B base
+  证据（`qwen3-4b-dev-base-001`，task_success=0.80、policy_violation_rate=0.133、
+  schema_valid_rate=0.781、invalid_call_rate=0.219、recovery_success=0.5）；同一份已哈希
+  校验的模型（revision `8cd0101f...`）；冻结的 60 条 dev 与公开 dev manifest。
+- 输出：`formal_dev_candidate` 流水线与候选证据契约（含 adapter provenance 锁定）、配对
+  比较函数与报告、真实 GPU 候选评测结果，以及与 base 的逐指标对照。
+- 非目标：**不打开或评测正式 120 条 holdout**、不调用 `evaluate_authorized_holdout`/
+  `sealed_evaluation.py`、不做 release GO/NO-GO 决策、不部署 serve、不触碰 BFCL 200 条；
+  不重训、不调超参、不改 240/60 配额；不自动 push/merge。
+- 关键约束（已核实的代码事实）：`BaseRunEvidence`/`BaseEvaluationConfig` **一个字段都不能加**
+  ——`_content_id` 把除 `run_id`/`schema_version` 外的全部字段算进自哈希，加字段会让已有两份
+  R2 base 证据（`qwen3-1.7b`/`qwen3-4b-dev-base-001`）的 `run_id` 复算失败。因此候选契约必须
+  用子类扩展，且 base 路径行为逐字节不变。
+- 失败模式：候选跑在未哈希校验的 adapter 上；base/candidate 用了不同 bundle/manifest/parser/
+  seed/预算/生成参数导致比较无效；候选证据能被当作 base 证据加载（或反之）；base 路径因重构
+  发生行为漂移；把 n=60 的小幅差异说成稳定提升。
+- [x] A：`AdapterArtifact` + `CandidateEvaluationConfig`/`CandidateRunEvidence` 子类契约；
+      `_require_backend_matches_pin` 改为**双向**绑定（base 拒绝任何 adapter；candidate
+      拒绝缺失或不符的 adapter）。
+- [x] B：抽出 `require_dev_evaluation_preconditions` 与 `measure_dev_run` 两个共用核心；
+      两份真实 R2 base 证据仍能加载且 `run_id` 复算一致（已固化为测试）。
+- [x] C：`evaluate_formal_dev_candidate` + `load_candidate_run_evidence`；候选证据与 base
+      证据互不可加载（严格模型 + 必填 adapter）。
+- [x] D：`compare_dev_runs` 校验 15 项配对字段 + model + generation + task_count，任一不符
+      即抛 `ComparisonError`，不给出带警告的无效 delta。
+- [x] E：CLI `pipeline: formal_dev_candidate` 分派（默认后端工厂真实挂载 adapter）+
+      `configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml`（model 段与 base config 逐字段相同）。
+- [x] F：治理测试补充 2 项（候选 config 同时锁定 model+adapter 逐文件哈希且 model 段必须
+      与 base config 相同；候选私有/公开产物路径仍被 ignore）。
+- [ ] G：远端同步 + 真实 GPU 候选评测（60 条 dev，与 base 同预算）。
+- [ ] H：产物同步回本地、哈希核对、配对比较报告与记录。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
   `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
-  远端另核对模型逐文件哈希、adapter 可重载性与产物 SHA-256 本地/远端一致。
+  另需证明两份既有 R2 base 证据加载不受影响，且候选运行的 bundle/manifest/parser/seed/
+  预算/生成参数与 base 逐字段一致。
 
 ## Task Rules
 

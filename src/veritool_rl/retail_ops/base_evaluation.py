@@ -16,6 +16,7 @@ import tempfile
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
@@ -225,27 +226,140 @@ def evaluate_formal_dev_base(
     自身的 `model_dir`/`revision`/`adapter_path`/`settings`，此处据此拒绝任何带
     adapter、指向其他模型或使用非冻结生成参数的后端。
     """
+    private_target, model_dir = require_dev_evaluation_preconditions(
+        records,
+        public_manifest,
+        config,
+        bundle=bundle,
+        models_root=models_root,
+        private_root=private_root,
+        attempt_id=attempt_id,
+        public_report_path=public_report_path,
+        private_subdir="dev-base",
+    )
+    _require_backend_matches_pin(backend, model_dir, config, expected_adapter=None)
+
+    run = measure_dev_run(
+        records,
+        public_manifest,
+        backend,
+        config,
+        bundle=bundle,
+        hardware_provider=hardware_provider,
+        policy_id=f"{config.model.repo}@{config.model.revision}",
+    )
+
+    def build(staging: Path) -> BaseRunEvidence:
+        artifact_sha256 = write_run_artifacts(
+            staging, run.run_config, run.trajectories, run.metrics
+        )
+        evidence = _finalize_evidence(
+            BaseRunEvidence(
+                run_id=_ID_PLACEHOLDER,
+                dataset_version=public_manifest.dataset_version,
+                generator_id=public_manifest.generator_id,
+                bundle_id=public_manifest.bundle_id,
+                bundle_version=public_manifest.bundle_version,
+                bundle_sha256=public_manifest.bundle_sha256,
+                parser_id=public_manifest.parser_id,
+                evaluator_id=public_manifest.evaluator_id,
+                dev_manifest_sha256=run.manifest_sha256,
+                dev_artifact_sha256=public_manifest.artifact_sha256,
+                system_prompt_sha256=run.prompt_sha256,
+                tool_schema_sha256=run.tools_sha256,
+                config_sha256=config.config_sha256,
+                code_commit=config.code_commit,
+                uv_lock_sha256=config.uv_lock_sha256,
+                policy_id=run.policy_id,
+                model=config.model,
+                generation=config.generation,
+                hardware=run.hardware,
+                task_count=len(run.trajectories),
+                category_counts=run.category_counts,
+                metrics=run.metrics,
+                replayable_count=run.replayed,
+                evidence_complete=_evidence_complete(run.trajectories, run.replayed),
+                artifact_sha256=artifact_sha256,
+            ),
+            "run_id",
+        )
+        write_json(staging / "run.json", evidence.model_dump(mode="json"))
+        return evidence
+
+    return publish_run_evidence(
+        private_target=private_target,
+        public_report_path=public_report_path,
+        build=build,
+    )
+
+
+def require_dev_evaluation_preconditions(
+    records: Sequence[FormalTaskRecord],
+    public_manifest: FormalTaskManifest,
+    config: BaseEvaluationConfig,
+    *,
+    bundle: LoadedRetailOpsBundle,
+    models_root: Path,
+    private_root: Path,
+    attempt_id: str,
+    public_report_path: Path,
+    private_subdir: str,
+) -> tuple[Path, Path]:
+    """base 与 candidate 共用的全部前置守卫，返回 (私有输出目录, 模型目录)。
+
+    这些守卫必须对两条通道**逐条相同**，否则 base/candidate 的比较就建立在
+    不同的验证强度上。唯一允许不同的是 backend↔pin 的 adapter 绑定，由调用方
+    各自传入期望值。
+    """
     _require_dev_manifest(public_manifest)
     _require_matching_bundle(bundle, public_manifest)
     if config.dataset_version != public_manifest.dataset_version:
-        msg = "base 评测 config 与公开 dev manifest 的 dataset_version 不一致"
+        msg = "dev 评测 config 与公开 dev manifest 的 dataset_version 不一致"
         raise ValueError(msg)
     _require_verified_dev_records(records, public_manifest, config.max_steps)
     _require_records_match_private_artifact(records, private_root, public_manifest)
 
     _validate_path_component(attempt_id, label="attempt_id")
-    private_target = _resolve_within(private_root, "dev-base", attempt_id)
+    private_target = _resolve_within(private_root, private_subdir, attempt_id)
     _validate_output_pair(private_root, public_report_path)
 
     model_dir = _resolve_within(models_root, config.model.local_dir)
     verify_local_model_files(model_dir, config.model.file_sha256)
-    _require_backend_matches_pin(backend, model_dir, config)
+    return private_target, model_dir
 
-    policy = QwenPolicy(
-        backend,
-        f"{config.model.repo}@{config.model.revision}",
-        config.generation.max_new_tokens,
-    )
+
+@dataclass(frozen=True)
+class DevRunMeasurement:
+    """一次 dev 评测的执行结果与全部 provenance 摘要。"""
+
+    trajectories: list[Trajectory]
+    replayed: int
+    metrics: dict[str, Any]
+    category_counts: dict[str, int]
+    hardware: HardwareProvenance
+    manifest_sha256: str
+    prompt_sha256: str
+    tools_sha256: str
+    policy_id: str
+    run_config: dict[str, Any]
+
+
+def measure_dev_run(
+    records: Sequence[FormalTaskRecord],
+    public_manifest: FormalTaskManifest,
+    backend: GenerationBackend,
+    config: BaseEvaluationConfig,
+    *,
+    bundle: LoadedRetailOpsBundle,
+    hardware_provider: HardwareProvider,
+    policy_id: str,
+) -> DevRunMeasurement:
+    """base 与 candidate 共用的执行、计时、指标与 provenance 摘要计算。
+
+    配对比较只有在两次运行经过**同一套**执行与指标机器时才成立，因此这段代码
+    刻意只有一份；两条通道的差别仅在于 `policy_id`（候选侧带 adapter 身份）。
+    """
+    policy = QwenPolicy(backend, policy_id, config.generation.max_new_tokens)
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
     trajectories, replayed = execute_formal_records(records, bundle, policy, config.seed)
@@ -266,56 +380,26 @@ def evaluate_formal_dev_base(
     manifest_sha256 = _content_sha256(public_manifest.model_dump(mode="json"))
     prompt_sha256 = _text_sha256(SYSTEM_PROMPT)
     tools_sha256 = _tool_schema_sha256(bundle)
-    run_config = {
-        "config": config.model_dump(mode="json"),
-        "bundle_sha256": bundle.bundle_sha256,
-        "dev_manifest_sha256": manifest_sha256,
-        "dev_artifact_sha256": public_manifest.artifact_sha256,
-        "parser_id": public_manifest.parser_id,
-        "policy_id": policy.name,
-        "system_prompt_sha256": prompt_sha256,
-        "tool_schema_sha256": tools_sha256,
-    }
-
-    def build(staging: Path) -> BaseRunEvidence:
-        artifact_sha256 = write_run_artifacts(staging, run_config, trajectories, metrics)
-        evidence = _finalize_evidence(
-            BaseRunEvidence(
-                run_id=_ID_PLACEHOLDER,
-                dataset_version=public_manifest.dataset_version,
-                generator_id=public_manifest.generator_id,
-                bundle_id=public_manifest.bundle_id,
-                bundle_version=public_manifest.bundle_version,
-                bundle_sha256=public_manifest.bundle_sha256,
-                parser_id=public_manifest.parser_id,
-                evaluator_id=public_manifest.evaluator_id,
-                dev_manifest_sha256=manifest_sha256,
-                dev_artifact_sha256=public_manifest.artifact_sha256,
-                system_prompt_sha256=prompt_sha256,
-                tool_schema_sha256=tools_sha256,
-                config_sha256=config.config_sha256,
-                code_commit=config.code_commit,
-                uv_lock_sha256=config.uv_lock_sha256,
-                policy_id=policy.name,
-                model=config.model,
-                generation=config.generation,
-                hardware=hardware,
-                task_count=len(trajectories),
-                category_counts=category_counts,
-                metrics=metrics,
-                replayable_count=replayed,
-                evidence_complete=_evidence_complete(trajectories, replayed),
-                artifact_sha256=artifact_sha256,
-            ),
-            "run_id",
-        )
-        write_json(staging / "run.json", evidence.model_dump(mode="json"))
-        return evidence
-
-    return publish_run_evidence(
-        private_target=private_target,
-        public_report_path=public_report_path,
-        build=build,
+    return DevRunMeasurement(
+        trajectories=trajectories,
+        replayed=replayed,
+        metrics=metrics,
+        category_counts=category_counts,
+        hardware=hardware,
+        manifest_sha256=manifest_sha256,
+        prompt_sha256=prompt_sha256,
+        tools_sha256=tools_sha256,
+        policy_id=policy.name,
+        run_config={
+            "config": config.model_dump(mode="json"),
+            "bundle_sha256": bundle.bundle_sha256,
+            "dev_manifest_sha256": manifest_sha256,
+            "dev_artifact_sha256": public_manifest.artifact_sha256,
+            "parser_id": public_manifest.parser_id,
+            "policy_id": policy.name,
+            "system_prompt_sha256": prompt_sha256,
+            "tool_schema_sha256": tools_sha256,
+        },
     )
 
 
@@ -345,9 +429,7 @@ def execute_formal_records(
     def env_factory(task: Any) -> RetailOpsEnv:
         return RetailOpsEnv(task, bundle)
 
-    trajectories = [
-        run_episode(record.task, env_factory, policy, seed) for record in records
-    ]
+    trajectories = [run_episode(record.task, env_factory, policy, seed) for record in records]
     replayed = sum(
         replay_trajectory(trajectory, env_factory).matched for trajectory in trajectories
     )
@@ -535,17 +617,28 @@ def _require_backend_matches_pin(
     backend: GenerationBackend,
     model_dir: Path,
     config: BaseEvaluationConfig,
+    *,
+    expected_adapter: Path | None,
 ) -> None:
     """后端若声明了自身来源，必须与锁定的模型目录、revision 和生成参数完全一致。
 
-    最关键的一条是 adapter：dev base 证据没有 adapter 字段，所以一个被 PEFT
-    包装过的后端如果通过了检查，产出的证据会与真正的 base 运行逐字节难以区分。
-    因此只要后端声明了任何非 None 的 adapter 路径就直接拒绝——`config` 侧把
-    seed/步数/采样/思考/量化冻结为 Literal，这里则校验真正跑评测的那个后端。
+    最关键的一条是 adapter，而且是**双向**的：dev base 证据没有 adapter 字段，
+    所以一个被 PEFT 包装过的后端若通过检查，产出的证据会与真正的 base 运行逐字节
+    难以区分（`expected_adapter=None` 时任何非 None 声明都拒绝）；反过来，候选运行
+    若拿到一个没挂 adapter 的后端，证据会谎称评测了候选而实际跑的是 base
+    （`expected_adapter` 非 None 时缺失或不符也拒绝）。`config` 侧把 seed/步数/采样/
+    思考/量化冻结为 Literal，这里则校验真正跑评测的那个后端。
     """
     declared_adapter = getattr(backend, "adapter_path", None)
-    if declared_adapter is not None:
-        msg = f"dev base 评测禁止 adapter：生成后端声明了 adapter 路径 {declared_adapter!r}"
+    if expected_adapter is None:
+        if declared_adapter is not None:
+            msg = f"dev base 评测禁止 adapter：生成后端声明了 adapter 路径 {declared_adapter!r}"
+            raise ValueError(msg)
+    elif declared_adapter is None:
+        msg = "dev candidate 评测要求 adapter：生成后端未声明任何 adapter 路径"
+        raise ValueError(msg)
+    elif Path(declared_adapter).resolve() != expected_adapter.resolve():
+        msg = "生成后端加载的 adapter 目录与锁定 adapter 不一致"
         raise ValueError(msg)
     declared_dir = getattr(backend, "model_dir", None)
     if declared_dir is not None and Path(declared_dir).resolve() != model_dir.resolve():

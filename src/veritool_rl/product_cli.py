@@ -36,6 +36,11 @@ from veritool_rl.retail_ops.base_evaluation import (
     load_verified_formal_dev,
 )
 from veritool_rl.retail_ops.bundle import load_bundle
+from veritool_rl.retail_ops.candidate_evaluation import (
+    AdapterArtifact,
+    CandidateEvaluationConfig,
+    evaluate_formal_dev_candidate,
+)
 from veritool_rl.retail_ops.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
 from veritool_rl.retail_ops.environment import RetailOpsEnv
 from veritool_rl.retail_ops.evaluation import (
@@ -204,6 +209,9 @@ def _run_evaluate(args: argparse.Namespace) -> None:
         return
     if pipeline == "formal_dev_base":
         _run_formal_dev_base(args, config)
+        return
+    if pipeline == "formal_dev_candidate":
+        _run_formal_dev_candidate(args, config)
         return
     raise ValueError(f"未知 evaluate pipeline: {pipeline!r}")
 
@@ -607,6 +615,102 @@ def _run_formal_dev_base(
         private_root=private_root,
         attempt_id=attempt_id,
         public_report_path=public_report_path,
+        hardware_provider=hardware_provider,
+    )
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: formal_dev_candidate (evaluate)
+# ---------------------------------------------------------------------------
+
+_FORMAL_DEV_CANDIDATE_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "dataset_version",
+    "dev_manifest_path",
+    "models_root",
+    "model",
+    "adapter",
+    "generation",
+    "attempt_id",
+}
+
+
+def _default_candidate_backend(
+    config: CandidateEvaluationConfig, models_root: Path
+) -> GenerationBackend:
+    """生产环境默认工厂：真实 4-bit NF4 后端并挂载锁定的 adapter 目录。"""
+    model_dir = models_root / config.model.local_dir
+    return TransformersBackend.from_pretrained(
+        str(model_dir),
+        str(config.adapter.adapter_dir),
+        revision=config.model.revision,
+        expected_file_sha256=config.model.file_sha256,
+        settings=config.generation,
+    )
+
+
+def _run_formal_dev_candidate(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    backend_factory: Callable[[CandidateEvaluationConfig, Path], GenerationBackend] | None = None,
+    hardware_provider_factory: Callable[[], HardwareProvider] | None = None,
+    code_commit_factory: Callable[[], str] | None = None,
+) -> None:
+    """在同一 60 条 dev 上跑候选（base+adapter），与 base 逐字段同契约，绝不读环境变量。
+
+    这条流水线刻意与 `_run_formal_dev_base` 保持同样的 dataset/manifest 校验顺序：
+    只有两次运行经过同一套守卫，`compare_dev_runs` 的 delta 才能归因于 adapter。
+    """
+    _require_config_keys(config, _FORMAL_DEV_CANDIDATE_KEYS)
+    if args.seed != 0:
+        raise ValueError("formal_dev_candidate 冻结 seed=0，收到 --seed 与之不一致")
+
+    bundle_dir = _bundle_dir(config)
+    dataset_version = _dataset_version(config)
+    dev_manifest_path = _project_relative_path(config, "dev_manifest_path")
+    models_root = _project_relative_path(config, "models_root")
+    attempt_id = _attempt_id(config)
+    model_value = _config_mapping(config, "model")
+    adapter_value = _config_mapping(config, "adapter")
+    generation_value = _config_mapping(config, "generation")
+
+    bundle = load_bundle(bundle_dir)
+    dataset = load_verified_formal_dataset(dev_manifest_path.parent)
+    declared_manifest = load_formal_task_manifest(dev_manifest_path)
+    if declared_manifest != dataset.dev_manifest:
+        raise ValueError("formal_dev_candidate 的 dev manifest 不是 dataset.json 绑定的那一份")
+    public_manifest = dataset.dev_manifest
+    if public_manifest.dataset_version != dataset_version:
+        raise ValueError("formal_dev_candidate 配置的 dataset_version 与公开 dev manifest 不一致")
+
+    private_root = args.input_dir
+    records = load_verified_formal_dev(private_root, public_manifest)
+
+    candidate_config = CandidateEvaluationConfig(
+        dataset_version=dataset_version,
+        model=ModelArtifact(**model_value),
+        adapter=AdapterArtifact(**adapter_value),
+        generation=GenerationSettings(**generation_value),
+        code_commit=(code_commit_factory or _current_code_commit)(),
+        uv_lock_sha256=_current_uv_lock_sha256(),
+    )
+
+    backend = (backend_factory or _default_candidate_backend)(candidate_config, models_root)
+    hardware_provider = (hardware_provider_factory or _default_hardware_provider)()
+
+    create_output_dir(args.output_dir)
+    evaluate_formal_dev_candidate(
+        records,
+        public_manifest,
+        backend,
+        candidate_config,
+        bundle=bundle,
+        models_root=models_root,
+        private_root=private_root,
+        attempt_id=attempt_id,
+        public_report_path=args.output_dir / "candidate-report.json",
         hardware_provider=hardware_provider,
     )
 

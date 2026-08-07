@@ -489,3 +489,164 @@ def test_committed_sft_configs_reach_the_real_resolver(sft_workspace: Path, name
     assert resolved.training.assistant_only_loss is True
     assert len(resolved.model.file_sha256) == 13
     del sft_workspace
+
+
+# ---------------------------------------------------------------------------
+# pipeline: formal_dev_candidate (evaluate)
+# ---------------------------------------------------------------------------
+
+
+def _candidate_cli_config(**overrides: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "pipeline": "formal_dev_candidate",
+        "bundle_dir": str(BUNDLE_REL),
+        "dataset_version": DATASET_VERSION,
+        "dev_manifest_path": str(PUBLIC_REL / "dev.json"),
+        "models_root": "models",
+        "attempt_id": "qwen3-4b-dev-candidate-001",
+        "model": _model_pin_full(),
+        "adapter": {
+            "run_dir": "reports/retail_ops/v1/r3/sft-001",
+            "file_sha256": {"adapter_config.json": "0" * 64},
+        },
+        "generation": {"max_new_tokens": 256},
+    }
+    values.update(overrides)
+    return values
+
+
+def _model_pin_full() -> dict[str, Any]:
+    return {
+        "repo": "Qwen/Qwen3-4B",
+        "revision": REVISION,
+        "local_dir": "Qwen3-4B-pinned",
+        "file_sha256": {"config.json": "0" * 64},
+    }
+
+
+def _eval_args(**overrides: Any) -> argparse.Namespace:
+    values: dict[str, Any] = {
+        "command": "evaluate",
+        "config": Path("config.yaml"),
+        "seed": 0,
+        "output_dir": Path("out"),
+        "input_dir": PRIVATE_REL,
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        _candidate_cli_config(extra_key="x"),
+        {k: v for k, v in _candidate_cli_config().items() if k != "adapter"},
+    ],
+)
+def test_candidate_pipeline_requires_exact_config_keys(
+    workspace: Path, config: dict[str, Any]
+) -> None:
+    from veritool_rl.product_cli import _run_formal_dev_candidate
+
+    del workspace
+    with pytest.raises(ValueError, match="配置字段不符合命令契约"):
+        _run_formal_dev_candidate(_eval_args(), config)
+
+
+def test_candidate_pipeline_rejects_nonzero_seed(workspace: Path) -> None:
+    """候选必须与 base 用同一冻结 seed，否则比较无效。"""
+    from veritool_rl.product_cli import _run_formal_dev_candidate
+
+    del workspace
+    with pytest.raises(ValueError, match="seed"):
+        _run_formal_dev_candidate(_eval_args(seed=1), _candidate_cli_config())
+
+
+def test_candidate_pipeline_never_reads_teacher_environment(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """毒化 teacher 环境后仍应因业务原因失败，而不是因为读了 env 炸掉。"""
+    from veritool_rl.product_cli import _run_formal_dev_candidate
+
+    _poison_teacher_environ(monkeypatch)
+    del workspace
+
+    with pytest.raises(ValueError, match="配置字段不符合命令契约"):
+        _run_formal_dev_candidate(_eval_args(), _candidate_cli_config(extra_key="x"))
+
+
+def test_candidate_pipeline_rejects_holdout_manifest(workspace: Path) -> None:
+    from veritool_rl.product_cli import _run_formal_dev_candidate
+
+    config = _candidate_cli_config(dev_manifest_path=str(PUBLIC_REL / "holdout.json"))
+
+    with pytest.raises(ValueError):
+        _run_formal_dev_candidate(_eval_args(), config)
+
+    assert not (workspace / PRIVATE_REL / "dev-candidate").exists()
+
+
+def test_default_candidate_backend_factory_mounts_the_adapter() -> None:
+    """默认后端工厂必须把 adapter 目录真的传给 TransformersBackend。"""
+    import veritool_rl.product_cli as product_cli
+    from veritool_rl.agent.qwen import GenerationSettings, TransformersBackend
+    from veritool_rl.retail_ops.base_evaluation import ModelArtifact
+    from veritool_rl.retail_ops.candidate_evaluation import (
+        AdapterArtifact,
+        CandidateEvaluationConfig,
+    )
+
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_from_pretrained(model_name: str, adapter_name: str | None, **kwargs: Any) -> object:
+        calls.append((model_name, adapter_name))
+        return object()
+
+    config = CandidateEvaluationConfig(
+        dataset_version=DATASET_VERSION,
+        model=ModelArtifact(**_model_pin_full()),
+        adapter=AdapterArtifact(
+            run_dir="reports/retail_ops/v1/r3/sft-001",
+            file_sha256={"adapter_config.json": "0" * 64},
+        ),
+        generation=GenerationSettings(max_new_tokens=256),
+        code_commit="1" * 40,
+        uv_lock_sha256="0" * 64,
+    )
+    original = TransformersBackend.from_pretrained
+    try:
+        TransformersBackend.from_pretrained = staticmethod(fake_from_pretrained)  # type: ignore[method-assign]
+        product_cli._default_candidate_backend(config, Path("models"))
+    finally:
+        TransformersBackend.from_pretrained = original  # type: ignore[method-assign]
+
+    assert calls == [
+        ("models/Qwen3-4B-pinned", "reports/retail_ops/v1/r3/sft-001/adapter"),
+    ]
+
+
+def test_committed_candidate_config_reaches_the_real_contract(workspace: Path) -> None:
+    """已提交的候选 config 必须能被真实 CandidateEvaluationConfig 接受。"""
+    from veritool_rl.agent.qwen import GenerationSettings
+    from veritool_rl.retail_ops.base_evaluation import ModelArtifact
+    from veritool_rl.retail_ops.candidate_evaluation import (
+        AdapterArtifact,
+        CandidateEvaluationConfig,
+    )
+
+    del workspace
+    raw = _load_committed_config("retail_ops_v1_r3_qwen3_4b_candidate.yaml")
+    config = CandidateEvaluationConfig(
+        dataset_version=raw["dataset_version"],
+        model=ModelArtifact(**raw["model"]),
+        adapter=AdapterArtifact(**raw["adapter"]),
+        generation=GenerationSettings(**raw["generation"]),
+        code_commit="1" * 40,
+        uv_lock_sha256="0" * 64,
+    )
+
+    assert config.seed == 0
+    assert config.max_steps == 5
+    assert len(config.model.file_sha256) == 13
+    assert len(config.adapter.file_sha256) == 7
+    assert config.adapter.adapter_dir == Path("reports/retail_ops/v1/r3/sft-001/adapter")

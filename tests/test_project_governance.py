@@ -285,6 +285,7 @@ _R3_CONFIG_NAMES = (
     "retail_ops_v1_r3_sft_smoke.yaml",
     "retail_ops_v1_r3_sft_overfit.yaml",
     "retail_ops_v1_r3_sft.yaml",
+    "retail_ops_v1_r3_qwen3_4b_candidate.yaml",
 )
 
 
@@ -341,6 +342,37 @@ def test_r3_governed_paths_remain_ignored() -> None:
         "reports/retail_ops/v1/r3-sft-001/metrics.json",
         "reports/retail_ops/v1/r3-sft-001/adapter/adapter_model.safetensors",
         "reports/retail_ops/v1/r3-sft-001/checkpoints/trainer_state.json",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path
+
+
+def test_r3_candidate_config_pins_model_and_adapter() -> None:
+    """候选 config 必须同时锁定基座模型与 adapter 的逐文件 SHA-256。"""
+    import yaml
+
+    parsed = yaml.safe_load(_read("configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml"))
+    assert parsed["pipeline"] == "formal_dev_candidate"
+    for key in ("model", "adapter"):
+        digests = parsed[key]["file_sha256"]
+        assert digests, key
+        for digest in digests.values():
+            assert len(digest) == 64, key
+    # 候选必须与 base 跑同一份基座模型，否则 delta 不能归因于 adapter。
+    base = yaml.safe_load(_read("configs/retail_ops_v1_r2_qwen3_4b_dev.yaml"))["model"]
+    assert parsed["model"] == base
+
+
+def test_r3_candidate_governed_paths_remain_ignored() -> None:
+    for ignored_path in (
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-candidate/cand-001/run.json",
+        "reports/retail_ops/v1/r3/candidate-001/candidate-report.json",
     ):
         ignored = subprocess.run(
             ["git", "check-ignore", ignored_path],
