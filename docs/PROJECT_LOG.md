@@ -1806,3 +1806,38 @@ sanity 信号，其上升不等于过拟合**。用户选择保持现状并写�
 理由：eval 数据不参与梯度、`save_strategy="no"` 用最终 epoch adapter，因此失真的 eval loss
 不污染训练或 checkpoint 选择；候选质量的权威依据是后续对 60 条 dev 任务的行为式评测
 （task_success/政策违规/非法调用），那是独立的下一个提示词范围。
+
+### LOG-20260807-07：GPU smoke 与小样本 overfit 均通过；训练路径不复现 Triton JIT 问题
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 1（外部执行门 ②③，gpu-5090 物理 GPU 0）
+- 状态：解决
+- 关联：LOG-20260807-06
+
+**环境**：gpu-5090，物理 GPU 0（RTX 5090，`GPU-07af326b-f41d-a706-2150-bc560c7db304`），
+执行前他人占用 6034 MiB；`CUDA_VISIBLE_DEVICES=0 TORCH_DISABLE_NATIVE_JIT=1`；
+代码 `ec9cad5`；transformers 5.13.1 / trl 1.8.0 / torch 2.13.0+cu130。
+
+**提示词留的未知项已解答**：R2 Task 8 只验证过 `TORCH_DISABLE_NATIVE_JIT=1` 能绕开**推理**
+路径的 Triton JIT 编译器缺失问题，训练算子路径是否同样适用未知。两次训练运行**均未复现**该
+问题，该环境变量对训练路径同样有效，不需要任何编译器或新依赖。
+
+**smoke（`retail_ops_v1_r3_sft_smoke.yaml`，8 条 / 2 step，17.8s 进程 / 7.9s wall）**：
+`train_loss=1.4479`、`eval_loss=2.3065`（均有限）；峰值 `cuda_peak_allocated=5,506,825,216`
+字节（≈5.13 GiB）；adapter 23.6 MB，`reload_adapter_offline` 返回 `loaded: true`（0.99s）；
+`loss_mask_source=trl_chat_template_assistant_mask`，确认走 TRL assistant mask 而非全序列监督。
+
+**overfit（`retail_ops_v1_r3_sft_overfit.yaml`，16 条 / 60 step / 15 epoch，54.6s 进程 /
+49.0s wall）**：train loss `1.2729 → 0.0168`（**76 倍降幅，单调下降**），
+`mean_token_accuracy 0.8605 → 0.9965`。**结论：label/assistant mask 无系统性缺陷，这批数据
+可学。** 峰值 `cuda_peak_allocated=5,511,306,752` 字节（≈5.13 GiB，与 smoke 同量级）。
+
+**eval_loss 形状（记录以便日后解读全量运行）**：`2.240 → 0.800`（epoch 3 最低）`→ 1.469`
+并平台化。先降说明 dev 侧的**工具调用部分**确实与 train 共享可学结构、不是纯噪声；后升是
+16 条样本上的正常过拟合，叠加 LOG-20260807-06 记录的最终回复口径差异（Oracle 常量串 vs
+teacher 详尽表述）。因此全量运行若出现 eval_loss 上升，**不应据此判定过拟合或 NO-GO**。
+
+**产物**（均在 ignored 路径，目录不可覆盖）：
+`reports/retail_ops/v1/r3/sft-smoke-001/`、`reports/retail_ops/v1/r3/sft-overfit-001/`，
+各含 `config.yaml`/`adapter/`/`checkpoints/`/`metrics.json`/`trainer_log_history.json`/`log.txt`。
+两者均为诊断运行，不是正式候选 adapter。

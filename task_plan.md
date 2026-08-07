@@ -56,8 +56,10 @@ R2 已完成并经用户确认（LOG-20260807-03）。当前阶段为 R3「单�
 - [x] H（审批门 2）：token 审计通过——train max=730/dev max=727，0/300 超 1024，`max_seq_len`
       保持 1024；assistant mask 无空行、end-of-turn 进 mask。顺带确认 dev eval loss 因
       Oracle 常量回复而失真，用户决定保持现状并写明口径（LOG-20260807-06）。
-- [ ] I（审批门 3）：GPU smoke（8 条 / ≤2 step / adapter reload）。
-- [ ] J（审批门 4）：小样本 overfit 检查（train loss 是否显著下降）。
+- [x] I（审批门 3）：GPU smoke 通过——未复现 Triton JIT 问题，train/eval loss 有限
+      （1.4479/2.3065），峰值 5.13 GiB，adapter 23.6 MB 且离线重载 `loaded: true`。
+- [x] J（审批门 4）：overfit 通过——train loss 1.2729→0.0168（76x，单调），token acc
+      0.8605→0.9965，证明 label/assistant mask 无系统性缺陷。
 - [ ] K（审批门 5）：真实全量 SFT（240 train + 60 dev）。
 - [ ] L（审批门 6）：训练产物同步回本地并核对哈希；记录 `docs/PROJECT_LOG.md`。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
