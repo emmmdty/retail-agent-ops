@@ -57,6 +57,12 @@
 | 2026-08-07 | R3 E RED（治理） | 3 expected failures：4 份 R3 config 尚未创建 |
 | 2026-08-07 | R3 A-F GREEN 全量门禁 | 557 passed；Ruff、mypy 55 files、`uv lock --check`、`git diff --check` 全绿 |
 | 2026-08-07 | R3 F 本地真实 dev-sft 导出（CPU/Oracle） | 60 条；0.39s；`sha256sum` 独立核对 `41ae6409...` 与公开摘要一致 |
+| 2026-08-07 | R3 G 代码 + 私有 SFT 数据同步 gpu-5090 | ff-only 到 `ec9cad5`；679KB 数据本地/远端 SHA-256 一致 |
+| 2026-08-07 | R3 H token 审计（gpu-5090 CPU，2.2s） | train max=730 / dev max=727 token；0/300 超 1024；空 mask 行 0 |
+| 2026-08-07 | R3 I GPU smoke（GPU 0，17.8s） | 未复现 Triton JIT；loss 1.4479/2.3065 有限；峰值 5.13 GiB；adapter 重载 `loaded: true` |
+| 2026-08-07 | R3 J overfit 检查（GPU 0，54.6s） | train loss 1.2729→0.0168（76x）；tok_acc 0.8605→0.9965；label/mask 无系统性缺陷 |
+| 2026-08-07 | R3 K 全量 SFT（GPU 0，2m20.8s） | train_loss 0.3722；eval_loss 0.5266/0.5603/0.5797；峰值 5.16 GiB；adapter 23.6 MB |
+| 2026-08-07 | R3 L 产物同步与核对 | 11 个文件本地/远端 SHA-256 逐一一致；`git check-ignore` 全覆盖 |
 
 ## 初始化决策
 
@@ -264,3 +270,19 @@ train/dev/holdout、调用模型或进入训练。
 - 验收：557 passed、Ruff、mypy 55 源文件、`uv lock --check`、`git diff --check` 全绿。
 - **未进入**：token 长度审计、远端同步、GPU smoke、overfit 检查、全量 SFT——均为待逐条批准的
   外部执行门。
+
+## 2026-08-07 — R3 Task 1 外部执行门（gpu-5090 物理 GPU 0）
+
+- 六个外部执行门逐条批准后执行：代码/私有数据同步 → token 审计 → GPU smoke → overfit 检查
+  → 全量 SFT → 产物同步核对。
+- token 审计确认 `max_seq_len=1024` 足够（train/dev 最长 730/727 token，0/300 超限），无需
+  调整、无静默截断；同时确认 assistant mask 无空行、end-of-turn token 进 loss mask。
+- 提示词留的未知项已解答：`TORCH_DISABLE_NATIVE_JIT=1` 对训练算子路径同样有效，两次训练
+  均未复现 Triton JIT 编译器缺失问题。
+- 三级验证阶梯全部通过：smoke（管线可跑、adapter 可重载）→ overfit（train loss 76 倍单调
+  下降，排除 label/mask 系统性缺陷）→ 全量（240+60，3 epoch，全部 loss 有限）。
+- 正式候选 adapter：`reports/retail_ops/v1/r3/sft-001/adapter/`，23.6 MB，离线重载通过；
+  运行内嵌 model pin 与 R2 dev-base config 的 revision 及 13 项逐文件哈希完全一致。
+- 已知口径限制：dev-sft 最终回复是 Oracle 常量串，eval_loss 与 train 不同分布，只能当弱
+  sanity 信号；候选质量的权威依据是后续 60 条 dev 任务的行为式评测。
+- 未进入正式 holdout 评测、release GO/NO-GO 与 serve 部署——留给下一个提示词。

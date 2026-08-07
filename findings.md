@@ -482,3 +482,28 @@
 - **未解决**：`max_seq_len=1024` 仍只有字符数粗估支撑（p95≈1025 字符），真实 Qwen3 tokenizer
   审计尚未执行。本地既无 Qwen3 tokenizer 文件也没装 transformers，因此审计安排在 gpu-5090 上
   以与训练完全相同的 transformers 版本执行（比在本地新建一套 tokenizer-only 环境更可信）。
+
+## R3 Task 1 外部执行结果（gpu-5090，2026-08-07）
+
+- **`TORCH_DISABLE_NATIVE_JIT=1` 对训练算子路径同样有效**——R2 只验证过推理路径，提示词把这
+  当作必须重新观察的未知项。smoke 与 overfit 两次训练均未复现 Triton JIT 编译器缺失问题。
+- **一次被自己推翻的判断**：直接用模型自带 chat template 调 `return_assistant_tokens_mask=True`
+  得到全零 mask，一度判为阻塞。读 TRL 1.8 源码后确认 `SFTTrainer` 在
+  `assistant_only_loss=True` 且模板无 `{% generation %}` 时会自动
+  `get_training_chat_template(processing_class)` 换用带标记的训练模板，并对"任何样本无
+  assistant token"硬抛 `RuntimeError`。教训：用裸 tokenizer 模板测出来的数字不代表训练时的
+  真实口径，要测就要测框架实际会用的那一份。
+- token 审计（用 TRL 训练模板）：train 总 token max=730/p95=723，dev max=727/p95=723，
+  **0/300 超过 1024**；assistant 监督 token train p50=139/dev p50=47，空 mask 行 0 条；
+  `is_chat_template_stop_token_trained=True`（end-of-turn 进 loss mask，模型会学会停）。
+- **overfit 检查是三级阶梯里信息量最大的一级**：train loss 1.2729→0.0168（76 倍，单调），
+  token accuracy 0.8605→0.9965。这直接排除了"assistant mask 覆盖错导致 loss 卡在高位"这类
+  系统性缺陷；smoke 通过并不能证明这一点（smoke 只跑 2 步，loss 甚至因 warmup 让 lr=0 而
+  两步不变）。
+- overfit 的 eval_loss 形状 `2.24 → 0.80（epoch 3 最低）→ 1.47 平台` 有额外信息：先降说明
+  dev 侧的工具调用部分确实与 train 共享可学结构、不是纯噪声。
+- 全量运行：`train_loss=0.3722`、`eval_loss` 三 epoch 为 `0.5266/0.5603/0.5797`、
+  `eval_mean_token_accuracy` 为 `0.9321/0.9472/0.9436`。**eval_loss 轻微上升而 token accuracy
+  上升后持平**——这正是已记录口径差异的预期表现，不是过拟合信号。
+- 实测速度远快于预估：45 step 全量只用 134s wall time（预估 2.5-4 分钟，落在区间内但接近
+  下界）；显存三次运行稳定在 5.13-5.16 GiB，与 batch/seq 形状而非 step 数相关。

@@ -60,8 +60,11 @@ R2 已完成并经用户确认（LOG-20260807-03）。当前阶段为 R3「单�
       （1.4479/2.3065），峰值 5.13 GiB，adapter 23.6 MB 且离线重载 `loaded: true`。
 - [x] J（审批门 4）：overfit 通过——train loss 1.2729→0.0168（76x，单调），token acc
       0.8605→0.9965，证明 label/assistant mask 无系统性缺陷。
-- [ ] K（审批门 5）：真实全量 SFT（240 train + 60 dev）。
-- [ ] L（审批门 6）：训练产物同步回本地并核对哈希；记录 `docs/PROJECT_LOG.md`。
+- [x] K（审批门 5）：全量 SFT 完成——train_loss 0.3722（曲线 1.1916→0.2074），eval_loss
+      0.5266/0.5603/0.5797（三 epoch），全部有限；wall time 134.25s，峰值 5.16 GiB，
+      adapter 23.6 MB，离线重载 `loaded: true`。
+- [x] L（审批门 6）：11 个产物 rsync 回本地，本地/远端 SHA-256 逐一一致；`git check-ignore`
+      确认全部被忽略、无权重进 Git；运行内嵌 model pin 与 R2 dev-base config 完全一致。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
   `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
   远端另核对模型逐文件哈希、adapter 可重载性与产物 SHA-256 本地/远端一致。

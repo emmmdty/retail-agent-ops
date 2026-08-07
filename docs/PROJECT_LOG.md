@@ -1841,3 +1841,46 @@ teacher 详尽表述）。因此全量运行若出现 eval_loss 上升，**不�
 `reports/retail_ops/v1/r3/sft-smoke-001/`、`reports/retail_ops/v1/r3/sft-overfit-001/`，
 各含 `config.yaml`/`adapter/`/`checkpoints/`/`metrics.json`/`trainer_log_history.json`/`log.txt`。
 两者均为诊断运行，不是正式候选 adapter。
+
+### LOG-20260807-08：R3 Task 1 完成——Qwen3-4B 首次真实全量 QLoRA-SFT
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 1（外部执行门 ④⑤，gpu-5090 物理 GPU 0）
+- 状态：解决
+- 关联：LOG-20260807-07
+
+**运行**：`configs/retail_ops_v1_r3_sft.yaml`，seed=0，输出
+`reports/retail_ops/v1/r3/sft-001/`。240 条 train + 60 条 dev，3 epoch，45 个 optimizer step，
+有效 batch 16（2×8），lr 2e-4，`max_seq_len=1024`，4-bit NF4，assistant-only loss，
+LoRA r=16/alpha=32/dropout=0.05/[q,k,v,o]_proj。超参全部沿用 `training/sft.py` 既有默认值，
+未做任何调整。
+
+**结果**：`train_loss=0.3722`（逐步曲线 `1.1916 → 0.2074`，`mean_token_accuracy 0.8782 →
+0.938~0.956`）；`eval_loss` 逐 epoch `0.5266 / 0.5603 / 0.5797`，
+`eval_mean_token_accuracy 0.9321 / 0.9472 / 0.9436`。全部 loss 有限（`_require_finite_losses`
+通过）。wall time 134.25s（进程 2m20.8s）；峰值 `cuda_peak_allocated=5,543,735,296` 字节
+（≈5.16 GiB，与 smoke/overfit 的 5.13 GiB 同量级）；`total_flos=1.0808e16`。
+adapter `adapter_model.safetensors` 23,631,816 字节（目录 34 MB），
+`reload_adapter_offline` 返回 `loaded: true`（1.00s）。
+
+**eval_loss 逐 epoch 轻微上升（0.527→0.580，+10%）而 eval token accuracy 反而上升后持平
+（0.932→0.947→0.944）**，与 LOG-20260807-06/07 已记录的口径差异一致：dev-sft 的最终回复是
+Oracle 常量串，train 是 teacher 详尽表述。**这不构成过拟合判据，也不是 NO-GO 依据**；候选
+质量的权威信号是后续对 60 条 dev 任务的行为式评测（task_success/政策违规/非法调用），属于
+下一个提示词范围。
+
+**provenance 闭合**：运行写出的 `config.yaml` 内嵌 `model.revision=8cd0101f70cac...` 与 13 项
+逐文件 SHA-256，经核对**与 `configs/retail_ops_v1_r2_qwen3_4b_dev.yaml` 完全一致**——base 与
+candidate 跑在同一份已哈希校验的模型文件上，后续配对评测可比。训练开始前
+`verify_local_model_files` 已逐文件校验通过（否则不会有任何产物落盘）。
+
+**产物同步（门 ⑤）**：11 个文件 rsync 回本地 `reports/retail_ops/v1/r3/sft-001/`，
+本地/远端 SHA-256 **逐一完全一致**，关键项：
+`adapter_model.safetensors=34544fac3ec9afae10f9212f730aaf275bc86b536ffaeecfb4fe0eeb745e8748`、
+`metrics.json=22621291593a19d0ecc01e65e4b08565ab75556c778d514f5466da420efb8b30`、
+`config.yaml=d103d3002254628c079d3fb8d483e1e2c7225f55f0bc82149d06f98422e2ee94`。
+全部路径经 `git check-ignore` 确认被忽略，`git status` 干净，无权重进 Git。
+
+**边界**：本任务到此为止。未打开或评测正式 120 条 holdout、未调用
+`evaluate_authorized_holdout`/`sealed_evaluation.py`、未做 release GO/NO-GO 决策、未部署 serve、
+未触碰 BFCL 固定 200 条。这些留给下一个提示词。
