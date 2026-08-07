@@ -1702,3 +1702,32 @@ v1）由"待执行"改为"当前"。
 均需用户单独确认后才能开始，本次状态变更不构成对 R3 具体任务或时间表的授权。分支
 （`feature/r2-formal-data-and-base-eval`）处置仍需单独走 finishing-a-development-branch
 流程，不因阶段状态变更而自动 merge。
+
+### LOG-20260807-04：R3 SFT 执行提示词与两处代码缺口
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 1 启动准备
+- 状态：进行中（待用户确认目标模型）
+- 关联：LOG-20260807-03、`docs/handoffs/2026-08-07-r3-sft-execution-prompt.md`
+
+**只读盘点发现的两处真实缺口**（不是提示词里的设想，是核实过的代码事实）：
+1. `training/sft.py::ModelSettings` 只有 `name: str` 路径，**没有** `revision`/`file_sha256`
+   逐文件哈希锁定（对比 `base_evaluation.py::ModelArtifact` 已有的完整 pin）。按 CLAUDE.md
+   第 5 节"正式运行固定模型标识并保存 manifest"，正式训练前必须补上并调用已有的
+   `verify_local_model_files`，否则训练可能悄悄跑在未校验的模型目录上。
+2. **dev 侧没有 sft 格式数据**：`teacher_collect` 按设计只碰 train，dev 从未产生 teacher
+   轨迹，因此只有 `train-export-001/sft.jsonl`（240 条）存在。训练要用
+   `eval_strategy="epoch"` 就需要新增一个只用 internal_reference（Oracle）跑通 60 条 dev
+   并转 `trajectory_to_sft_example` 的导出函数——这是 R3 Task 1 除 CLI 接入外唯一的新增
+   产品代码。
+
+**已定方案**：复用现有 `training/sft.py`（516 行完整 QLoRA-SFT 执行器，含 4-bit NF4、
+assistant-only loss、smoke 模式、adapter reload、不可覆盖输出）与 R2 Task 6 的
+`pipeline` 字段分派 + factory 注入缝模式，不重新发明；超参沿用其现有默认值；验证拆三层
+（GPU smoke 测管线 → 小样本 overfit 测 label/mask 正确性 → 全量 SFT），因为 smoke 通过
+不能证明数据可学。`max_seq_len=1024` 仅有字符数粗估（p95≈1025 字符）支撑，必须用真实
+tokenizer 审计后才能采信。
+
+**待用户确认**：目标模型二选一——方案 A（推荐）直接 SFT Qwen3-4B（SPEC 第 7 节已定为计划
+主模型，R2 已验证全链路），方案 B 先用 1.7B 做便宜的全链路验证。R3 正式 holdout 评测、
+release、serve 不在本提示词范围内，留待训练结果产出后单独提示词。
