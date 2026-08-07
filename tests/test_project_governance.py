@@ -126,7 +126,7 @@ def test_r1_closeout_and_r2_authorization_keep_formal_holdout_sealed() -> None:
     for expected in ("合成 qualification", "未生成正式 holdout", "不是 RetailOps 内部指标"):
         assert expected in readme
     assert "| R1 产品契约与 v0.1 | 第 1–2 周 | 已完成 |" in execution_plan
-    assert "| R2 数据与评测流水线 | 第 3–4 周 | 当前 |" in execution_plan
+    assert "| R2 数据与评测流水线 | 第 3–4 周 | 已完成 |" in execution_plan
     assert "R1 qualification 纵向切片完成" in project_log
     assert "批准并启动 R2 正式数据与双模型 Base" in project_log
     assert "正式 holdout 在\nR2 不运行真实模型" in project_log

@@ -1686,3 +1686,19 @@ ziglang 加入又移除干净无残留；两份 dev-base config 的 `model.revis
 证据完整、哈希重载校验通过、GPU/commit/config provenance 齐全）；仓库级泄漏扫描干净；
 完整 CPU 门禁在最终 HEAD 通过。是否满足 `docs/EXECUTION_PLAN.md` R2 验收目标、能否标记
 R2 已完成，交由用户最终确认。
+
+### LOG-20260807-03：用户确认 R2 已完成，`docs/EXECUTION_PLAN.md` 状态更新
+
+- 日期：2026-08-07
+- 阶段/任务：R2 收口 → R3 启动前
+- 状态：阶段变更
+- 关联：LOG-20260807-02
+
+**决定**：用户核对 R2 五项验收目标与实际证据的对照表后，明确确认 R2 已满足验收目标。
+`docs/EXECUTION_PLAN.md` 阶段总览表：R2 状态由"当前"改为"已完成"，R3（单卡适配与服务
+v1）由"待执行"改为"当前"。
+
+**后果与下一步**：R3 尚未启动任何实现；QLoRA-SFT、adapter 训练、下载/smoke Qwen3-4B 等
+均需用户单独确认后才能开始，本次状态变更不构成对 R3 具体任务或时间表的授权。分支
+（`feature/r2-formal-data-and-base-eval`）处置仍需单独走 finishing-a-development-branch
+流程，不因阶段状态变更而自动 merge。
