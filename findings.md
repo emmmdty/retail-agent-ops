@@ -507,3 +507,30 @@
   上升后持平**——这正是已记录口径差异的预期表现，不是过拟合信号。
 - 实测速度远快于预估：45 step 全量只用 134s wall time（预估 2.5-4 分钟，落在区间内但接近
   下界）；显存三次运行稳定在 5.13-5.16 GiB，与 batch/seq 形状而非 step 数相关。
+
+## R3 Task 2：候选 dev 评测结果与失败机制（2026-08-07）
+
+- **候选把一类失败换成了另一类**：格式/政策类问题被彻底清零（invalid_call 21→0、
+  policy_violation 8→0、schema_valid_rate 0.781→1.000），但 task_success 从 48/60 降到
+  43/60。终止原因分布最能说明问题：base 是 `{success:48, policy_violation:8,
+  final_response:3, step_limit:1}`，candidate 是 `{success:43, final_response:17}`——候选
+  从不违规、从不乱调工具，它只是**说完就停**。
+- **回退与"所需工具调用数"完全对应**：需要 1 次调用的四类做到 40/40；需要 2 次的
+  `refund_eligible` 5/10→0/10，需要 3 次的 `refund_recovery` 5/10→3/10。7 个新失败**全部**
+  是 `termination=final_response`、`violations=[]`。
+- **根因是训练数据的动作长度不平衡**：240 条 train 里 160 条（66.7%）只有 1 次工具调用。
+  模型学到"调一次→写总结"的主导模式并过度泛化。旁证：`average_tool_calls` 1.25→1.10、
+  `average_turns` 2.28→2.05、`average_output_tokens` 112→149（学到 teacher 的详尽风格，
+  也解释了平均延迟 2562→4176ms 的上升）。
+- **统计口径**：整体 task_success 的配对 2x2 是 b=2/c=7，精确 McNemar **p=0.1797，不显著**
+  ——单看这一项不能断言回退。但格式类是 21 vs 0（p<0.0001）与 8 vs 0（p=0.0078），确凿；
+  `refund_eligible` 单场景 0 vs 5（p=0.0625）配合上述结构性对应关系，也不能当噪声处理。
+  这组数字是"n=60 时哪些结论能说、哪些不能说"的现成例子。
+- **`verifier_reward` 反而从 0.579 升到 0.717**，而 task_success 下降——复合奖励里格式/政策
+  分量把任务失败掩盖了。这是 SPEC/CLAUDE.md 坚持"主判据是最终状态与政策 verifier、不是
+  奖励值"的具体例证。
+- 工程侧：`BaseRunEvidence` 一个字段都不能加（`_content_id` 把全部字段算进 `run_id`，
+  加字段会让两份已产出的 R2 base 证据加载失败）。候选契约改用子类扩展解决，并把这条约束
+  固化成一条以真实报告为输入的回归测试，而不是只写在注释里。
+- `_require_backend_matches_pin` 现在是**双向**的：base 拒绝任何 adapter（原有防线），
+  candidate 拒绝缺失或不符的 adapter——否则证据会声称评测了候选而实际跑的是 base。

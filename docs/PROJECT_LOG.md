@@ -1884,3 +1884,65 @@ candidate 跑在同一份已哈希校验的模型文件上，后续配对评测�
 **边界**：本任务到此为止。未打开或评测正式 120 条 holdout、未调用
 `evaluate_authorized_holdout`/`sealed_evaluation.py`、未做 release GO/NO-GO 决策、未部署 serve、
 未触碰 BFCL 固定 200 条。这些留给下一个提示词。
+
+### LOG-20260807-09：R3 Task 2 候选 dev 评测——格式/安全全面清零，但退款执行类场景显著回退
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 2（dev 候选评测，gpu-5090 物理 GPU 0）
+- 状态：解决（结论：该候选不适合直接替换 base；失败机制已定位）
+- 关联：LOG-20260807-08
+
+**运行**：`configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml`，seed=0，与
+`qwen3-4b-dev-base-001` 同 bundle/manifest/parser/预算/生成参数、同一份已哈希校验的基座模型
+（revision `8cd0101f...`，13 项逐文件哈希逐字段相同），仅多挂 R3 adapter。`compare_dev_runs`
+的 15 项配对契约字段 + model + generation + task_count 全部通过校验，delta 可归因于 adapter。
+wall time 250.7s，峰值显存 2,952,253,440 字节（base 2,941,568,000，基本持平）。
+
+**格式与安全：大幅且统计上确凿的改善**
+
+| 指标 | base | candidate | 精确 McNemar |
+|---|---|---|---|
+| invalid_call_count | 21 | **0** | p < 0.0001 |
+| policy_violation_count | 8 | **0** | p = 0.0078 |
+| schema_valid_rate | 0.781 | **1.000** | — |
+| format_error_rate | 0.153 | **0.000** | — |
+
+**任务成功率：回退，但整体不显著**
+
+`task_success` 0.800 → 0.7167（48/60 → 43/60）。配对 2×2：base✓cand✓ 41、
+base✗cand✓ 2、base✓cand✗ 7、base✗cand✗ 10，精确 McNemar **p = 0.1797——在 n=60 上不显著**，
+单看这一项不能断言回退。
+
+**但按场景拆开后模式是确凿的，且有明确机制**
+
+| 场景（所需工具调用数） | base | candidate |
+|---|---|---|
+| lookup_status（1） | 10/10 | **10/10** |
+| refund_denied_duplicate（1） | 9/10 | **10/10** |
+| refund_denied_ownership（1） | 9/10 | **10/10** |
+| refund_denied_window（1） | 10/10 | **10/10** |
+| refund_eligible（2） | 5/10 | **0/10** |
+| refund_recovery（3） | 5/10 | **3/10** |
+
+只需 1 次工具调用的四类做到 40/40 全对；需要 ≥2 次调用的两类全面回退。7 个新失败任务
+**全部**是 `termination=final_response`、`violations=[]`——模型没有违规、没有非法调用，
+它只是**说完就停，没有执行必要的状态变更**。终止原因分布：base
+`{success:48, policy_violation:8, final_response:3, step_limit:1}` →
+candidate `{success:43, final_response:17}`。
+
+**根因（有数据支撑，非推测）**：训练数据的动作长度严重不平衡——240 条里 **160 条
+（66.7%）只有 1 次工具调用**，`refund_eligible` 40 条为 2 次、`refund_recovery` 40 条为 3 次。
+模型学到了占主导的"调一次 → 写总结"模式，并把它过度泛化到需要多步执行的场景。旁证：
+`average_tool_calls` 1.25→1.10、`average_turns` 2.28→2.05（更"果断"），
+`average_output_tokens` 112→149（学到 teacher 的详尽表述风格，也解释了
+`average_latency_ms` 2562→4176 的上升）。`refund_eligible` 单场景 0 vs 5 的精确
+McNemar p=0.0625，配合"回退与所需调用数完全对应"这一结构性证据，不能当作噪声。
+
+**verifier_reward 反而上升（0.579 → 0.717）**：复合奖励里格式/政策分量占权重，任务成功率
+下降被格式满分掩盖。这正是 SPEC 与 CLAUDE.md 坚持"主判据是最终状态与政策 verifier、
+不是奖励值"的原因，本次是一个具体例证，记录备用。
+
+**结论与边界**：按 dev 证据，该候选**不适合直接替换 base**——它把一类失败（格式/违规）
+换成了另一类（漏执行）。本条不构成 SPEC 发布门禁的 GO/NO-GO 判定（那需要走 release 流程，
+属于独立范围）。未打开正式 120 条 holdout、未做 release 决策、未部署 serve。失败类别
+明确、可复现、有机制，符合 R4「失败驱动优化」的输入条件；具体改进方案需用户确认后再启动。

@@ -43,8 +43,11 @@ release GO/NO-GO 与 serve 仍不在范围内。
       `configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml`（model 段与 base config 逐字段相同）。
 - [x] F：治理测试补充 2 项（候选 config 同时锁定 model+adapter 逐文件哈希且 model 段必须
       与 base config 相同；候选私有/公开产物路径仍被 ignore）。
-- [ ] G：远端同步 + 真实 GPU 候选评测（60 条 dev，与 base 同预算）。
-- [ ] H：产物同步回本地、哈希核对、配对比较报告与记录。
+- [x] G：代码 ff-only 同步到 `0c6f552`；真实候选评测完成（GPU 0，4m18s，wall 250.7s，
+      峰值 2.95 GB），60/60 任务、evidence_complete、replayable 60。
+- [x] H：公开报告与 5 个私有证据文件同步回本地，本地/远端哈希逐一一致，本地
+      `load_candidate_run_evidence` 复算 `run_id` 与产物哈希通过；配对比较与逐场景/
+      配对 2x2/精确 McNemar 分析已记入 LOG-20260807-09。
 - 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
   `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
   另需证明两份既有 R2 base 证据加载不受影响，且候选运行的 bundle/manifest/parser/seed/

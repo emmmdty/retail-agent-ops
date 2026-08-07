@@ -63,6 +63,9 @@
 | 2026-08-07 | R3 J overfit 检查（GPU 0，54.6s） | train loss 1.2729→0.0168（76x）；tok_acc 0.8605→0.9965；label/mask 无系统性缺陷 |
 | 2026-08-07 | R3 K 全量 SFT（GPU 0，2m20.8s） | train_loss 0.3722；eval_loss 0.5266/0.5603/0.5797；峰值 5.16 GiB；adapter 23.6 MB |
 | 2026-08-07 | R3 L 产物同步与核对 | 11 个文件本地/远端 SHA-256 逐一一致；`git check-ignore` 全覆盖 |
+| 2026-08-07 | R3 T2 CPU 实现（候选评测契约 + 配对比较） | 585 passed（+28）；Ruff、mypy 56 files、lock、diff 全绿 |
+| 2026-08-07 | R3 T2 候选评测（GPU 0，4m18s） | 60/60；schema_valid 0.781→1.000、invalid_call 21→0、policy_violation 8→0；task_success 0.80→0.7167 |
+| 2026-08-07 | R3 T2 产物同步与回读 | 公开报告 + 5 个私有证据哈希逐一一致；`run_id` 本地复算通过 |
 
 ## 初始化决策
 
@@ -286,3 +289,17 @@ train/dev/holdout、调用模型或进入训练。
 - 已知口径限制：dev-sft 最终回复是 Oracle 常量串，eval_loss 与 train 不同分布，只能当弱
   sanity 信号；候选质量的权威依据是后续 60 条 dev 任务的行为式评测。
 - 未进入正式 holdout 评测、release GO/NO-GO 与 serve 部署——留给下一个提示词。
+
+## 2026-08-07 — R3 Task 2（候选 dev 评测与配对比较）
+
+- 新增 `retail_ops/candidate_evaluation.py`：adapter 逐文件哈希锁定、候选证据契约
+  （子类扩展，避免破坏已产出的 R2 base 证据自哈希）、`compare_dev_runs` 配对校验。
+- `base_evaluation.py` 抽出 `require_dev_evaluation_preconditions` 与 `measure_dev_run`
+  两个共用核心，保证 base/candidate 经过同一套守卫与同一套指标机器。
+- 真实候选评测（gpu-5090 GPU 0，60 条 dev，与 base 同契约）：格式/安全类指标全面清零
+  （invalid_call 21→0、policy_violation 8→0、schema_valid_rate 0.781→1.000），
+  但 task_success 48/60→43/60。
+- 失败机制已定位：回退完全集中在需要 ≥2 次工具调用的两类场景，7 个新失败全部是
+  "说完就停、未执行状态变更"；根因是训练数据 66.7% 只有 1 次工具调用。
+- 结论：该候选不适合直接替换 base。未做 release GO/NO-GO 判定、未打开正式 holdout、
+  未部署 serve。失败类别明确可复现，符合 R4 输入条件，具体改进需用户确认。
