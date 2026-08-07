@@ -51,9 +51,11 @@ R2 已完成并经用户确认（LOG-20260807-03）。当前阶段为 R3「单�
       SFT config 必须带 provenance pin；dev-sft/adapter/checkpoints 路径仍被 ignore）。
 - [x] F：本地 CPU 真实导出 60 条 dev SFT 数据（0.39s，无模型/无网络/无 API）；
       `sha256sum` 独立核对与公开摘要一致（`41ae6409...`），六类各 10 条、与 train 无 ID 交叉。
-- [ ] G（审批门 1）：远端代码 + 私有 SFT 数据同步到 gpu-5090。
-- [ ] H（审批门 2）：Qwen3-4B tokenizer token 长度审计（gpu-5090 CPU，报告 p50/p95/max，
-      超 1024 则回来与用户讨论 `max_seq_len`，不静默截断）。
+- [x] G（审批门 1）：代码 ff-only 同步到 `ec9cad5`；私有 SFT 数据 679KB 同步并逐一核对
+      SHA-256 一致（240 + 60 条）。
+- [x] H（审批门 2）：token 审计通过——train max=730/dev max=727，0/300 超 1024，`max_seq_len`
+      保持 1024；assistant mask 无空行、end-of-turn 进 mask。顺带确认 dev eval loss 因
+      Oracle 常量回复而失真，用户决定保持现状并写明口径（LOG-20260807-06）。
 - [ ] I（审批门 3）：GPU smoke（8 条 / ≤2 step / adapter reload）。
 - [ ] J（审批门 4）：小样本 overfit 检查（train loss 是否显著下降）。
 - [ ] K（审批门 5）：真实全量 SFT（240 train + 60 dev）。

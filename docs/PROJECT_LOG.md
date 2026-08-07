@@ -1774,3 +1774,35 @@ policy、无模型/无网络/无 API，0.39s）：60 条、六类各 10 条、�
 执行——本地既无 Qwen3 tokenizer 文件也未安装 transformers，因此审计安排在 gpu-5090 上用与训练
 完全相同的 transformers 版本执行（比在本地新建 tokenizer-only 环境更可信）。远端同步、token
 审计、GPU smoke、overfit 检查、全量 SFT 五个外部执行门均未开，需逐条单独批准。
+
+### LOG-20260807-06：token 长度审计通过；dev eval loss 口径被确认为弱信号
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 1（外部执行门 ①，gpu-5090，纯 CPU）
+- 状态：解决
+- 关联：LOG-20260807-05
+
+**执行**：私有 SFT 数据（`train-export-001/sft.jsonl` 240 条、`dev-sft-001/sft.jsonl` 60 条，
+共 679KB）同步到 gpu-5090，本地/远端 SHA-256 逐一核对一致（`09035786...`／`41ae6409...`）。
+随后用真实 Qwen3-4B tokenizer 跑 token 长度审计（`CUDA_VISIBLE_DEVICES=` 置空，2.2s，未占 GPU）。
+
+**结果（用 TRL 实际会使用的训练模板测量）**：train 总 token `max=730`/`p95=723`，
+dev `max=727`/`p95=723`，**0/300 超过 `max_seq_len=1024`**（余量约 29%），不存在截断风险，
+1024 无需调整。assistant 监督 token：train `min=45`/`p50=139`/`max=204`，
+dev `min=44`/`p50=47`/`max=133`，**空 mask 行 0 条**；`is_chat_template_stop_token_trained`
+为 True（end-of-turn token 在 loss mask 内，模型会学会停）。
+
+**一次被自己推翻的中途判断（记录以免后人重踩）**：直接对模型自带 chat template 调
+`return_assistant_tokens_mask=True` 得到全零 mask，一度被判为阻塞。实际读 TRL 1.8 源码确认
+`SFTTrainer` 在 `assistant_only_loss=True` 且模板无 `{% generation %}` 时会自动
+`get_training_chat_template(processing_class)` 换用带标记的训练模板，并对"任何样本无 assistant
+token"硬抛 `RuntimeError`。用裸 tokenizer 模板测量得到的数字不代表训练时的真实口径。
+
+**决定（用户）**：dev-sft 的最终 assistant 回复是 Oracle 常量串（60 条里 40 条最终回复，
+去重后只有 `"任务已完成。"` 一种，平均 6 字符），而 train 的 238 条 teacher 回复有 159 种不同
+表述、平均 184 字符。两者分布不同，因此 `eval_strategy="epoch"` 的 eval loss **只能当作弱
+sanity 信号，其上升不等于过拟合**。用户选择保持现状并写明口径，不为此改动 240/60 配额、
+不放宽 `collect_teacher_attempt` 的 "只接受 train split" 硬校验、不额外消耗 teacher API 预算。
+理由：eval 数据不参与梯度、`save_strategy="no"` 用最终 epoch adapter，因此失真的 eval loss
+不污染训练或 checkpoint 选择；候选质量的权威依据是后续对 60 条 dev 任务的行为式评测
+（task_success/政策违规/非法调用），那是独立的下一个提示词范围。
