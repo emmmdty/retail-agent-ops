@@ -6,59 +6,61 @@
 
 ## Current Phase
 
-R1 已完成并关闭；R2 正式数据、provider-agnostic teacher 与双模型 dev base 已完成方案审批，独立功能分支的 CPU 实现（Task 1-7）已完成并通过独立审查，正等待用户逐项批准 Task 8 的正式数据、API、模型下载与远端 GPU 命令（命令清单见 `docs/handoffs/2026-08-06-r2-external-run-commands.md`）。
+R2 已完成并经用户确认（LOG-20260807-03）。当前阶段为 R3「单卡适配与服务 v1」。本次任务是 R3
+的第一个纵向切片：把已有 QLoRA-SFT 训练器接入正式 CLI，并对 **Qwen3-4B**（用户 2026-08-07 选定
+方案 A）完成一次真实单卡 QLoRA-SFT。正式 holdout 评测、release GO/NO-GO 与 serve 不在本次范围。
+执行提示词见 `docs/handoffs/2026-08-07-r3-sft-execution-prompt.md`。
 
 ## Current Task
 
-- 输入：干净基线 `a3c748bdad1ce6fb7ec8a838d2f1f36da0bbae60`、批准的数据版本 `retail_ops_v1_r2_20260722`、train/dev/holdout=`240/60/120`、动态 teacher 路由、Qwen3-1.7B/4B 固定 revision 与全部外部资源审批门。
-- 输出：正式任务生成与 answer-free manifest、密封 holdout receipt/evaluator、可恢复 teacher 采集与 240 条 train 导出、两份真实 dev base 及完整 provenance；在代码/假后端验收后经用户逐项批准正式数据、API、模型下载和远端 GPU 命令。
-- 非目标：不训练 adapter，不执行 SFT/DPO/GRPO，不在 R2 打开正式 holdout 做模型评测，不修改 BFCL 固定 200 条或其失败样例，不自动 push/merge/发布，不全仓重命名 `veritool_rl`。
-- 影响文件：`src/veritool_rl/retail_ops/`、`src/veritool_rl/product_cli.py`、`tests/`、`configs/`、`manifests/retail_ops/v1/`、`pyproject.toml`/`uv.lock`、R2 spec/plan、三份 planning 文件和追加式项目日志；私有数据位于 ignored `data/private/retail_ops/v1/r2/`。
-- [x] 创建 `feature/r2-formal-data-and-base-eval` 并复核 CPU 基线。
-- [x] 写入并自审 R2 正式设计与逐任务 TDD 实施计划。
-- [x] Task 1：实现并复审 formal family-first 任务生成、五类指纹和 420 条环境语义回归（`83bd0b3`、`dfdb8dd`）。
-- [x] Task 2：实现并复审 schema 2.0 manifest、verified dataset、五维隔离与两阶段 sealed holdout（`e877bd2`、`87a65ff`）。
-- [x] Task 3：实现并复审 provider-agnostic teacher 路由与 OpenAI-compatible client 传输边界（`7153c26`）。
-- [x] Task 4：实现并复审 teacher 采集、回放质检与 train 导出（`1d60af2`）。
-- [x] Task 5：实现并复审 sealed holdout evaluator 合同、formal dev loader、Qwen dev base 证据与可注入硬件测量（CPU/fake backend）；独立审查发现 1 项 Important（backend↔pin 未绑定 adapter/生成参数）已修复复审通过（`06a41f9`、`bea052c`）。
-- [x] Task 6：严格 R2 CLI/config 分发（`product_cli.py` 按 `pipeline` 分派 formal_freeze/
-      teacher_collect/train_export/formal_dev_base，R1 精确 key 集合路径逐字节不变）、
-      6 份新 R2 config 与 CPU 端到端 fake 验收；独立审查发现 4 项 Important（私有根路径校验、
-      `.env` 边界回归测试过宽、teacher_collect resume 零覆盖、缺 `uv lock --check` 治理测试）
-      已修复复审通过（`07da971`、`96536c9`）。
-- [x] Task 7：整分支审查（`a3c748b..HEAD`）发现 3 项 Important（`formal_dev_base` 跳过五维
-      隔离断言、`export_formal_train` 仅凭 `task_id` 匹配证据、`code_commit` 可能来自脏工作树）
-      已修复复审通过（`c4d7fdc`）；从头完整 CPU 门禁 + 仓库级 secret/BFCL/holdout 泄漏扫描
-      通过；产出 `docs/handoffs/2026-08-06-r2-external-run-commands.md`。
-- [x] Task 8 Step 1：formal freeze 已批准执行并提交公开 manifest（`89e8039`）。
-- [x] Task 8 Step 2（首次执行）：`.env` preflight + route snapshot 确认；批准的 6 任务
-      smoke 命令实际处理了全部 240 条 train（`configs/retail_ops_v1_r2_teacher_smoke.yaml`
-      无任务数量限制，命令清单文档描述有误）；诊断发现 `refund_denied_window`
-      （12/40=30%，低于 50% 门槛）根因是环境设计缺陷而非 teacher 能力问题——
-      `environment.py::_get_order` 从未把 `current_day` 暴露给模型，该场景对任何推理式
-      agent 事实上不可解（见 LOG-20260806-06/07）。已停止，未请求 Step 3 批准。
-- [x] Task 8 修复轮：TDD 修复 `environment.py::_get_order`，统一在返回内容中加入
-      `current_day` 字段（未重新冻结数据）；新增 2 个测试；508 passed、Ruff/mypy/diff 全绿
-      （`11029bb`）。独立审查 PASS，无 Critical/Important，一项 Minor（legacy
-      `envs/mini_retail.py` 同类缺口，未接入 R2 流水线，不阻塞）（LOG-20260806-09/10）。
-- [x] 恢复 Task 8 Step 2/3：用户批准跳过重复 smoke，直接在修复后环境下用完整预算
-      （`teacher-full-001`，2 episode/3 attempt）重新采集，238/240 通过质量门
-      （`refund_denied_window` 30%→95%，确认环境修复有效）；`train_export` 导出 240 条
-      正式 train（`d0adbd7`）。文档描述已更正（`63137aa`）。
-- [x] Task 8 Step 4：远端只读盘点选定 gpu-5090（物理 GPU 0，RTX 5090）；代码/模型/私有
-      dev 数据同步；排查并解决两个真实基础设施问题（符号链接触发路径逃逸安全检查——改真实
-      复制；`torch>=2.13` Triton JIT 缺系统编译器——最终用 `TORCH_DISABLE_NATIVE_JIT=1`
-      环境变量解决，中途尝试的 ziglang 依赖已回退清理）；Qwen3-1.7B（task_success=0.70）
-      与 Qwen3-4B（task_success=0.80）60 任务 dev base 均完整跑通，证据哈希重载校验通过。
-- [x] Task 8 Step 5：两份公开 `base-report.json` 同步回本地，本地/远端 SHA-256 逐一核对
-      一致；本地重新加载校验通过。
-- [x] Task 8 Step 6：最终 HEAD（`5b3b45f`）重跑完整 CPU 门禁（508 passed、Ruff、mypy、
-      lock、diff 全绿）；仓库级 secret/BFCL/holdout 泄漏扫描干净；独立复审
-      （`c4d7fdc..HEAD`）PASS，无 Critical/Important（含从公开 `dev.json` 独立重算哈希
-      验证证据链未被篡改）（LOG-20260807-01/02）。
-- [ ] R2 是否满足 `docs/EXECUTION_PLAN.md` 验收目标、能否标记已完成，以及分支处置
-      （merge/no-merge），交由用户最终确认。
-- 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、`uv lock --check`、`git diff --check`；正式阶段另验证重复构建哈希、secret/BFCL/holdout 泄漏扫描、API route snapshot 和远端产物哈希一致性。
+- 输入：干净基线 `1af7b32`（508 passed、Ruff/mypy/lock/diff 全绿）；已冻结数据版本
+  `retail_ops_v1_r2_20260722`；已产出私有 train SFT 数据
+  `train-export/train-export-001/sft.jsonl`（240 条 `messages+tools`）；已下载并逐文件哈希
+  校验的 Qwen3-4B（gpu-5090 `models/Qwen3-4B-pinned/`，revision `8cd0101f...`，13 文件哈希
+  已在 `configs/retail_ops_v1_r2_qwen3_4b_dev.yaml`）；已有 `training/sft.py::run_sft` 完整
+  QLoRA-SFT 执行器与 R2 Task 6 的 `pipeline` 分派 + factory 注入缝模式。
+- 输出：`ModelSettings` provenance 锁定（`revision`/`file_sha256` + `verify_local_model_files`）；
+  dev 侧 Oracle-only SFT 导出（60 条）；`product_cli.py` 新增 `dev_sft_export`/`sft` 两条 build
+  流水线；4 份 R3 config；治理测试补充；Qwen3-4B tokenizer token 长度审计报告；GPU smoke →
+  小样本 overfit → 全量 SFT 三级验证证据（adapter + metrics.json + 可重载性）。
+- 非目标：不打开/评测正式 120 条 holdout，不调用 `evaluate_authorized_holdout`/
+  `sealed_evaluation.py`；不触碰 BFCL 固定 200 条及其失败样例；不做 release 决策、不部署 serve；
+  不改 240/60 数据配额、LoRA 目标模块、损失口径或模型选择；不绕过
+  `_ensure_new_training_output`；不自动 push/merge/发布；不全仓重命名 `veritool_rl`。
+- 影响文件：`src/veritool_rl/training/sft.py`、`src/veritool_rl/retail_ops/dev_sft_export.py`
+  （新增）、`src/veritool_rl/product_cli.py`、`tests/test_sft_config.py`、
+  `tests/test_dev_sft_export.py`（新增）、`tests/test_retail_ops_r3_cli.py`（新增）、
+  `tests/test_project_governance.py`、`configs/retail_ops_v1_r3_*.yaml`（新增 4 份）、
+  三份 planning 文件与 `docs/PROJECT_LOG.md`；私有产物落在 ignored
+  `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-sft/` 与训练输出目录。
+- 失败模式：训练悄悄跑在未哈希校验的模型目录上；dev-sft 误用 teacher/非 dev split；
+  `max_seq_len=1024` 不足导致静默截断；smoke 通过但 assistant mask 覆盖错导致 loss 不下降；
+  正式训练目录被覆盖；train/eval loss 出现 NaN/Inf 而流程继续；远端命令未逐条批准即执行。
+- [x] A：`ModelSettings` provenance 锁定：新增必填 `revision`/`file_sha256`，`run_sft` 在
+      任何写盘与任何重量级 import 之前调用 `verify_local_model_files`；3 条 RED（字段缺失、
+      篡改文件、清单外多余文件）已转 GREEN。副作用：4 份 legacy SFT config 现在 fail-closed，
+      已在文件头注明需回填真实哈希。
+- [x] B：新增 `retail_ops/dev_sft_export.py`（`build_dev_sft_rows`/`write_dev_sft_export`）；
+      公开接口不接受任何 client 参数，结构上无法对 dev 发起 teacher 请求；复用已审计的
+      路径安全/staging-publish/失败回滚；14 个测试。
+- [x] C：`product_cli.py` 新增 `dev_sft_export`/`sft` 两条 build 流水线，各自精确 key 集合；
+      `trainer_factory` 注入缝（默认工厂就是真实 `run_sft`）；28 个 CPU 测试。
+- [x] D：4 份 R3 config；训练数据只写私有根内相对路径（`*_relpath`），私有根前缀由
+      `--input_dir` 运行时提供，与 R2 同一约定。
+- [x] E：治理测试补 4 项（R3 config 无 secret/绝对路径/私有根；不引用 BFCL/holdout；
+      SFT config 必须带 provenance pin；dev-sft/adapter/checkpoints 路径仍被 ignore）。
+- [x] F：本地 CPU 真实导出 60 条 dev SFT 数据（0.39s，无模型/无网络/无 API）；
+      `sha256sum` 独立核对与公开摘要一致（`41ae6409...`），六类各 10 条、与 train 无 ID 交叉。
+- [ ] G（审批门 1）：远端代码 + 私有 SFT 数据同步到 gpu-5090。
+- [ ] H（审批门 2）：Qwen3-4B tokenizer token 长度审计（gpu-5090 CPU，报告 p50/p95/max，
+      超 1024 则回来与用户讨论 `max_seq_len`，不静默截断）。
+- [ ] I（审批门 3）：GPU smoke（8 条 / ≤2 step / adapter reload）。
+- [ ] J（审批门 4）：小样本 overfit 检查（train loss 是否显著下降）。
+- [ ] K（审批门 5）：真实全量 SFT（240 train + 60 dev）。
+- [ ] L（审批门 6）：训练产物同步回本地并核对哈希；记录 `docs/PROJECT_LOG.md`。
+- 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
+  `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
+  远端另核对模型逐文件哈希、adapter 可重载性与产物 SHA-256 本地/远端一致。
 
 ## Task Rules
 

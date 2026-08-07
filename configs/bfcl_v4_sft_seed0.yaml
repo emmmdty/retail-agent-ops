@@ -1,3 +1,7 @@
+# 注意: `ModelSettings` 自 R3 起要求 `model.revision` 与 `model.file_sha256`
+# （逐文件 SHA-256），正式训练前会调用 verify_local_model_files 校验。这份 legacy
+# config 尚未回填真实值，直接使用会在配置校验阶段 fail-closed；恢复使用前需先用
+# `hash_local_model_files` 对实际模型目录重算并填入。
 # 一次正式 BFCL QLoRA-SFT；使用最终第 3 epoch adapter。
 model:
   name: models/Qwen3-1.7B

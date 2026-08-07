@@ -278,3 +278,75 @@ def test_uv_lock_check_succeeds_through_project_level_index_pinning() -> None:
         check=False,
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+
+_R3_CONFIG_NAMES = (
+    "retail_ops_v1_r3_dev_sft_export.yaml",
+    "retail_ops_v1_r3_sft_smoke.yaml",
+    "retail_ops_v1_r3_sft_overfit.yaml",
+    "retail_ops_v1_r3_sft.yaml",
+)
+
+
+def test_r3_configs_contain_no_secrets_or_private_paths() -> None:
+    """R3 新增 config 与 R2 同一口径：解析后的取值不得含真实凭据、绝对路径或
+    私有根路径字面量。训练数据路径只写私有根内的相对片段，前缀由 `--input_dir`
+    在运行时提供，因此这条断言对 SFT config 同样成立。"""
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R3_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
+
+
+def test_r3_configs_never_reference_bfcl_or_holdout() -> None:
+    """R3 config 与训练侧代码不得引用 BFCL 固定 200 条或正式 holdout。"""
+    scanned = [ROOT / "src/veritool_rl/retail_ops/dev_sft_export.py"]
+    scanned.extend(ROOT / "configs" / name for name in _R3_CONFIG_NAMES)
+    for path in scanned:
+        text = path.read_text(encoding="utf-8").lower()
+        assert "bfcl" not in text, path
+        assert "holdout" not in text, path
+
+
+def test_r3_sft_configs_pin_model_provenance() -> None:
+    """每份正式 SFT config 都必须带 revision + 逐文件 SHA-256，不允许无 pin 训练。"""
+    import yaml
+
+    for name in _R3_CONFIG_NAMES:
+        parsed = yaml.safe_load(_read(f"configs/{name}"))
+        if parsed.get("pipeline") != "sft":
+            continue
+        model = parsed["model"]
+        assert len(model["revision"]) >= 7, name
+        assert model["file_sha256"], name
+        for digest in model["file_sha256"].values():
+            assert len(digest) == 64, name
+
+
+def test_r3_governed_paths_remain_ignored() -> None:
+    """R3 新增的 dev-sft 私有产物与训练输出（adapter/checkpoints）必须仍被既有
+    `.gitignore` 规则覆盖，不需要新增规则。"""
+    for ignored_path in (
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-sft/dev-sft-001/sft.jsonl",
+        "models/Qwen3-4B-pinned/model-00001-of-00003.safetensors",
+        "reports/retail_ops/v1/r3-sft-001/metrics.json",
+        "reports/retail_ops/v1/r3-sft-001/adapter/adapter_model.safetensors",
+        "reports/retail_ops/v1/r3-sft-001/checkpoints/trainer_state.json",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path

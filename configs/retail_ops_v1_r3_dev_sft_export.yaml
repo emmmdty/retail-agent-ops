@@ -1,0 +1,8 @@
+# R3 dev_sft_export: 用 internal reference（Oracle）为全部 60 条正式 dev 任务导出
+# 与 train 侧 sft.jsonl 同格式的训练 eval 数据。不调用 teacher、不加载模型、不用 GPU。
+# --input_dir 指向 formal_freeze 的私有根，--output_dir 只收公开聚合摘要 dev-sft.json。
+pipeline: dev_sft_export
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
+attempt_id: dev-sft-001

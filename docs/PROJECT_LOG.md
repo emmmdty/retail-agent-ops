@@ -1731,3 +1731,46 @@ tokenizer 审计后才能采信。
 **待用户确认**：目标模型二选一——方案 A（推荐）直接 SFT Qwen3-4B（SPEC 第 7 节已定为计划
 主模型，R2 已验证全链路），方案 B 先用 1.7B 做便宜的全链路验证。R3 正式 holdout 评测、
 release、serve 不在本提示词范围内，留待训练结果产出后单独提示词。
+
+### LOG-20260807-05：R3 Task 1 目标模型定为 Qwen3-4B；SFT provenance 锁定改为必填
+
+- 日期：2026-08-07
+- 阶段/任务：R3 / Task 1（SFT 训练接入）
+- 状态：进行中（本地 CPU 部分完成，外部执行门未开）
+- 关联：LOG-20260807-04
+
+**决定 1（用户）**：目标模型选方案 A——直接对 Qwen3-4B 做 QLoRA-SFT，不先用 Qwen3-1.7B 做
+一轮便宜的全链路验证。理由沿用提示词：`SPEC.md` 第 7 节已把 4B 定为计划主模型，R2 Task 8 已在
+gpu-5090 验证过 4B 的下载/校验/真实 GPU 推理全链路，没有需要用小模型探路的基础设施不确定性。
+1.7B 的 dev base 保留为系统卡里的成本/延迟对照基线。
+
+**决定 2（工程）**：`training/sft.py::ModelSettings` 的 `revision`/`file_sha256` 定为**必填**
+而非可选。可选字段等于把"要不要校验模型"交给配置作者，原来的洞并未真正关闭。校验点放在
+`run_sft` 里确认 model_path 是目录之后、`_ensure_new_training_output` 与 `import torch` 之前，
+保证被篡改的模型目录不会在输出目录留下任何产物，同时整条校验路径纯 CPU 可测。
+
+**已知后果（需要记录，不是缺陷）**：4 份 legacy SFT config（`sft.example.yaml`、
+`mvp_sft_qwen3_1_7b.yaml`、`bfcl_v4_sft_seed0.yaml`、`bfcl_v4_sft_seed0_smoke.yaml`）现在会在
+配置校验阶段 fail-closed。它们只被 legacy `scripts/train_sft.py` 使用，不在 R1-R3 流水线上；
+已在各文件头注明恢复使用前需用 `hash_local_model_files` 回填真实值。选择 fail-closed 而不是
+填占位哈希：占位值会在更远的地方以更难解释的形式失败。
+
+**决定 3（工程）**：dev 侧 SFT 导出放进新模块 `retail_ops/dev_sft_export.py`，其公开接口
+**不接受任何 client 参数**——"dev 任务绝不调用 teacher"这条治理属性由函数签名结构性保证，
+比事后断言强。落盘复用 `teacher_data.py` 已审计的路径安全/staging-publish/失败回滚实现，
+不新写第五份路径安全代码（Task 7 整分支审查专门点过这类实现漂移风险）。
+
+**决定 4（工程）**：R3 SFT config 的训练数据路径写成私有根内的相对片段
+（`train_relpath`/`eval_relpath`）+ 运行时 `--input_dir`，而不是把 `data/private/...` 写进已
+提交配置，使 R2 建立的"已提交 config 不含私有根字面量"治理断言可以原样覆盖 R3。
+
+**验证**：557 passed（R2 收口基线 508 + 本任务 49）、Ruff、mypy 55 源文件、
+`uv lock --check`、`git diff --check` 全绿。本地真实执行了一次 dev-sft 导出（纯 CPU、Oracle
+policy、无模型/无网络/无 API，0.39s）：60 条、六类各 10 条、与 train 240 条无 task_id 交叉，
+`sha256sum` 独立重算 `41ae6409438005d2f2c36dcec135c27b44232e24a0b95850c70668cfa6a26024`
+与公开摘要 `private_artifact_sha256` 逐字符一致。
+
+**未解决 / 下一步**：`max_seq_len=1024` 仍只有字符数粗估支撑，真实 Qwen3 tokenizer 审计尚未
+执行——本地既无 Qwen3 tokenizer 文件也未安装 transformers，因此审计安排在 gpu-5090 上用与训练
+完全相同的 transformers 版本执行（比在本地新建 tokenizer-only 环境更可信）。远端同步、token
+审计、GPU smoke、overfit 检查、全量 SFT 五个外部执行门均未开，需逐条单独批准。

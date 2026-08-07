@@ -50,6 +50,13 @@
 | 2026-08-05 | Task 4 RED（新建 `tests/test_teacher_data.py`） | 缺 `teacher_data` 模块，全部按预期失败 |
 | 2026-08-05 | Task 4 首轮 GREEN | 27 selected passed；360 full passed（新增 runner.py/generators.py wire-format 回归） |
 | 2026-08-05 | Task 4 独立审查后修复三项真实治理漏洞并补对抗性回归测试 | 32 selected passed；365 full passed；Ruff、mypy 52 files、lock、diff 全部通过 |
+| 2026-08-07 | R3 Task 1 preflight（HEAD `1af7b32`） | 508 passed；Ruff、mypy 54 files、lock、diff 全绿 |
+| 2026-08-07 | R3 A RED（provenance） | 3 expected failures：`revision`/`file_sha256` 为 extra_forbidden、无哈希校验 |
+| 2026-08-07 | R3 B RED（dev_sft_export） | collection error：缺 `retail_ops.dev_sft_export` 模块 |
+| 2026-08-07 | R3 C RED（CLI 分派） | 23 expected failures：缺 `_run_dev_sft_export`/`_run_sft` |
+| 2026-08-07 | R3 E RED（治理） | 3 expected failures：4 份 R3 config 尚未创建 |
+| 2026-08-07 | R3 A-F GREEN 全量门禁 | 557 passed；Ruff、mypy 55 files、`uv lock --check`、`git diff --check` 全绿 |
+| 2026-08-07 | R3 F 本地真实 dev-sft 导出（CPU/Oracle） | 60 条；0.39s；`sha256sum` 独立核对 `41ae6409...` 与公开摘要一致 |
 
 ## 初始化决策
 
@@ -238,3 +245,22 @@ train/dev/holdout、调用模型或进入训练。
   dev base 均完整跑通并通过证据重载校验，公开报告已同步回本地且哈希核对一致。
 - Step 6：完整 CPU 门禁在实际最终 HEAD 重跑通过；仓库级 secret/BFCL/holdout 泄漏扫描干净；
   Task 8 阶段独立复审进行中。
+
+## 2026-08-07 — R3 Task 1（SFT CLI 接入，本地 CPU 部分）
+
+- 用户选定方案 A：直接对 Qwen3-4B 做 SFT，不先用 1.7B 探路。
+- `training/sft.py::ModelSettings` 补齐 provenance 锁定：`revision`/`file_sha256` 必填，
+  `run_sft` 在任何写盘和 `import torch` 之前调用 `verify_local_model_files`。三条 RED
+  （字段不存在、文件被篡改、清单外多余文件）先失败后通过，全部在纯 CPU 上用真实 `run_sft` 验证。
+- 新增 `retail_ops/dev_sft_export.py`：只用 Oracle 为 dev 生成轨迹并转 `trajectory_to_sft_example`，
+  公开接口不接受 client 参数；私有 `dev-sft/<attempt_id>/sft.jsonl` 经 staging 原子发布，
+  公开侧只留不含 task_id 的聚合摘要。
+- `product_cli.py` 新增 `dev_sft_export`/`sft` 两条 build 流水线（各自精确 key 集合、
+  `trainer_factory` 注入缝、私有根相对路径逐分量校验）；R1/R2 既有路径未改动。
+- 新增 4 份 R3 config 与 4 项治理断言；另加"已提交 config 必须能穿过 CLI 并被真实
+  `resolve_sft_config` 接受"的防漂移测试。
+- 本地真实执行 dev-sft 导出（纯 CPU、Oracle、无模型/网络/API）：60 条、六类各 10 条、
+  与 train 无 ID 交叉、哈希独立核对一致。
+- 验收：557 passed、Ruff、mypy 55 源文件、`uv lock --check`、`git diff --check` 全绿。
+- **未进入**：token 长度审计、远端同步、GPU smoke、overfit 检查、全量 SFT——均为待逐条批准的
+  外部执行门。

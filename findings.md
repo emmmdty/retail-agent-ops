@@ -450,3 +450,35 @@
   `dev.json` 重新计算 `dev_manifest_sha256`，逐字符匹配两份 `base-report.json` 的记录），
   结论 PASS，无 Critical/Important。R2 是否达到 `docs/EXECUTION_PLAN.md` 验收目标、能否
   标记已完成，交由用户最终确认。
+
+## R3 Task 1：SFT CLI 接入与 provenance 锁定（2026-08-07）
+
+- 用户选定**方案 A：直接对 Qwen3-4B 做 SFT**（不先跑 1.7B 全链路验证）。1.7B 的 dev base
+  （task_success=0.70）继续作为系统卡里的成本/延迟对照基线，本轮不重复训练。
+- `ModelSettings.revision`/`file_sha256` 定为**必填**（与 `base_evaluation.py::ModelArtifact`
+  同一口径），而不是可选字段——可选就等于把"是否校验"交给配置作者，洞还在。直接后果是 4 份
+  legacy SFT config（`sft.example`/`mvp_sft_qwen3_1_7b`/`bfcl_v4_sft_seed0`/
+  `bfcl_v4_sft_seed0_smoke`）现在会在配置校验阶段 fail-closed；它们只被 legacy
+  `scripts/train_sft.py` 使用，不在 R1-R3 流水线上，已在文件头注明需要回填真实哈希后才能恢复使用。
+- `verify_local_model_files` 的调用点选在 `run_sft` 里"确认 model_path 是目录"之后、
+  `_ensure_new_training_output` 与 `import torch` 之前。这个位置有两个好处：被篡改的模型目录
+  不会在输出目录留下任何声称跑了锁定模型的产物；而且整条校验路径纯 CPU，本地没装 torch 也能
+  用真实 `run_sft`（而非 mock）写回归测试。
+- dev 侧导出放在新模块 `retail_ops/dev_sft_export.py` 而不是 `teacher_data.py`：关键治理属性是
+  "dev 任务绝不会调用 teacher client"，把它做成**函数签名里根本没有 client 参数**比事后断言更强。
+  落盘复用 `teacher_data.py` 已审计的 `_resolve_within`/staging-publish/失败回滚，不新写第五份
+  路径安全实现（Task 7 审查专门点过这类漂移风险）。
+- 两份新 config 的训练数据路径采用 `--input_dir` + 私有根内相对路径（`train_relpath`/
+  `eval_relpath`），而不是把 `data/private/...` 写进已提交 config。这样 R2 建立的"已提交 config
+  不含私有根字面量"治理断言可以原样扩展到 R3，代价只是 CLI 里多一层 `_private_data_path`
+  逐分量校验+`_resolve_within` 拼接。
+- 回滚原子性测试最初断言"整个 `dev-sft/` 父目录消失"，实测残留一个空父目录——这与
+  `write_formal_train_export` 的既有回滚口径一致（只回滚 attempt 目录）。已把断言改成真实契约
+  （attempt 目录消失且父目录为空），没有为了让测试通过而收紧生产行为。
+- 本地真实 dev-sft 导出结果：60 条，六类各 10 条，`sha256sum` 独立重算
+  `41ae6409438005d2f2c36dcec135c27b44232e24a0b95850c70668cfa6a26024` 与公开摘要
+  `private_artifact_sha256` 一致；与 train 侧 240 条无任何 task_id 交叉，字段集合与 `tools`
+  完全一致，训练器的格式检测可直接同格式加载。
+- **未解决**：`max_seq_len=1024` 仍只有字符数粗估支撑（p95≈1025 字符），真实 Qwen3 tokenizer
+  审计尚未执行。本地既无 Qwen3 tokenizer 文件也没装 transformers，因此审计安排在 gpu-5090 上
+  以与训练完全相同的 transformers 版本执行（比在本地新建一套 tokenizer-only 环境更可信）。

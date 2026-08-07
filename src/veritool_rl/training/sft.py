@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import math
+import re
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -11,8 +12,12 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from veritool_rl.agent.qwen import verify_local_model_files
 from veritool_rl.artifacts import write_json, write_yaml
 from veritool_rl.paths import validate_project_relative_path
+
+_MODEL_FILE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ConfigModel(BaseModel):
@@ -22,13 +27,40 @@ class ConfigModel(BaseModel):
 
 
 class ModelSettings(ConfigModel):
+    """训练侧的模型 pin：路径 + revision + 逐文件 SHA-256。
+
+    与 `base_evaluation.py::ModelArtifact` 同一套 provenance 口径。`revision`
+    只做形状校验（模型 pin 会随上游仓库变化，不在代码里硬编码），真正的
+    防篡改依据是 `file_sha256` 配合 `agent/qwen.py::verify_local_model_files`
+    的"清单外文件/子目录/符号链接一律拒绝"。两个字段都是必填：正式训练不
+    允许跑在一个未经哈希校验的模型目录上（CLAUDE.md 第 5 节）。
+    """
+
     name: str = "models/Qwen3-1.7B"
     load_in_4bit: bool = True
+    revision: str = Field(pattern=r"^[0-9a-f]{7,64}$")
+    file_sha256: dict[str, str]
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
         validate_project_relative_path(value, "model.name")
+        return value
+
+    @field_validator("file_sha256")
+    @classmethod
+    def validate_file_sha256(cls, value: dict[str, str]) -> dict[str, str]:
+        """文件名不得注入路径分隔符，摘要必须是 SHA-256。"""
+        if not value:
+            msg = "model.file_sha256 不得为空"
+            raise ValueError(msg)
+        for name, digest in value.items():
+            if not name or name in {".", ".."} or _MODEL_FILE_PATTERN.fullmatch(name) is None:
+                msg = f"model.file_sha256 文件名必须是安全的单一路径片段: {name!r}"
+                raise ValueError(msg)
+            if _SHA256_PATTERN.fullmatch(digest) is None:
+                msg = f"model.file_sha256 摘要必须是 SHA-256: {name}"
+                raise ValueError(msg)
         return value
 
 
@@ -137,11 +169,7 @@ def validate_tokenized_sft_rows(
             or not isinstance(labels, list)
         ):
             raise ValueError(f"{task_id} tokenized 字段必须是列表")
-        if (
-            not input_ids
-            or len(input_ids) != len(attention_mask)
-            or len(input_ids) != len(labels)
-        ):
+        if not input_ids or len(input_ids) != len(attention_mask) or len(input_ids) != len(labels):
             raise ValueError(f"{task_id} input/attention/labels 长度不一致")
         if len(input_ids) > max_seq_len:
             raise ValueError(
@@ -201,9 +229,7 @@ def _detect_sft_data_format(
     formats: set[SftDataFormat] = set()
     for index, row in enumerate(rows):
         has_messages = "messages" in row and "tools" in row
-        has_tokens = all(
-            field in row for field in ("input_ids", "attention_mask", "labels")
-        )
+        has_tokens = all(field in row for field in ("input_ids", "attention_mask", "labels"))
         if has_messages == has_tokens:
             task_id = row.get("task_id", f"row-{index}")
             raise ValueError(f"{task_id} 无法唯一识别 SFT 数据格式")
@@ -325,6 +351,10 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     model_path = Path(resolved.model.name)
     if not model_path.is_dir():
         raise FileNotFoundError(model_path)
+    # provenance 先于任何写盘和任何重量级 import：被替换/篡改/多塞文件的模型目录
+    # 必须在产生任何训练产物之前就阻断，否则输出目录会留下一个声称跑了锁定模型、
+    # 实际跑了别的权重的运行记录。
+    verify_local_model_files(model_path, resolved.model.file_sha256)
     _ensure_new_training_output(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(output_dir / "config.yaml", resolved.model_dump(mode="json"))

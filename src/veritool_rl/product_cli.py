@@ -36,6 +36,7 @@ from veritool_rl.retail_ops.base_evaluation import (
     load_verified_formal_dev,
 )
 from veritool_rl.retail_ops.bundle import load_bundle
+from veritool_rl.retail_ops.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
 from veritool_rl.retail_ops.environment import RetailOpsEnv
 from veritool_rl.retail_ops.evaluation import (
     EvaluationMode,
@@ -66,6 +67,7 @@ from veritool_rl.retail_ops.teacher_data import (
     write_teacher_checkpoint,
 )
 from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot, load_teacher_route
+from veritool_rl.training.sft import run_sft
 
 _R2_PRIVATE_ROOT = Path("data/private/retail_ops/v1/r2")
 _SAFE_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -159,6 +161,10 @@ def _run_build(args: argparse.Namespace) -> None:
         _run_teacher_collect(args, config)
     elif pipeline == "train_export":
         _run_train_export(args, config)
+    elif pipeline == "dev_sft_export":
+        _run_dev_sft_export(args, config)
+    elif pipeline == "sft":
+        _run_sft(args, config)
     else:
         raise ValueError(f"未知 build pipeline: {pipeline!r}")
 
@@ -603,6 +609,135 @@ def _run_formal_dev_base(
         public_report_path=public_report_path,
         hardware_provider=hardware_provider,
     )
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: dev_sft_export (build)
+# ---------------------------------------------------------------------------
+
+_DEV_SFT_EXPORT_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "dataset_version",
+    "dev_manifest_path",
+    "attempt_id",
+}
+
+
+def _run_dev_sft_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    """用 internal reference（Oracle）为全部 60 条 dev 任务导出训练侧 eval 数据。
+
+    绝不读取环境变量、绝不构造 teacher client：`build_dev_sft_rows` 的签名里
+    根本没有 client 参数。dev 记录经 `load_verified_formal_dev`（purpose 与
+    split 在触碰文件系统之前判定）加载，因此这条通道无法被指向 holdout。
+    """
+    _require_config_keys(config, _DEV_SFT_EXPORT_KEYS)
+    if args.input_dir is None:
+        raise ValueError("dev_sft_export 需要 --input_dir 指向 formal_freeze 的私有根目录")
+
+    bundle_dir = _bundle_dir(config)
+    dataset_version = _dataset_version(config)
+    dev_manifest_path = _project_relative_path(config, "dev_manifest_path")
+    attempt_id = _attempt_id(config)
+
+    bundle = load_bundle(bundle_dir)
+    # 与 formal_dev_base 同一套统一校验：只有跨 manifest 的五维隔离断言能发现
+    # 一份"单文件自洽、内容却与封存 holdout 重叠"的 dev manifest。
+    dataset = load_verified_formal_dataset(dev_manifest_path.parent)
+    declared_manifest = load_formal_task_manifest(dev_manifest_path)
+    if declared_manifest != dataset.dev_manifest:
+        raise ValueError("dev_sft_export 的 dev manifest 不是 dataset.json 绑定的那一份")
+    public_manifest = dataset.dev_manifest
+    if public_manifest.dataset_version != dataset_version:
+        raise ValueError("dev_sft_export 配置的 dataset_version 与公开 dev manifest 不一致")
+
+    private_root = args.input_dir
+    records = load_verified_formal_dev(private_root, public_manifest)
+
+    def env_factory(task: Any) -> RetailOpsEnv:
+        return RetailOpsEnv(task, bundle)
+
+    rows = build_dev_sft_rows(records, env_factory, args.seed)
+
+    create_output_dir(args.output_dir)
+    write_dev_sft_export(
+        private_root=private_root,
+        public_root=args.output_dir,
+        attempt_id=attempt_id,
+        dataset_version=dataset_version,
+        rows=rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: sft (build)
+# ---------------------------------------------------------------------------
+
+_SFT_KEYS = {"pipeline", "model", "lora", "data", "training"}
+_SFT_DATA_REQUIRED_KEYS = {"train_relpath", "eval_relpath"}
+_SFT_DATA_OPTIONAL_KEYS = {"train_limit", "eval_limit"}
+
+_default_sft_trainer = run_sft
+
+
+def _run_sft(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    trainer_factory: Callable[[dict[str, Any], int, Path], dict[str, Any]] | None = None,
+) -> None:
+    """执行一次单卡 QLoRA-SFT；训练数据路径由 `--input_dir` 在运行时提供。
+
+    已提交的 config 只写私有根内的相对路径（`train_relpath`/`eval_relpath`），
+    与 R2 的 teacher/export 流水线保持同一约定：私有根前缀绝不进入版本控制的
+    配置文件，运行时才由 `--input_dir` 拼接并做逃逸校验。
+
+    `trainer_factory` 是 CPU 测试的注入缝（同 `backend_factory` 那一套）；
+    `main()` 走的默认路径是模块级 `_default_sft_trainer`，它就是真实的
+    `training.sft.run_sft`——模型逐文件哈希校验、不可覆盖输出目录和有限 loss
+    检查都在那里，本函数不复制也不放宽任何一条。
+    """
+    _require_config_keys(config, _SFT_KEYS)
+    if args.input_dir is None:
+        raise ValueError("sft 需要 --input_dir 指向已导出训练数据的私有根目录")
+
+    model_value = _config_mapping(config, "model")
+    lora_value = _config_mapping(config, "lora")
+    data_value = _config_mapping(config, "data")
+    training_value = _config_mapping(config, "training")
+
+    missing = _SFT_DATA_REQUIRED_KEYS - set(data_value)
+    unknown = set(data_value) - _SFT_DATA_REQUIRED_KEYS - _SFT_DATA_OPTIONAL_KEYS
+    if missing or unknown:
+        raise ValueError(
+            f"data 字段不符合 sft 契约: missing={sorted(missing)}, unknown={sorted(unknown)}"
+        )
+
+    private_root = args.input_dir
+    resolved_data: dict[str, Any] = {
+        "train_path": str(_private_data_path(data_value, "train_relpath", private_root)),
+        "eval_path": str(_private_data_path(data_value, "eval_relpath", private_root)),
+    }
+    for key in sorted(_SFT_DATA_OPTIONAL_KEYS):
+        if key in data_value:
+            resolved_data[key] = data_value[key]
+
+    sft_config = {
+        "model": model_value,
+        "lora": lora_value,
+        "data": resolved_data,
+        "training": training_value,
+    }
+    (trainer_factory or _default_sft_trainer)(sft_config, args.seed, args.output_dir)
+
+
+def _private_data_path(data: dict[str, Any], key: str, private_root: Path) -> Path:
+    """把私有根内的相对路径逐段校验后拼接，拒绝穿越、绝对路径与符号链接逃逸。"""
+    value = _config_str(data, key)
+    parts = value.split("/")
+    for part in parts:
+        _validate_path_component(part, label=f"data.{key} 路径分量")
+    return _resolve_within(private_root, *parts)
 
 
 # ---------------------------------------------------------------------------

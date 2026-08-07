@@ -19,7 +19,7 @@ def test_resolve_sft_config_locks_mvp_defaults(
     train_path.write_text("{}\n", encoding="utf-8")
     eval_path.write_text("{}\n", encoding="utf-8")
     config = {
-        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "model": _model_pin(),
         "lora": {
             "r": 16,
             "alpha": 32,
@@ -55,7 +55,7 @@ def test_resolve_sft_config_rejects_missing_dataset(
 
     monkeypatch.chdir(tmp_path)
     config = {
-        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "model": _model_pin(),
         "lora": {"target_modules": ["q_proj"]},
         "data": {
             "train_path": "missing-train.jsonl",
@@ -86,7 +86,7 @@ def test_resolve_sft_config_rejects_non_project_relative_paths(
     from veritool_rl.training.sft import resolve_sft_config
 
     config = {
-        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "model": _model_pin(),
         "lora": {"target_modules": ["q_proj"]},
         "data": {"train_path": "train.jsonl", "eval_path": "dev.jsonl"},
         "training": {},
@@ -233,7 +233,7 @@ def test_resolve_sft_config_locks_smoke_scope_and_reload(
     Path("train.jsonl").write_text("{}\n", encoding="utf-8")
     Path("dev.jsonl").write_text("{}\n", encoding="utf-8")
     config = {
-        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "model": _model_pin(),
         "lora": {"target_modules": ["q_proj"]},
         "data": {
             "train_path": "train.jsonl",
@@ -315,3 +315,100 @@ def test_sft_output_guard_rejects_existing_training_artifacts(tmp_path: Path) ->
     (output_dir / "metrics.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(FileExistsError, match="拒绝覆盖"):
         _ensure_new_training_output(output_dir)
+
+
+def _model_pin(model_dir: str = "models/Qwen3-1.7B") -> dict[str, object]:
+    """SFT 模型 pin 的最小合法形状；具体摘要由各测试按需覆盖。"""
+    return {
+        "name": model_dir,
+        "load_in_4bit": True,
+        "revision": "8cd0101f70cac4f1efcebc979faf483558e39297",
+        "file_sha256": {"config.json": "0" * 64},
+    }
+
+
+def test_resolve_sft_config_requires_model_provenance_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """没有 revision/逐文件哈希的模型 pin 必须被拒绝，不允许无 provenance 训练。"""
+    from pydantic import ValidationError
+
+    from veritool_rl.training.sft import resolve_sft_config
+
+    monkeypatch.chdir(tmp_path)
+    Path("train.jsonl").write_text("{}\n", encoding="utf-8")
+    Path("dev.jsonl").write_text("{}\n", encoding="utf-8")
+    config: dict[str, object] = {
+        "model": {"name": "models/Qwen3-1.7B", "load_in_4bit": True},
+        "lora": {"target_modules": ["q_proj"]},
+        "data": {"train_path": "train.jsonl", "eval_path": "dev.jsonl"},
+        "training": {},
+    }
+
+    with pytest.raises(ValidationError):
+        resolve_sft_config(config, seed=0, output_dir=tmp_path / "run")
+
+
+def test_run_sft_rejects_model_dir_failing_hash_verification_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """训练必须先逐文件校验模型目录，且在任何产物落盘前失败。
+
+    这条路径完全在 CPU 上跑：校验发生在 `import torch` 之前，因此本地没有
+    CUDA/torch 也能证明被篡改的模型目录不会进入训练。
+    """
+    from veritool_rl.training.sft import run_sft
+
+    monkeypatch.chdir(tmp_path)
+    model_dir = Path("models/Qwen3-4B-pinned")
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text('{"tampered": true}', encoding="utf-8")
+    Path("train.jsonl").write_text("{}\n", encoding="utf-8")
+    Path("dev.jsonl").write_text("{}\n", encoding="utf-8")
+    config: dict[str, object] = {
+        "model": _model_pin(str(model_dir)),
+        "lora": {"target_modules": ["q_proj"]},
+        "data": {"train_path": "train.jsonl", "eval_path": "dev.jsonl"},
+        "training": {},
+    }
+    output_dir = tmp_path / "run"
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        run_sft(config, seed=0, output_dir=output_dir)
+
+    assert not output_dir.exists()
+
+
+def test_run_sft_rejects_unlisted_extra_file_in_model_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """清单外的额外文件（例如注入的权重或代码）同样必须阻断训练。"""
+    import hashlib
+
+    from veritool_rl.training.sft import run_sft
+
+    monkeypatch.chdir(tmp_path)
+    model_dir = Path("models/Qwen3-4B-pinned")
+    model_dir.mkdir(parents=True)
+    payload = b'{"hidden_size": 8}'
+    (model_dir / "config.json").write_bytes(payload)
+    (model_dir / "inject.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    Path("train.jsonl").write_text("{}\n", encoding="utf-8")
+    Path("dev.jsonl").write_text("{}\n", encoding="utf-8")
+    pin = _model_pin(str(model_dir))
+    pin["file_sha256"] = {"config.json": hashlib.sha256(payload).hexdigest()}
+    config: dict[str, object] = {
+        "model": pin,
+        "lora": {"target_modules": ["q_proj"]},
+        "data": {"train_path": "train.jsonl", "eval_path": "dev.jsonl"},
+        "training": {},
+    }
+    output_dir = tmp_path / "run"
+
+    with pytest.raises(ValueError, match="锁定清单"):
+        run_sft(config, seed=0, output_dir=output_dir)
+
+    assert not output_dir.exists()
