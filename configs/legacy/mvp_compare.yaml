@@ -1,0 +1,4 @@
+# 训练前后逐任务配对汇总。
+baseline_dir: reports/legacy/mvp/qwen-base-seed0
+adapter_dir: reports/legacy/mvp/qwen-sft-seed0
+bootstrap_samples: 1000

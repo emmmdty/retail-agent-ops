@@ -19,48 +19,27 @@ from typing import Any
 
 import uvicorn
 
-from veritool_rl.agent.qwen import (
+from veritool_rl.cli import load_config
+from veritool_rl.core.agent.qwen import (
     CudaHardwareProvider,
     GenerationBackend,
     GenerationSettings,
     HardwareProvider,
     TransformersBackend,
 )
-from veritool_rl.artifacts import canonical_json, create_output_dir, sha256_file, write_json
-from veritool_rl.cli import load_config
-from veritool_rl.paths import validate_project_relative_path
-from veritool_rl.retail_ops.base_evaluation import (
-    BaseEvaluationConfig,
-    ModelArtifact,
-    evaluate_formal_dev_base,
-    load_verified_formal_dev,
-)
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.candidate_evaluation import (
-    AdapterArtifact,
-    CandidateEvaluationConfig,
-    evaluate_formal_dev_candidate,
-)
-from veritool_rl.retail_ops.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
-from veritool_rl.retail_ops.environment import RetailOpsEnv
-from veritool_rl.retail_ops.evaluation import (
-    EvaluationMode,
-    evaluate_retail_ops,
-    load_run_evidence,
-)
-from veritool_rl.retail_ops.formal_manifests import (
+from veritool_rl.core.artifacts import canonical_json, create_output_dir, sha256_file, write_json
+from veritool_rl.core.paths import validate_project_relative_path
+from veritool_rl.retail_ops.build.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
+from veritool_rl.retail_ops.build.formal_manifests import (
     FormalTaskManifest,
     load_formal_split,
     load_formal_task_manifest,
     load_verified_formal_dataset,
     write_formal_task_set,
 )
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
-from veritool_rl.retail_ops.manifests import build_qualification
-from veritool_rl.retail_ops.release import decide_release, load_release_report, write_release_report
-from veritool_rl.retail_ops.service import create_app
-from veritool_rl.retail_ops.teacher_client import OpenAICompatibleTeacherClient, TeacherClient
-from veritool_rl.retail_ops.teacher_data import (
+from veritool_rl.retail_ops.build.manifests import build_qualification
+from veritool_rl.retail_ops.build.teacher_client import OpenAICompatibleTeacherClient, TeacherClient
+from veritool_rl.retail_ops.build.teacher_data import (
     TeacherAttemptEvidence,
     TeacherCollectionCheckpoint,
     TeacherCollectionConfig,
@@ -71,7 +50,32 @@ from veritool_rl.retail_ops.teacher_data import (
     write_teacher_attempt_evidence,
     write_teacher_checkpoint,
 )
-from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot, load_teacher_route
+from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot, load_teacher_route
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.evaluate.base_evaluation import (
+    BaseEvaluationConfig,
+    ModelArtifact,
+    evaluate_formal_dev_base,
+    load_verified_formal_dev,
+)
+from veritool_rl.retail_ops.evaluate.candidate_evaluation import (
+    AdapterArtifact,
+    CandidateEvaluationConfig,
+    evaluate_formal_dev_candidate,
+)
+from veritool_rl.retail_ops.evaluate.evaluation import (
+    EvaluationMode,
+    evaluate_retail_ops,
+    load_run_evidence,
+)
+from veritool_rl.retail_ops.release.release import (
+    decide_release,
+    load_release_report,
+    write_release_report,
+)
+from veritool_rl.retail_ops.serve.service import create_app
 from veritool_rl.training.sft import run_sft
 
 _R2_PRIVATE_ROOT = Path("data/private/retail_ops/v1/r2")

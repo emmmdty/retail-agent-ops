@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from veritool_rl.trajectory import Trajectory
+from veritool_rl.core.trajectory import Trajectory
 
 
 def _run_policy(policy_type: str) -> list[Trajectory]:
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.policies import build_qualification_policy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     tasks = build_qualification_tasks(seed=0)
@@ -37,7 +37,7 @@ def test_qualification_oracle_completes_all_twelve_tasks() -> None:
 
 
 def test_baseline_only_completes_read_or_deny_tasks() -> None:
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
 
     trajectories = _run_policy("baseline")
     successful_scenarios = {
@@ -70,8 +70,8 @@ def test_fault_policy_produces_invalid_calls_without_batch_crash() -> None:
 
 
 def test_qualification_policy_rejects_unknown_type() -> None:
-    from veritool_rl.retail_ops.policies import build_qualification_policy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     task = build_qualification_tasks(seed=0)[0]
 
@@ -83,8 +83,8 @@ def test_qualification_policy_rejects_unknown_type() -> None:
 def test_qualification_factory_rejects_holdout_before_policy_construction(
     policy_type: str,
 ) -> None:
-    from veritool_rl.retail_ops.policies import build_qualification_policy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     task = build_qualification_tasks(seed=0)[0].model_copy(
         deep=True,
@@ -98,8 +98,8 @@ def test_qualification_factory_rejects_holdout_before_policy_construction(
 
 
 def test_qualification_baseline_rejects_empty_expected_calls() -> None:
-    from veritool_rl.retail_ops.policies import build_qualification_policy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     task = build_qualification_tasks(seed=0)[0].model_copy(
         deep=True,
@@ -113,9 +113,9 @@ def test_qualification_baseline_rejects_empty_expected_calls() -> None:
 
 
 def test_qualification_baseline_rejects_non_get_order_first_call() -> None:
-    from veritool_rl.retail_ops.policies import build_qualification_policy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     task = next(
         task

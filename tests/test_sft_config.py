@@ -265,7 +265,7 @@ def test_reload_adapter_offline_uses_base_and_saved_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
     from veritool_rl.training.sft import reload_adapter_offline
 
     model_path = tmp_path / "models/Qwen3-1.7B"

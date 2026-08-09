@@ -28,7 +28,7 @@ RetailAgentOps 是零售工具 Agent 的单卡领域适配与发布流水线。�
 ## 4. 环境与资源边界
 
 - 本地：WSL/Linux，Python 3.11，`uv` 管理，只做 CPU 开发和轻量验证。
-- 远程环境 1：`ssh gpu-4090`，仓库路径 `/data/TJK/internship-projects/veritool-rl`，只允许 `/data/TJK` 和 `/home/TJK`；uv 为 `/home/TJK/.local/bin/uv`，缓存 `UV_CACHE_DIR=/data/TJK/uv-cache`。
+- 远程环境 1：`ssh gpu-4090`，只允许 `/data/TJK` 和 `/home/TJK`；uv 为 `/home/TJK/.local/bin/uv`，缓存 `UV_CACHE_DIR=/data/TJK/uv-cache`。该机上仅有原 VeriTool-RL 遗留目录 `/data/TJK/internship-projects/veritool-rl`，**不是本项目的远程工作区**；R2/R3 全部在远程环境 2 执行。若要启用本机，须先经确认建立独立目录，不得复用遗留目录。
 - 远程环境 2：`ssh gpu-5090`，仓库路径 `/mnt/aidata/tongjiakai/retail-agent-ops`，只允许 `/mnt/aidata/tongjiakai` 和 `/home/tongjiakai`；该目录同时承载该用户其他项目，不得触碰 `retail-agent-ops` 之外的既有子目录；uv 为 `~/.local/bin/uv`。该服务器多人共用，执行前须核对 GPU 显存/进程占用与磁盘余量，模型下载优先选择满足复现要求的最小体积版本。
 - 两套远程环境均为可用选项，同一任务只使用其中一个，执行前需在报告中明确当前使用的是哪一个。
 - 模型、数据、checkpoint 和大运行产物不进 Git。
@@ -76,11 +76,18 @@ env -u UV_INDEX_URL uv sync --project tools/bfcl_eval --frozen
 git diff --check
 ```
 
-本地 worktree 的 `data/external_repos` 可通过 ignored 相对软链接共享原仓库固定 checkout。若链接缺失，按 `docs/LEGACY_INVENTORY.md` 恢复，不得用浮动网络版本替代。
+`data/external_repos/gorilla` 是 ignored 的自包含 BFCL checkout（固定 commit `6ea5797…`，保留其自身 `.git` 供 commit 与工作树校验）。若缺失，按 `data/external_repos/BFCL_PIN.txt` 重建，不得用浮动网络版本替代。仓库目录职责见 `docs/REPO_MAP.md`。
 
 ## 9. 当前状态
 
-- 当前阶段：R0 初始化与治理已完成，等待用户批准 R1。
-- 迁入快照：`29ea3b9`。
-- 当前基线：107 tests passed，Ruff/mypy 通过。
-- 不自动进入 R1、模型下载或 GPU smoke；下一任务先等待用户确认。
+- 当前阶段：R3「单卡适配与服务 v1」进行中。Task 1（首次真实 Qwen3-4B QLoRA-SFT）与
+  Task 2（候选 dev 配对评测）已完成；正式 120 条 holdout、release GO/NO-GO 与 serve
+  部署尚未进入，需逐项确认。
+- 已知结论：R3 候选把格式/安全类失败清零（invalid_call 21→0、policy_violation 8→0），
+  但需 ≥2 次工具调用的场景显著回退（task_success 48/60→43/60），不适合直接替换 base。
+  失败机制已定位（训练数据 66.7% 只含 1 次工具调用），属 R4 输入。
+- 仓库形态：唯一 `main` 分支、无 remote、对原 `veritool-rl` 工作区零依赖；
+  `src/veritool_rl` 按 core / retail_ops(domain·build·evaluate·release·serve) /
+  training / legacy 分层，目录职责见 `docs/REPO_MAP.md`。
+- 当前基线：585 tests passed，Ruff/mypy/uv lock 全部通过。
+- 不自动推进 R3 剩余目标、模型下载或 GPU 运行；下一任务先等待用户确认。

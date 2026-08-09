@@ -1,14 +1,18 @@
 # 旧项目状态与迁移清单
 
-## Git 来源
+## Git 来源与独立性
 
 - 原仓库：`/home/tjk/myProjects/internship-projects/veritool-rl`
 - 原分支/起点：`main@3e1a88d7d5298bb825c41db8b07a98dea2f5c490`
 - 初始化目录：`/home/tjk/myProjects/internship-projects/.worktrees/retail-agent-ops`（历史路径，2026-07-22 已迁出）
 - 当前正式目录：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout）
-- 初始化分支：`portfolio/retail-agent-ops-init`
+- 初始化分支：`portfolio/retail-agent-ops-init`（2026-08-09 收敛后已删除，其提交全部包含在 `main` 中）
 - 迁入状态快照：`29ea3b9`
-- 初始化来源远程仅有 `gpu-4090`；独立 checkout 不配置远程，远程操作继续按显式审批执行。
+
+**2026-08-09 起本项目对原仓库零依赖**，逐项核实：唯一 `main` 分支、0 remote、
+无 submodule、无 linked worktree、无 `.git/objects/info/alternates`、无跟踪软链接、
+无跨仓库文件系统链接；虚拟环境只指向本目录。101 个提交完整保留。
+删除原 `veritool-rl` 工作区不会影响本项目的任何命令。
 
 ## 已继承能力
 
@@ -36,10 +40,22 @@
 ## 本地非 Git 依赖
 
 - `tools/bfcl_eval/.venv` 由 `uv sync --project tools/bfcl_eval --frozen` 创建。
-- `data/external_repos` 是 ignored 相对软链接 `../../veritool-rl/data/external_repos`，当前指向原仓库固定 checkout。
+- `data/external_repos/gorilla` 是**自包含**的 BFCL checkout（2026-08-09 由原软链接
+  `../../veritool-rl/data/external_repos` 本地化而来），保留其自身 `.git` 以支持
+  `run_bfcl_official_ast.py` 的 commit 与工作树校验；细节见
+  `data/external_repos/BFCL_PIN.txt`。
 - Gorilla/BFCL commit 必须保持 `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`。
+- 未随迁的 `tau2-bench`/`appworld`/`ToolSandbox` 在本仓库零引用；需要时按 `BFCL_PIN.txt`
+  记录的上游地址单独获取并固定 commit。
 - 模型、数据、checkpoint 和运行产物继续不进入 Git。
 
 ## 命名边界
 
-产品、简历和公开文档使用 RetailAgentOps；Python 包、已有配置路径和历史报告暂保留 `veritool_rl`/`VeriTool-RL`。代码级改名必须作为独立任务执行并验证所有调用点，不在初始化阶段机械替换。
+产品、简历、公开文档、**分发名与 CLI 入口**统一为 RetailAgentOps / `retail-agent-ops`
+（分发名于 2026-08-09 从 `veritool-rl` 改为 `retail-agent-ops`）。
+
+Python 导入名与历史报告仍是 `veritool_rl`/`VeriTool-RL`：已提交产物记录了产出它们的
+代码标识，改名会切断"代码 commit ↔ 运行产物"的可追溯链。导入名重命名必须作为独立任务
+执行、验证全部调用点，并单独说明 provenance 断层，不做机械替换。
+
+目录职责与 2026-08-09 的路径对照见 [`REPO_MAP.md`](./REPO_MAP.md)。

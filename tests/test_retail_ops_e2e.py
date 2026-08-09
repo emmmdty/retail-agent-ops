@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from veritool_rl.product_cli import main
-from veritool_rl.retail_ops.service import create_app
+from veritool_rl.retail_ops.serve.service import create_app
 
 
 def _run_cli(arguments: list[str]) -> None:
@@ -31,7 +31,7 @@ def test_retail_ops_v1_cpu_vertical_slice(tmp_path: Path) -> None:
         [
             "build",
             "--config",
-            "configs/retail_ops_v1_build.yaml",
+            "configs/retail_ops/build/retail_ops_v1_build.yaml",
             "--seed",
             "0",
             "--output_dir",
@@ -39,9 +39,9 @@ def test_retail_ops_v1_cpu_vertical_slice(tmp_path: Path) -> None:
         ]
     )
     for config, output in (
-        ("configs/retail_ops_v1_qualification_base.yaml", base_dir),
-        ("configs/retail_ops_v1_qualification_oracle.yaml", oracle_dir),
-        ("configs/retail_ops_v1_qualification_fault.yaml", fault_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_base.yaml", base_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_oracle.yaml", oracle_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_fault.yaml", fault_dir),
     ):
         _run_cli(
             [
@@ -61,7 +61,7 @@ def test_retail_ops_v1_cpu_vertical_slice(tmp_path: Path) -> None:
             [
                 "release",
                 "--config",
-                "configs/retail_ops_v1_release.yaml",
+                "configs/retail_ops/release/retail_ops_v1_release.yaml",
                 "--seed",
                 "0",
                 "--baseline_dir",

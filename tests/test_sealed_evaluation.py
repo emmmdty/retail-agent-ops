@@ -11,26 +11,26 @@ from typing import Any, cast
 
 import pytest
 
-from veritool_rl.agent.qwen import GeneratedText
-from veritool_rl.retail_ops.bundle import LoadedRetailOpsBundle, load_bundle
-from veritool_rl.retail_ops.formal_governance import (
-    AuthorizedFormalHoldout,
-    authorize_formal_holdout,
-    load_authorized_formal_holdout,
-)
-from veritool_rl.retail_ops.formal_manifests import (
+from veritool_rl.core.agent.qwen import GeneratedText
+from veritool_rl.retail_ops.build.formal_manifests import (
     VerifiedFormalDataset,
     load_verified_formal_dataset,
     write_formal_task_set,
 )
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
-from veritool_rl.retail_ops.governance import EvidencePurpose
-from veritool_rl.retail_ops.sealed_evaluation import (
+from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle, load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
     SEALED_ARTIFACT_NAMES,
     SealedEvaluationReport,
     evaluate_authorized_holdout,
     load_sealed_evaluation_report,
 )
+from veritool_rl.retail_ops.release.formal_governance import (
+    AuthorizedFormalHoldout,
+    authorize_formal_holdout,
+    load_authorized_formal_holdout,
+)
+from veritool_rl.retail_ops.release.governance import EvidencePurpose
 
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
 BUNDLE_DIR = Path("domains/retail_ops/v1")

@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from veritool_rl.trajectory import Trajectory
+from veritool_rl.core.trajectory import Trajectory
 
 
 def _latency_trajectories(values: list[float]) -> list[Trajectory]:
     from typing import Any
 
-    from veritool_rl.agent.policy import PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.agent.policy import PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
 
     class TimedFinalPolicy:
         name = "timed-final"
@@ -40,12 +40,12 @@ def _latency_trajectories(values: list[float]) -> list[Trajectory]:
 
 
 def _evaluate(tmp_path: Path, policy_type: str, suffix: str = ""):
-    from veritool_rl.retail_ops.evaluation import (
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.evaluate.evaluation import (
         EvaluationMode,
         RunEvidence,
         evaluate_retail_ops,
     )
-    from veritool_rl.retail_ops.manifests import build_qualification
 
     build_dir = tmp_path / f"build{suffix}"
     build_qualification(Path("domains/retail_ops/v1"), 0, build_dir)
@@ -67,7 +67,7 @@ def _evaluate(tmp_path: Path, policy_type: str, suffix: str = ""):
 
 
 def _rewrite_build_as_development(build_dir: Path) -> None:
-    from veritool_rl.artifacts import canonical_json, sha256_file, write_json, write_jsonl
+    from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, write_jsonl
 
     tasks_path = build_dir / "tasks.jsonl"
     manifest_path = build_dir / "manifest.json"
@@ -91,7 +91,7 @@ def _rewrite_build_as_development(build_dir: Path) -> None:
 
 
 def test_metrics_report_episode_latency_percentiles() -> None:
-    from veritool_rl.eval.metrics import compute_metrics
+    from veritool_rl.core.metrics import compute_metrics
 
     metrics = compute_metrics(_latency_trajectories([10.0, 20.0, 40.0]), 20, 0)
 
@@ -102,8 +102,8 @@ def test_metrics_report_episode_latency_percentiles() -> None:
 def test_qualification_evidence_is_complete_replayable_and_hash_bound(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.artifacts import sha256_file
-    from veritool_rl.retail_ops.evaluation import load_run_evidence
+    from veritool_rl.core.artifacts import sha256_file
+    from veritool_rl.retail_ops.evaluate.evaluation import load_run_evidence
 
     evidence, build_dir, output_dir = _evaluate(tmp_path, policy_type="oracle")
 
@@ -139,8 +139,8 @@ def test_identical_qualification_runs_write_identical_evidence(tmp_path: Path) -
 def test_development_mode_runs_dev_manifest_with_same_reference_policy(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.retail_ops.evaluation import EvaluationMode, evaluate_retail_ops
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, evaluate_retail_ops
 
     build_dir = tmp_path / "build"
     build_qualification(Path("domains/retail_ops/v1"), 0, build_dir)
@@ -161,9 +161,9 @@ def test_development_mode_runs_dev_manifest_with_same_reference_policy(
 
 
 def test_evaluation_rejects_manifest_category_coverage_tamper(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import write_json
-    from veritool_rl.retail_ops.evaluation import EvaluationMode, evaluate_retail_ops
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.core.artifacts import write_json
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, evaluate_retail_ops
 
     build_dir = tmp_path / "build"
     manifest = build_qualification(Path("domains/retail_ops/v1"), 0, build_dir)
@@ -187,13 +187,13 @@ def test_evaluation_rejects_manifest_category_coverage_tamper(tmp_path: Path) ->
 
 
 def test_redacted_failures_use_allowlist_and_exclude_nested_truth() -> None:
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.artifacts import canonical_json
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.evaluation import redact_failure_rows
-    from veritool_rl.retail_ops.policies import UnknownToolPolicy
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.artifacts import canonical_json
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.policies import UnknownToolPolicy
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.evaluate.evaluation import redact_failure_rows
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = build_qualification_tasks(seed=0)[0]
@@ -241,9 +241,9 @@ def test_redacted_failures_use_allowlist_and_exclude_nested_truth() -> None:
 
 
 def test_evaluation_rejects_holdout_before_policy_execution(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import write_json
-    from veritool_rl.retail_ops.evaluation import EvaluationMode, evaluate_retail_ops
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.core.artifacts import write_json
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, evaluate_retail_ops
 
     build_dir = tmp_path / "build"
     manifest = build_qualification(Path("domains/retail_ops/v1"), 0, build_dir)
@@ -266,9 +266,9 @@ def test_evaluation_rejects_holdout_before_policy_execution(tmp_path: Path) -> N
 
 
 def test_evaluation_rejects_manifest_bundle_mismatch(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import write_json
-    from veritool_rl.retail_ops.evaluation import EvaluationMode, evaluate_retail_ops
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.core.artifacts import write_json
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, evaluate_retail_ops
 
     build_dir = tmp_path / "build"
     manifest = build_qualification(Path("domains/retail_ops/v1"), 0, build_dir)
@@ -292,7 +292,7 @@ def test_evaluation_rejects_manifest_bundle_mismatch(tmp_path: Path) -> None:
 def test_evaluation_refuses_to_overwrite_run_and_loader_detects_tamper(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.retail_ops.evaluation import (
+    from veritool_rl.retail_ops.evaluate.evaluation import (
         EvaluationMode,
         evaluate_retail_ops,
         load_run_evidence,

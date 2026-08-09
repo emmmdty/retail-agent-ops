@@ -16,10 +16,13 @@
 
 ## 本地工作区
 
-- 推荐工作区：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
-- 初始化分支：`portfolio/retail-agent-ops-init`
-- 原始工作区：`/home/tjk/myProjects/internship-projects/veritool-rl`，不得清理或覆盖。
-- Python 包暂为 `veritool_rl`；产品品牌是 RetailAgentOps。
+- 工作区：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
+- 分支：唯一 `main`，无 remote，无 submodule，无 linked worktree。
+- **本项目自 2026-08-09 起对原 `veritool-rl` 工作区零依赖**：不共享 Git 对象、不共享
+  benchmark checkout、不共享虚拟环境。原工作区仍在磁盘上但只是历史存档，删除它不影响
+  本项目；同样不得反向清理或覆盖它。
+- 分发名与 CLI 入口是 `retail-agent-ops`；Python 导入名仍是 `veritool_rl`
+  （已提交产物的 provenance 依赖它，改名属独立任务，见 `docs/LEGACY_INVENTORY.md`）。
 - Codex 直接读取根目录 `AGENTS.md`；项目不使用 `.codex` 配置或 Hook。
 
 本地初始化：
@@ -29,12 +32,15 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --extra dev --
 UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --project tools/bfcl_eval --frozen
 ```
 
-本地 `data/external_repos` 是 ignored 相对软链接，指向原仓库已固定的 benchmark checkout。若链接不存在，先核对 `docs/LEGACY_INVENTORY.md`，不得联网拉取浮动 HEAD 替代。
+本地 `data/external_repos/gorilla` 是 ignored 的**自包含** BFCL checkout（固定 commit
+`6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`，保留其自身 `.git` 以便
+`scripts/legacy/bfcl/run_bfcl_official_ast.py` 校验 commit 与工作树未被改动）。
+若目录缺失，按 `data/external_repos/BFCL_PIN.txt` 重建，不得联网拉取浮动 HEAD 替代。
 
-## 当前 R2 交接入口
+## 历史交接入口（R2，已完成）
 
 在正式目录启动新的 Codex 会话后，把
-`docs/handoffs/2026-07-22-r2-codex-execution-prompt.md` 的完整内容作为首条任务提示词。
+`docs/archive/handoffs/2026-07-22-r2-codex-execution-prompt.md` 的完整内容作为首条任务提示词。
 该提示词负责把 R2 拆成审批、实现、证据和收口门；它允许使用 subagent，但不会替用户
 选择正式数据来源、teacher/API、计划主模型或远程 GPU 命令。
 

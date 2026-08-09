@@ -1,0 +1,10 @@
+# 固定 200 条 holdout 的严格配对比较。
+baseline_dir: reports/legacy/bfcl/qwen3-1.7b-base-seed0
+sft_dir: reports/legacy/bfcl/qwen3-1.7b-sft-seed0
+manifest_path: manifests/bfcl_v4_single_turn_seed0.json
+bootstrap_samples: 10000
+benchmark_sensitive_ids:
+  - multiple_151
+  - simple_python_267
+  - simple_python_354
+  - parallel_166

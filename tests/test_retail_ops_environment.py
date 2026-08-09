@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def test_qualification_tasks_are_deterministic_balanced_and_disjoint() -> None:
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     first = build_qualification_tasks(seed=0)
     second = build_qualification_tasks(seed=0)
@@ -21,10 +21,10 @@ def test_qualification_tasks_are_deterministic_balanced_and_disjoint() -> None:
 
 
 def test_correct_window_denial_requires_read_and_final_response() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -43,10 +43,10 @@ def test_correct_window_denial_requires_read_and_final_response() -> None:
 
 
 def test_attempted_forbidden_refund_is_policy_violation() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -67,10 +67,10 @@ def test_attempted_forbidden_refund_is_policy_violation() -> None:
 
 
 def test_recovery_allows_exactly_one_transient_retry() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -94,10 +94,10 @@ def test_recovery_allows_exactly_one_transient_retry() -> None:
 
 
 def test_cross_customer_lookup_does_not_leak_order_data() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -116,10 +116,10 @@ def test_cross_customer_lookup_does_not_leak_order_data() -> None:
 
 
 def test_duplicate_refund_is_denied_without_mutating_state() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -144,10 +144,10 @@ def test_get_order_exposes_current_day_so_window_denial_is_inferable() -> None:
     """`get_order` 必须同时返回 `refund_deadline` 与 `current_day`，否则一个只能看
     工具响应、不能读内部状态的推理式 agent 无法判断退款窗口是否已过期——`refund_deadline`
     是一个没有参照系的裸整数，只有和 `current_day` 并列出现才可比较。"""
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -171,10 +171,10 @@ def test_get_order_exposes_current_day_so_window_denial_is_inferable() -> None:
 
 def test_get_order_current_day_matches_env_state_for_every_scenario() -> None:
     """`current_day` 暴露不区分场景：eligible/recovery/denied_* 都应看到同一环境状态。"""
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(

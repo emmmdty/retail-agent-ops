@@ -1,0 +1,51 @@
+# R3 正式全量 QLoRA-SFT: 240 条 train + 60 条 dev，单卡 4-bit NF4，assistant-only loss。
+# 超参沿用 training/sft.py 的既有默认值（有效 batch = 2 x 8 = 16，lr 2e-4，3 epoch）。
+# 输出目录不可覆盖（_ensure_new_training_output），每次正式运行用新目录。
+# model.revision 是 ModelScope Qwen/Qwen3-4B 的仓库提交哈希；model.file_sha256 是
+# gpu-5090 上 models/Qwen3-4B-pinned/ 用 `hash_local_model_files` 逐文件重算的真实值
+# （与 configs/retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml 同一份模型文件）。run_sft 在任何
+# 产物落盘前调用 verify_local_model_files 逐文件核对，哈希不符即拒绝训练。
+#
+# data.*_relpath 是私有根内的相对路径；私有根前缀由 --input_dir 在运行时提供，
+# 不写进版本控制的配置文件（与 R2 teacher/export 流水线同一约定）。
+#
+# max_seq_len=1024 沿用训练器默认值，尚未经真实 Qwen3 tokenizer 审计确认足够
+# （字符数粗估 p95≈1025 字符，但字符数不等于 token 数）。正式全量训练前必须先跑
+# token 长度审计；若 p95/max 超过该预算，需要先与用户确认调大还是接受截断，不得静默截断。
+pipeline: sft
+model:
+  name: models/Qwen3-4B-pinned
+  load_in_4bit: true
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+data:
+  train_relpath: train-export/train-export-001/sft.jsonl
+  eval_relpath: dev-sft/dev-sft-001/sft.jsonl
+training:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8
+  lr: 2.0e-4
+  max_seq_len: 1024
+  bf16: true
+  gradient_checkpointing: true
+  assistant_only_loss: true
+  verify_adapter_reload: true

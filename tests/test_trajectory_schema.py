@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 
 def test_trajectory_jsonl_round_trip_is_canonical() -> None:
-    from veritool_rl.trajectory import (
+    from veritool_rl.core.trajectory import (
         Observation,
         RewardBreakdown,
         Step,
@@ -56,7 +56,7 @@ def test_trajectory_jsonl_round_trip_is_canonical() -> None:
 
 
 def test_trajectory_rejects_unknown_fields_and_non_finite_reward() -> None:
-    from veritool_rl.trajectory import Observation, RewardBreakdown, ToolCall, Trajectory
+    from veritool_rl.core.trajectory import Observation, RewardBreakdown, ToolCall, Trajectory
 
     with pytest.raises(ValidationError):
         RewardBreakdown(final_state=float("nan"))
@@ -75,15 +75,15 @@ def test_trajectory_rejects_unknown_fields_and_non_finite_reward() -> None:
 
 
 def test_trajectory_rejects_blank_jsonl_line() -> None:
-    from veritool_rl.trajectory import Trajectory
+    from veritool_rl.core.trajectory import Trajectory
 
     with pytest.raises(ValueError, match="空白"):
         Trajectory.from_jsonl("  \n")
 
 
 def test_task_spec_jsonl_round_trip_is_canonical() -> None:
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskSpec
+    from veritool_rl.core.trajectory import TaskSpec
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     task = build_qualification_tasks(seed=0)[0]
     line = task.to_jsonl()
@@ -94,14 +94,14 @@ def test_task_spec_jsonl_round_trip_is_canonical() -> None:
 
 
 def test_task_spec_rejects_blank_jsonl_line() -> None:
-    from veritool_rl.trajectory import TaskSpec
+    from veritool_rl.core.trajectory import TaskSpec
 
     with pytest.raises(ValueError, match="空白"):
         TaskSpec.from_jsonl("  \n")
 
 
 def test_task_spec_supports_retail_ops_decisions_and_qualification_split() -> None:
-    from veritool_rl.trajectory import ExpectedDecision, TaskScenario, TaskSpec
+    from veritool_rl.core.trajectory import ExpectedDecision, TaskScenario, TaskSpec
 
     task = TaskSpec(
         task_id="opaque-task",

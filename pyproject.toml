@@ -1,7 +1,7 @@
 [project]
-name = "veritool-rl"
+name = "retail-agent-ops"
 version = "0.0.1"
-description = "面向小型工具智能体的可验证课程式后训练方法 (Verifier-Guided Curriculum Post-Training for Small Tool-Using Agents)"
+description = "零售工具 Agent 的单卡领域适配与发布流水线：轨迹质检、QLoRA-SFT、执行式评测与 GO/NO-GO 发布门禁"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -69,9 +69,9 @@ addopts = "-ra"
 python_version = "3.11"
 files = [
   "src/veritool_rl",
-  "scripts/aggregate_bfcl_report.py",
-  "scripts/evaluate_bfcl.py",
-  "scripts/run_bfcl_official_ast.py",
+  "scripts/legacy/bfcl/aggregate_bfcl_report.py",
+  "scripts/legacy/bfcl/evaluate_bfcl.py",
+  "scripts/legacy/bfcl/run_bfcl_official_ast.py",
 ]
 strict = true
 ignore_missing_imports = true

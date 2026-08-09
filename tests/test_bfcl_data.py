@@ -51,7 +51,7 @@ def _write_category(root: Path, category: str, ids: list[str]) -> None:
 
 
 def test_load_bfcl_category_validates_jsonl_and_id_alignment(tmp_path: Path) -> None:
-    from veritool_rl.data.bfcl import load_bfcl_category
+    from veritool_rl.legacy.data.bfcl import load_bfcl_category
 
     _write_category(tmp_path, "simple_python", ["simple_python_0", "simple_python_1"])
 
@@ -63,7 +63,7 @@ def test_load_bfcl_category_validates_jsonl_and_id_alignment(tmp_path: Path) -> 
 
 
 def test_load_bfcl_category_rejects_duplicate_or_misaligned_ids(tmp_path: Path) -> None:
-    from veritool_rl.data.bfcl import load_bfcl_category
+    from veritool_rl.legacy.data.bfcl import load_bfcl_category
 
     _write_category(tmp_path, "multiple", ["multiple_0", "multiple_0"])
     with pytest.raises(ValueError, match="重复 task_id"):
@@ -79,7 +79,7 @@ def test_load_bfcl_category_rejects_duplicate_or_misaligned_ids(tmp_path: Path) 
 
 
 def test_load_bfcl_category_rejects_invalid_json(tmp_path: Path) -> None:
-    from veritool_rl.data.bfcl import load_bfcl_category
+    from veritool_rl.legacy.data.bfcl import load_bfcl_category
 
     source = tmp_path / "BFCL_v4_parallel.json"
     source.write_text("{not-json}\n", encoding="utf-8")
@@ -93,7 +93,7 @@ def test_load_bfcl_category_rejects_invalid_json(tmp_path: Path) -> None:
 
 
 def test_stable_hash_selection_is_repeatable_and_enforces_quotas(tmp_path: Path) -> None:
-    from veritool_rl.data.bfcl import load_bfcl_category, select_bfcl_tasks
+    from veritool_rl.legacy.data.bfcl import load_bfcl_category, select_bfcl_tasks
 
     tasks_by_category = {}
     expected_ids: dict[str, list[str]] = {}
@@ -119,8 +119,8 @@ def test_stable_hash_selection_is_repeatable_and_enforces_quotas(tmp_path: Path)
 
 
 def test_build_manifest_records_sources_selection_and_file_hash(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import sha256_file, write_json
-    from veritool_rl.data.bfcl import build_bfcl_manifest
+    from veritool_rl.core.artifacts import sha256_file, write_json
+    from veritool_rl.legacy.data.bfcl import build_bfcl_manifest
 
     for category in CATEGORIES:
         _write_category(tmp_path, category, [f"{category}_{index}" for index in range(3)])
@@ -143,7 +143,7 @@ def test_build_manifest_records_sources_selection_and_file_hash(tmp_path: Path) 
 
 
 def test_build_manifest_cli_writes_named_artifact(tmp_path: Path) -> None:
-    from scripts.build_bfcl_manifest import build_manifest_artifact
+    from scripts.legacy.bfcl.build_bfcl_manifest import build_manifest_artifact
 
     for category in CATEGORIES:
         _write_category(tmp_path, category, [f"{category}_0", f"{category}_1"])
@@ -165,8 +165,8 @@ def test_build_manifest_cli_writes_named_artifact(tmp_path: Path) -> None:
 
 
 def test_load_bfcl_manifest_recomputes_provenance(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import write_json
-    from veritool_rl.data.bfcl import build_bfcl_manifest, load_bfcl_manifest
+    from veritool_rl.core.artifacts import write_json
+    from veritool_rl.legacy.data.bfcl import build_bfcl_manifest, load_bfcl_manifest
 
     for category in CATEGORIES:
         _write_category(tmp_path, category, [f"{category}_{index}" for index in range(3)])

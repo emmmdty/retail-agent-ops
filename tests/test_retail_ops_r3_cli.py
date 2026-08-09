@@ -17,9 +17,9 @@ from typing import Any
 import pytest
 import yaml
 
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.formal_manifests import write_formal_task_set
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.build.formal_manifests import write_formal_task_set
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
@@ -457,7 +457,7 @@ def _load_committed_config(name: str) -> dict[str, Any]:
 def test_committed_dev_sft_export_config_runs_end_to_end(workspace: Path) -> None:
     from veritool_rl.product_cli import _run_dev_sft_export
 
-    config = _load_committed_config("retail_ops_v1_r3_dev_sft_export.yaml")
+    config = _load_committed_config("retail_ops/build/retail_ops_v1_r3_dev_sft_export.yaml")
 
     _run_dev_sft_export(_args(), config)
 
@@ -468,9 +468,9 @@ def test_committed_dev_sft_export_config_runs_end_to_end(workspace: Path) -> Non
 @pytest.mark.parametrize(
     "name",
     [
-        "retail_ops_v1_r3_sft_smoke.yaml",
-        "retail_ops_v1_r3_sft_overfit.yaml",
-        "retail_ops_v1_r3_sft.yaml",
+        "retail_ops/build/retail_ops_v1_r3_sft_smoke.yaml",
+        "retail_ops/build/retail_ops_v1_r3_sft_overfit.yaml",
+        "retail_ops/build/retail_ops_v1_r3_sft.yaml",
     ],
 )
 def test_committed_sft_configs_reach_the_real_resolver(sft_workspace: Path, name: str) -> None:
@@ -589,9 +589,9 @@ def test_candidate_pipeline_rejects_holdout_manifest(workspace: Path) -> None:
 def test_default_candidate_backend_factory_mounts_the_adapter() -> None:
     """默认后端工厂必须把 adapter 目录真的传给 TransformersBackend。"""
     import veritool_rl.product_cli as product_cli
-    from veritool_rl.agent.qwen import GenerationSettings, TransformersBackend
-    from veritool_rl.retail_ops.base_evaluation import ModelArtifact
-    from veritool_rl.retail_ops.candidate_evaluation import (
+    from veritool_rl.core.agent.qwen import GenerationSettings, TransformersBackend
+    from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
+    from veritool_rl.retail_ops.evaluate.candidate_evaluation import (
         AdapterArtifact,
         CandidateEvaluationConfig,
     )
@@ -627,15 +627,15 @@ def test_default_candidate_backend_factory_mounts_the_adapter() -> None:
 
 def test_committed_candidate_config_reaches_the_real_contract(workspace: Path) -> None:
     """已提交的候选 config 必须能被真实 CandidateEvaluationConfig 接受。"""
-    from veritool_rl.agent.qwen import GenerationSettings
-    from veritool_rl.retail_ops.base_evaluation import ModelArtifact
-    from veritool_rl.retail_ops.candidate_evaluation import (
+    from veritool_rl.core.agent.qwen import GenerationSettings
+    from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
+    from veritool_rl.retail_ops.evaluate.candidate_evaluation import (
         AdapterArtifact,
         CandidateEvaluationConfig,
     )
 
     del workspace
-    raw = _load_committed_config("retail_ops_v1_r3_qwen3_4b_candidate.yaml")
+    raw = _load_committed_config("retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml")
     config = CandidateEvaluationConfig(
         dataset_version=raw["dataset_version"],
         model=ModelArtifact(**raw["model"]),

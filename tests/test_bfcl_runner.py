@@ -33,9 +33,9 @@ def _answer(task_id: str) -> dict[str, Any]:
 
 
 def test_generate_bfcl_records_passes_raw_schema_and_preserves_output() -> None:
-    from veritool_rl.agent.qwen import GeneratedText
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.eval.bfcl_runner import generate_bfcl_records
+    from veritool_rl.core.agent.qwen import GeneratedText
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.eval.bfcl_runner import generate_bfcl_records
 
     class FakeBackend:
         def __init__(self) -> None:
@@ -83,9 +83,9 @@ def test_generate_bfcl_records_passes_raw_schema_and_preserves_output() -> None:
 def test_write_bfcl_generation_artifacts_aligns_raw_and_official_text(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.agent.qwen import GeneratedText
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.eval.bfcl_runner import (
+    from veritool_rl.core.agent.qwen import GeneratedText
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.eval.bfcl_runner import (
         generate_bfcl_records,
         write_bfcl_generation_artifacts,
     )
@@ -120,8 +120,8 @@ def test_write_bfcl_generation_artifacts_aligns_raw_and_official_text(
 
 
 def test_generate_bfcl_records_rejects_misaligned_ground_truth() -> None:
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.eval.bfcl_runner import generate_bfcl_records
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.eval.bfcl_runner import generate_bfcl_records
 
     task = BfclTask.model_validate(_task("simple_python_0"))
     answer = BfclGroundTruth.model_validate(_answer("simple_python_1"))
@@ -133,10 +133,10 @@ def test_generate_bfcl_records_rejects_misaligned_ground_truth() -> None:
 def test_build_official_evaluator_command_uses_fixed_process_boundary(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.eval.bfcl_runner import build_official_evaluator_command
+    from veritool_rl.legacy.eval.bfcl_runner import build_official_evaluator_command
 
     python = tmp_path / "tools/bfcl_eval/.venv/bin/python"
-    evaluator_script = (tmp_path / "scripts/run_bfcl_official_ast.py").resolve()
+    evaluator_script = (tmp_path / "scripts/legacy/bfcl/run_bfcl_official_ast.py").resolve()
     bfcl_repo = (tmp_path / "bfcl").resolve()
     manifest_path = (tmp_path / "manifest.json").resolve()
     result_dir = (tmp_path / "results").resolve()
@@ -183,9 +183,9 @@ def test_build_official_evaluator_command_uses_fixed_process_boundary(
 def test_finalize_bfcl_artifacts_writes_metrics_and_real_failure(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.agent.qwen import GeneratedText
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.eval.bfcl_runner import (
+    from veritool_rl.core.agent.qwen import GeneratedText
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.eval.bfcl_runner import (
         finalize_bfcl_artifacts,
         generate_bfcl_records,
     )
@@ -266,13 +266,13 @@ def test_run_official_evaluator_creates_isolated_project_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.eval.bfcl_runner import run_official_evaluator
+    from veritool_rl.legacy.eval.bfcl_runner import run_official_evaluator
 
     monkeypatch.chdir(tmp_path)
     python = Path("tools/bfcl_eval/.venv/bin/python")
     python.parent.mkdir(parents=True)
     python.write_text("", encoding="utf-8")
-    evaluator_script = tmp_path / "scripts/run_bfcl_official_ast.py"
+    evaluator_script = tmp_path / "scripts/legacy/bfcl/run_bfcl_official_ast.py"
     evaluator_script.parent.mkdir(parents=True)
     evaluator_script.write_text("", encoding="utf-8")
     bfcl_repo = tmp_path / "bfcl"
@@ -288,7 +288,7 @@ def test_run_official_evaluator_creates_isolated_project_root(
         assert kwargs["cwd"] == project_root
         return SimpleNamespace(returncode=0, stdout="official ok")
 
-    monkeypatch.setattr("veritool_rl.eval.bfcl_runner.subprocess.run", fake_run)
+    monkeypatch.setattr("veritool_rl.legacy.eval.bfcl_runner.subprocess.run", fake_run)
 
     _, output, _ = run_official_evaluator(
         python=python,
@@ -310,13 +310,13 @@ def test_run_official_evaluator_creates_isolated_project_root(
 def test_bfcl_eval_config_accepts_only_project_relative_adapter_path() -> None:
     import yaml
 
-    from scripts.evaluate_bfcl import _validate_config
+    from scripts.legacy.bfcl.evaluate_bfcl import _validate_config
 
     config = yaml.safe_load(
-        Path("configs/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
+        Path("configs/legacy/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
     )
     config["policy"]["adapter_path"] = (
-        "reports/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
+        "reports/legacy/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
     )
 
     parsed = _validate_config(config, seed=0)

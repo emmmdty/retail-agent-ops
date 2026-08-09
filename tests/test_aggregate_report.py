@@ -7,12 +7,12 @@ from typing import Any
 
 
 def test_aggregate_runs_pairs_tasks_and_reports_improvement(tmp_path: Path) -> None:
-    from veritool_rl.agent.policy import OraclePolicy, PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.artifacts import write_json, write_jsonl, write_yaml
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.eval.metrics import compute_metrics
-    from veritool_rl.reporting import aggregate_runs
+    from veritool_rl.core.agent.policy import OraclePolicy, PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.artifacts import write_json, write_jsonl, write_yaml
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.metrics import compute_metrics
+    from veritool_rl.core.reporting import aggregate_runs
 
     class FinalOnlyPolicy:
         name = "final-only"
@@ -43,7 +43,7 @@ def test_aggregate_runs_pairs_tasks_and_reports_improvement(tmp_path: Path) -> N
         **baseline_config,
         "policy": {
             **baseline_config["policy"],
-            "adapter_path": "reports/mvp/sft-seed0/adapter",
+            "adapter_path": "reports/legacy/mvp/sft-seed0/adapter",
         },
     }
     write_yaml(baseline_dir / "config.yaml", baseline_config)
@@ -72,12 +72,12 @@ def test_aggregate_runs_pairs_tasks_and_reports_improvement(tmp_path: Path) -> N
 def test_aggregate_runs_rejects_unfair_eval_configs(tmp_path: Path) -> None:
     import pytest
 
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.artifacts import write_json, write_jsonl, write_yaml
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.eval.metrics import compute_metrics
-    from veritool_rl.reporting import aggregate_runs
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.artifacts import write_json, write_jsonl, write_yaml
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.metrics import compute_metrics
+    from veritool_rl.core.reporting import aggregate_runs
 
     task = build_mvp_task_splits(seed=0)["test"][0]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=0)
@@ -103,7 +103,7 @@ def test_aggregate_runs_rejects_unfair_eval_configs(tmp_path: Path) -> None:
             "policy": {
                 "type": "qwen",
                 "model_name": "models/Qwen3-1.7B",
-                "adapter_path": "reports/mvp/sft-seed0/adapter",
+                "adapter_path": "reports/legacy/mvp/sft-seed0/adapter",
                 "max_new_tokens": 128,
             },
             "seed": 0,

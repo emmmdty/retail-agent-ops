@@ -6,52 +6,54 @@
 
 ## Current Phase
 
-R3「单卡适配与服务 v1」。Task 1（SFT 训练接入与首次真实 QLoRA-SFT）已完成（`e9cb95b`），
-产出候选 adapter `reports/retail_ops/v1/r3/sft-001/adapter/`。当前任务是 R3 Task 2：
-**对 60 条 dev 任务做候选评测，与已有 Qwen3-4B base 配对比较**。正式 120 条 holdout、
-release GO/NO-GO 与 serve 仍不在范围内。
+R3「单卡适配与服务 v1」的实现任务（Task 1 SFT、Task 2 候选 dev 评测）已完成并记入
+`progress.md`。当前是一次**阶段间的仓库收敛任务**，不推进 R3 剩余目标（正式 120 条
+holdout、release GO/NO-GO、serve 均不在范围内）。
 
 ## Current Task
 
-- 输入：候选 adapter（7 文件，`adapter_model.safetensors` =
-  `34544fac3ec9afae10f9212f730aaf275bc86b536ffaeecfb4fe0eeb745e8748`）；已有 Qwen3-4B base
-  证据（`qwen3-4b-dev-base-001`，task_success=0.80、policy_violation_rate=0.133、
-  schema_valid_rate=0.781、invalid_call_rate=0.219、recovery_success=0.5）；同一份已哈希
-  校验的模型（revision `8cd0101f...`）；冻结的 60 条 dev 与公开 dev manifest。
-- 输出：`formal_dev_candidate` 流水线与候选证据契约（含 adapter provenance 锁定）、配对
-  比较函数与报告、真实 GPU 候选评测结果，以及与 base 的逐指标对照。
-- 非目标：**不打开或评测正式 120 条 holdout**、不调用 `evaluate_authorized_holdout`/
-  `sealed_evaluation.py`、不做 release GO/NO-GO 决策、不部署 serve、不触碰 BFCL 200 条；
-  不重训、不调超参、不改 240/60 配额；不自动 push/merge。
-- 关键约束（已核实的代码事实）：`BaseRunEvidence`/`BaseEvaluationConfig` **一个字段都不能加**
-  ——`_content_id` 把除 `run_id`/`schema_version` 外的全部字段算进自哈希，加字段会让已有两份
-  R2 base 证据（`qwen3-1.7b`/`qwen3-4b-dev-base-001`）的 `run_id` 复算失败。因此候选契约必须
-  用子类扩展，且 base 路径行为逐字节不变。
-- 失败模式：候选跑在未哈希校验的 adapter 上；base/candidate 用了不同 bundle/manifest/parser/
-  seed/预算/生成参数导致比较无效；候选证据能被当作 base 证据加载（或反之）；base 路径因重构
-  发生行为漂移；把 n=60 的小幅差异说成稳定提升。
-- [x] A：`AdapterArtifact` + `CandidateEvaluationConfig`/`CandidateRunEvidence` 子类契约；
-      `_require_backend_matches_pin` 改为**双向**绑定（base 拒绝任何 adapter；candidate
-      拒绝缺失或不符的 adapter）。
-- [x] B：抽出 `require_dev_evaluation_preconditions` 与 `measure_dev_run` 两个共用核心；
-      两份真实 R2 base 证据仍能加载且 `run_id` 复算一致（已固化为测试）。
-- [x] C：`evaluate_formal_dev_candidate` + `load_candidate_run_evidence`；候选证据与 base
-      证据互不可加载（严格模型 + 必填 adapter）。
-- [x] D：`compare_dev_runs` 校验 15 项配对字段 + model + generation + task_count，任一不符
-      即抛 `ComparisonError`，不给出带警告的无效 delta。
-- [x] E：CLI `pipeline: formal_dev_candidate` 分派（默认后端工厂真实挂载 adapter）+
-      `configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml`（model 段与 base config 逐字段相同）。
-- [x] F：治理测试补充 2 项（候选 config 同时锁定 model+adapter 逐文件哈希且 model 段必须
-      与 base config 相同；候选私有/公开产物路径仍被 ignore）。
-- [x] G：代码 ff-only 同步到 `0c6f552`；真实候选评测完成（GPU 0，4m18s，wall 250.7s，
-      峰值 2.95 GB），60/60 任务、evidence_complete、replayable 60。
-- [x] H：公开报告与 5 个私有证据文件同步回本地，本地/远端哈希逐一一致，本地
-      `load_candidate_run_evidence` 复算 `run_id` 与产物哈希通过；配对比较与逐场景/
-      配对 2x2/精确 McNemar 分析已记入 LOG-20260807-09。
-- 验收命令：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
+仓库收敛：Git 单分支化、切断对原 VeriTool-RL 工作区的依赖、按四个稳定接口重排目录。
+
+- 输入：101 个提交的独立 checkout（原分支 `feature/r2-formal-data-and-base-eval`
+  与 `portfolio/retail-agent-ops-init`、0 remote）；ignored 软链接
+  `data/external_repos → ../../veritool-rl/data/external_repos`；`src/veritool_rl` 下
+  55 个源文件按 R0 前的研究式布局（agent/data/envs/eval/rewards/trajectory/training）
+  与 RetailOps 领域包混放；configs 下 17 个 retail + 7 个 mvp + 7 个 bfcl 配置平铺。
+- 输出：单一 `main` 分支与单一 worktree；`data/external_repos` 为自包含本地目录；
+  `src/veritool_rl` 按 `core / retail_ops(domain,build,evaluate,release,serve) /
+  training / legacy` 分层；configs、scripts、reports、docs 的活动内容与旧
+  VeriTool-RL 路线分离；文档与治理测试同步到新路径。
+- 非目标：**不改任何函数体、不改行为**；不重命名 Python 包（`veritool_rl` 保留，
+  用户已决策）；不改已提交的历史产物内容（`reports/` 下 resolved_config、metrics、
+  manifest 一律逐字节保留）；不动 GPU、不调 API、不下载模型、不碰正式 holdout；
+  不创建远程仓库、不 push。
+- 失败模式：重构中误改逻辑导致行为漂移；已提交的 R2/R3 证据 `run_id` 复算失败
+  （`_content_id` 自哈希被破坏）；import 重写遗漏导致运行期而非导入期才失败；
+  治理测试的硬编码路径与新布局不一致却被顺手放宽而非修正；`.gitignore` 规则未跟随
+  reports 迁移导致 BFCL 失败明细或 adapter 权重进 Git。
+- 关键约束（已核实的代码事实）：`scripts/run_bfcl_official_ast.py::_verify_checkout`
+  同时校验 gorilla 的 HEAD commit 与 `git status --porcelain` 为空，因此本地化时必须
+  保留 gorilla 自身的 `.git`，否则该 provenance 校验失效（已实测两个测试会失败）。
+  `docs/CAREER_CONTEXT.md`/`PRODUCT_BRIEF.md`/`EXECUTION_PLAN.md`/`HANDOFF.md`/
+  `LEGACY_INVENTORY.md` 五份文档的路径被 `tests/test_project_governance.py` 断言，
+  不得移动。
+- [x] A：Git 收敛——`feature/r2-formal-data-and-base-eval` 重命名为 `main`，删除已被
+      完全包含的 `portfolio/retail-agent-ops-init`；复核 0 remote、无 alternates、
+      无 submodule、无跟踪软链接。
+- [x] B：`data/external_repos` 本地化——复制 gorilla 固定 checkout（含其自身 `.git`）
+      进本仓库，删除指向 veritool-rl 的软链接，写 `BFCL_PIN.txt` 记录上游、commit、
+      保留 `.git` 的理由与三个未随迁 checkout 的获取方式。
+- [x] C：`src/veritool_rl` 分层——core（跨领域基础设施）/ retail_ops 四接口子包 /
+      training / legacy；纯 `git mv` + import 路径重写，函数体零改动。
+- [x] D：configs、scripts、reports、docs 分离活动内容与 legacy；`.gitignore` 规则
+      跟随迁移。
+- [x] E：治理测试与文档（README、CLAUDE.md、AGENTS.md、HANDOFF、LEGACY_INVENTORY）
+      同步新布局；新增仓库地图。
+- [x] F：全量门禁 + 行为不变证明。
+- 验收命令：`.venv/bin/pytest -q`（基线 585 passed，重构后必须仍为 585 passed）、
+  `.venv/bin/ruff check .`、`.venv/bin/mypy`、
   `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
-  另需证明两份既有 R2 base 证据加载不受影响，且候选运行的 bundle/manifest/parser/seed/
-  预算/生成参数与 base 逐字段一致。
+  另需证明已提交的两份 R2 base 证据与 R3 候选证据仍能加载且 `run_id` 复算一致。
 
 ## Task Rules
 

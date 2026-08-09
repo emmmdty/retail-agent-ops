@@ -12,8 +12,8 @@ import pytest
 
 
 def test_qwen_policy_passes_tools_and_records_usage() -> None:
-    from veritool_rl.agent.qwen import GeneratedText, QwenPolicy
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.agent.qwen import GeneratedText, QwenPolicy
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
 
     class FakeBackend:
         def __init__(self) -> None:
@@ -54,7 +54,7 @@ def test_qwen_policy_passes_tools_and_records_usage() -> None:
 
 
 def test_qwen_policy_preserves_parser_error_and_usage() -> None:
-    from veritool_rl.agent.qwen import GeneratedText, QwenPolicy
+    from veritool_rl.core.agent.qwen import GeneratedText, QwenPolicy
 
     class InvalidBackend:
         def generate(
@@ -83,7 +83,7 @@ def test_qwen_policy_config_rejects_non_project_relative_paths(
     field: str,
     value: str,
 ) -> None:
-    from veritool_rl.agent.qwen import QwenPolicy
+    from veritool_rl.core.agent.qwen import QwenPolicy
 
     config = {"model_name": "models/Qwen3-1.7B", field: value}
 
@@ -95,7 +95,7 @@ def test_transformers_backend_requires_local_model_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
 
     monkeypatch.chdir(tmp_path)
 
@@ -152,7 +152,7 @@ def _write_model_dir(tmp_path: Path) -> Path:
 
 
 def test_hash_local_model_files_matches_manual_digest(tmp_path: Path) -> None:
-    from veritool_rl.agent.qwen import hash_local_model_files
+    from veritool_rl.core.agent.qwen import hash_local_model_files
 
     model_path = _write_model_dir(tmp_path)
 
@@ -165,7 +165,7 @@ def test_hash_local_model_files_matches_manual_digest(tmp_path: Path) -> None:
 
 
 def test_verify_local_model_files_detects_every_tamper_shape(tmp_path: Path) -> None:
-    from veritool_rl.agent.qwen import hash_local_model_files, verify_local_model_files
+    from veritool_rl.core.agent.qwen import hash_local_model_files, verify_local_model_files
 
     model_path = _write_model_dir(tmp_path)
     pinned = hash_local_model_files(model_path, ("config.json", "model.safetensors"))
@@ -192,7 +192,7 @@ def test_verify_local_model_files_detects_every_tamper_shape(tmp_path: Path) -> 
 
 
 def test_verify_local_model_files_rejects_symlinked_weights(tmp_path: Path) -> None:
-    from veritool_rl.agent.qwen import hash_local_model_files, verify_local_model_files
+    from veritool_rl.core.agent.qwen import hash_local_model_files, verify_local_model_files
 
     model_path = _write_model_dir(tmp_path)
     pinned = hash_local_model_files(model_path, ("config.json", "model.safetensors"))
@@ -208,7 +208,7 @@ def test_transformers_backend_verifies_pins_before_loading_weights(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import (
+    from veritool_rl.core.agent.qwen import (
         GenerationSettings,
         TransformersBackend,
         hash_local_model_files,
@@ -250,7 +250,7 @@ def test_transformers_backend_publishes_the_adapter_it_actually_loaded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """加载了 adapter 的后端必须如实声明，正式 base 评测据此拒绝它。"""
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
 
     _install_fake_transformers(monkeypatch)
     model_path = _write_model_dir(tmp_path)
@@ -276,7 +276,7 @@ def test_transformers_backend_rejects_malformed_revision(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
 
     _install_fake_transformers(monkeypatch)
     model_path = _write_model_dir(tmp_path)
@@ -288,7 +288,7 @@ def test_transformers_backend_rejects_malformed_revision(
 def test_cuda_hardware_provider_maps_physical_gpu_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import CudaHardwareProvider
+    from veritool_rl.core.agent.qwen import CudaHardwareProvider
 
     reset_calls: list[int] = []
 
@@ -321,7 +321,7 @@ def test_cuda_hardware_provider_maps_physical_gpu_identity(
 def test_cuda_hardware_provider_reports_unset_visible_devices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import CudaHardwareProvider
+    from veritool_rl.core.agent.qwen import CudaHardwareProvider
 
     class FakeProperties:
         name = "NVIDIA GeForce RTX 4090"
@@ -351,7 +351,7 @@ def test_cuda_hardware_provider_rejects_unmappable_physical_identity(
     ordinal: int,
     message: str,
 ) -> None:
-    from veritool_rl.agent.qwen import CudaHardwareProvider
+    from veritool_rl.core.agent.qwen import CudaHardwareProvider
 
     torch = ModuleType("torch")
     torch.cuda = ModuleType("torch.cuda")  # type: ignore[attr-defined]
@@ -369,7 +369,7 @@ def test_transformers_backend_forces_local_files_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
 
     tokenizer_kwargs: dict[str, Any] = {}
     model_kwargs: dict[str, Any] = {}

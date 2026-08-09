@@ -6,7 +6,7 @@ import yaml
 
 
 def test_load_bundle_pins_versions_tools_and_hashes() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
 
     loaded = load_bundle(Path("domains/retail_ops/v1"))
 
@@ -28,7 +28,7 @@ def test_load_bundle_pins_versions_tools_and_hashes() -> None:
 
 
 def test_bundle_rejects_unknown_fields(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
 
     source = Path("domains/retail_ops/v1")
     target = tmp_path / "v1"
@@ -45,7 +45,7 @@ def test_bundle_rejects_unknown_fields(tmp_path: Path) -> None:
 
 
 def test_bundle_rejects_refund_reason_enum_drift(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
 
     target = tmp_path / "v1"
     copytree(Path("domains/retail_ops/v1"), target)

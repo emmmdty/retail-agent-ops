@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.retail_ops.bundle import ReleasePolicyConfig
-from veritool_rl.retail_ops.evaluation import EvaluationMode, RunEvidence
+from veritool_rl.retail_ops.domain.bundle import ReleasePolicyConfig
+from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, RunEvidence
 
 _ARTIFACT_HASHES = {
     "config.yaml": "c" * 64,
@@ -73,7 +73,7 @@ def _unknown_tool(**updates: Any) -> RunEvidence:
 
 
 def test_oracle_candidate_passes_all_release_gates() -> None:
-    from veritool_rl.retail_ops.release import ReleaseDecision, decide_release
+    from veritool_rl.retail_ops.release.release import ReleaseDecision, decide_release
 
     report = decide_release(_baseline(), _oracle(), _release_policy())
 
@@ -91,7 +91,7 @@ def test_oracle_candidate_passes_all_release_gates() -> None:
 
 
 def test_unknown_tool_candidate_is_no_go_without_short_circuit() -> None:
-    from veritool_rl.retail_ops.release import ReleaseDecision, decide_release
+    from veritool_rl.retail_ops.release.release import ReleaseDecision, decide_release
 
     report = decide_release(_baseline(), _unknown_tool(), _release_policy())
 
@@ -119,7 +119,7 @@ def test_release_rejects_unpaired_evidence(
     changed: Any,
     message: str,
 ) -> None:
-    from veritool_rl.retail_ops.release import decide_release
+    from veritool_rl.retail_ops.release.release import decide_release
 
     candidate = _oracle().model_copy(update={field: changed})
 
@@ -128,7 +128,7 @@ def test_release_rejects_unpaired_evidence(
 
 
 def test_release_rejects_missing_metric() -> None:
-    from veritool_rl.retail_ops.release import decide_release
+    from veritool_rl.retail_ops.release.release import decide_release
 
     candidate = _oracle()
     candidate.metrics.pop("p95_latency_ms")
@@ -138,7 +138,7 @@ def test_release_rejects_missing_metric() -> None:
 
 
 def test_latency_gate_handles_zero_baseline_without_infinity() -> None:
-    from veritool_rl.retail_ops.release import decide_release
+    from veritool_rl.retail_ops.release.release import decide_release
 
     both_zero = decide_release(
         _baseline(metrics={**_baseline().metrics, "p95_latency_ms": 0.0}),
@@ -165,7 +165,7 @@ def test_latency_gate_handles_zero_baseline_without_infinity() -> None:
 def test_reports_are_deterministic_non_overwriting_and_html_escaped(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.retail_ops.release import (
+    from veritool_rl.retail_ops.release.release import (
         decide_release,
         load_release_report,
         write_release_report,
@@ -199,8 +199,8 @@ def test_reports_are_deterministic_non_overwriting_and_html_escaped(
 
 
 def test_release_loader_rejects_missing_gate(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import write_json
-    from veritool_rl.retail_ops.release import (
+    from veritool_rl.core.artifacts import write_json
+    from veritool_rl.retail_ops.release.release import (
         decide_release,
         load_release_report,
         write_release_report,

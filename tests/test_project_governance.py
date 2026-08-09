@@ -93,8 +93,10 @@ def test_handoff_defines_read_order_and_stop_rules() -> None:
 
 
 def test_retail_ops_v1_contract_and_holdout_boundary_are_governed() -> None:
-    design = ROOT / "docs/superpowers/specs/2026-07-20-retailops-v1-contract-design.md"
-    implementation = ROOT / "docs/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md"
+    design = ROOT / "docs/archive/superpowers/specs/2026-07-20-retailops-v1-contract-design.md"
+    implementation = (
+        ROOT / "docs/archive/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md"
+    )
     assert design.is_file()
     assert implementation.is_file()
     assert "RetailOps v1" in design.read_text(encoding="utf-8")
@@ -135,17 +137,20 @@ def test_r1_closeout_and_r2_authorization_keep_formal_holdout_sealed() -> None:
 
 def test_r2_active_instructions_reference_approved_contract_and_external_gates() -> None:
     agents = _read("AGENTS.md")
-    handoff = _read("docs/handoffs/2026-07-22-r2-codex-execution-prompt.md")
+    handoff = _read("docs/archive/handoffs/2026-07-22-r2-codex-execution-prompt.md")
     design = _read(
-        "docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md"
+        "docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md"
     )
     implementation = _read(
-        "docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
+        "docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
     )
 
-    assert "当前阶段：`R2` CPU 实现" in agents
+    assert "当前阶段：`R3` 单卡适配与服务 v1" in agents
     assert "R2 已完成方案审批" in agents
     assert "正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认" in agents
+    # R3 的候选结论必须以 dev 口径陈述，不得被写成 release 判定
+    assert "不适合直接替换 base" in agents
+    assert "尚未进入：正式 120 条 holdout 评测、release GO/NO-GO、serve 部署" in agents
 
     for expected in (
         "R2 设计选择和 CPU 实施计划已经用户批准",
@@ -172,12 +177,12 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
 
 
 _R2_CONFIG_NAMES = (
-    "retail_ops_v1_r2_formal_freeze.yaml",
-    "retail_ops_v1_r2_teacher_smoke.yaml",
-    "retail_ops_v1_r2_teacher_full.yaml",
-    "retail_ops_v1_r2_train_export.yaml",
-    "retail_ops_v1_r2_qwen3_1_7b_dev.yaml",
-    "retail_ops_v1_r2_qwen3_4b_dev.yaml",
+    "retail_ops/build/retail_ops_v1_r2_formal_freeze.yaml",
+    "retail_ops/build/retail_ops_v1_r2_teacher_smoke.yaml",
+    "retail_ops/build/retail_ops_v1_r2_teacher_full.yaml",
+    "retail_ops/build/retail_ops_v1_r2_train_export.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r2_qwen3_1_7b_dev.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml",
 )
 
 
@@ -281,11 +286,11 @@ def test_uv_lock_check_succeeds_through_project_level_index_pinning() -> None:
 
 
 _R3_CONFIG_NAMES = (
-    "retail_ops_v1_r3_dev_sft_export.yaml",
-    "retail_ops_v1_r3_sft_smoke.yaml",
-    "retail_ops_v1_r3_sft_overfit.yaml",
-    "retail_ops_v1_r3_sft.yaml",
-    "retail_ops_v1_r3_qwen3_4b_candidate.yaml",
+    "retail_ops/build/retail_ops_v1_r3_dev_sft_export.yaml",
+    "retail_ops/build/retail_ops_v1_r3_sft_smoke.yaml",
+    "retail_ops/build/retail_ops_v1_r3_sft_overfit.yaml",
+    "retail_ops/build/retail_ops_v1_r3_sft.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml",
 )
 
 
@@ -310,7 +315,7 @@ def test_r3_configs_contain_no_secrets_or_private_paths() -> None:
 
 def test_r3_configs_never_reference_bfcl_or_holdout() -> None:
     """R3 config 与训练侧代码不得引用 BFCL 固定 200 条或正式 holdout。"""
-    scanned = [ROOT / "src/veritool_rl/retail_ops/dev_sft_export.py"]
+    scanned = [ROOT / "src/veritool_rl/retail_ops/build/dev_sft_export.py"]
     scanned.extend(ROOT / "configs" / name for name in _R3_CONFIG_NAMES)
     for path in scanned:
         text = path.read_text(encoding="utf-8").lower()
@@ -357,7 +362,9 @@ def test_r3_candidate_config_pins_model_and_adapter() -> None:
     """候选 config 必须同时锁定基座模型与 adapter 的逐文件 SHA-256。"""
     import yaml
 
-    parsed = yaml.safe_load(_read("configs/retail_ops_v1_r3_qwen3_4b_candidate.yaml"))
+    parsed = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml")
+    )
     assert parsed["pipeline"] == "formal_dev_candidate"
     for key in ("model", "adapter"):
         digests = parsed[key]["file_sha256"]
@@ -365,7 +372,9 @@ def test_r3_candidate_config_pins_model_and_adapter() -> None:
         for digest in digests.values():
             assert len(digest) == 64, key
     # 候选必须与 base 跑同一份基座模型，否则 delta 不能归因于 adapter。
-    base = yaml.safe_load(_read("configs/retail_ops_v1_r2_qwen3_4b_dev.yaml"))["model"]
+    base = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml")
+    )["model"]
     assert parsed["model"] == base
 
 
@@ -382,3 +391,39 @@ def test_r3_candidate_governed_paths_remain_ignored() -> None:
             check=False,
         )
         assert ignored.returncode == 0, ignored_path
+
+
+def test_source_layers_enforce_one_way_dependency() -> None:
+    """`docs/REPO_MAP.md` 主张依赖方向恒为 product_cli → retail_ops.* → core.*，
+    且 legacy 不被主线依赖。这条主张是"领域可替换"的结构证据，必须可验证而不是
+    仅写在文档里——否则下一次改动就会静默把它破坏掉。"""
+    src = ROOT / "src/veritool_rl"
+    forbidden = {
+        "core": ("veritool_rl.retail_ops", "veritool_rl.legacy", "veritool_rl.training"),
+        "retail_ops": ("veritool_rl.legacy",),
+        "training": ("veritool_rl.legacy", "veritool_rl.retail_ops"),
+    }
+    violations: list[str] = []
+    for layer, banned in forbidden.items():
+        for path in (src / layer).rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for name in banned:
+                if f"import {name}" in text or f"from {name}" in text:
+                    violations.append(f"{path.relative_to(ROOT)} 依赖了 {name}")
+
+    cli_text = (src / "product_cli.py").read_text(encoding="utf-8")
+    if "veritool_rl.legacy" in cli_text:
+        violations.append("src/veritool_rl/product_cli.py 依赖了 veritool_rl.legacy")
+
+    assert violations == []
+
+
+def test_four_stable_interfaces_have_config_and_module_homes() -> None:
+    """SPEC 第 3 节的四个稳定接口在目录结构上必须各有归属，且每个 configs 子目录
+    非空——防止接口名只存在于文档而没有可运行配置。"""
+    for interface in ("build", "evaluate", "release", "serve"):
+        module_dir = ROOT / "src/veritool_rl/retail_ops" / interface
+        config_dir = ROOT / "configs/retail_ops" / interface
+        assert module_dir.is_dir(), interface
+        assert (module_dir / "__init__.py").is_file(), interface
+        assert list(config_dir.glob("*.yaml")), interface

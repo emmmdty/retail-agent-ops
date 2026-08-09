@@ -6,10 +6,10 @@ import pytest
 
 
 def test_oracle_metrics_match_hand_computed_values() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.eval.metrics import compute_metrics
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.metrics import compute_metrics
 
     tasks = build_mvp_task_splits(seed=10)["test"][:4]
     trajectories = [run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=10) for task in tasks]
@@ -30,7 +30,7 @@ def test_oracle_metrics_match_hand_computed_values() -> None:
 
 
 def test_empty_metrics_have_defined_zero_denominators() -> None:
-    from veritool_rl.eval.metrics import compute_metrics
+    from veritool_rl.core.metrics import compute_metrics
 
     metrics = compute_metrics([], bootstrap_samples=10, seed=0)
 
@@ -43,7 +43,7 @@ def test_empty_metrics_have_defined_zero_denominators() -> None:
 
 
 def test_metrics_reject_boolean_bootstrap_sample_count() -> None:
-    from veritool_rl.eval.metrics import compute_metrics
+    from veritool_rl.core.metrics import compute_metrics
 
     with pytest.raises(ValueError, match="正整数"):
         compute_metrics([], bootstrap_samples=True, seed=0)
@@ -52,11 +52,11 @@ def test_metrics_reject_boolean_bootstrap_sample_count() -> None:
 def test_metrics_separate_schema_execution_policy_and_verifier_reward() -> None:
     from typing import Any
 
-    from veritool_rl.agent.policy import PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.eval.metrics import compute_metrics
-    from veritool_rl.trajectory import TaskScenario, ToolCall
+    from veritool_rl.core.agent.policy import PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.metrics import compute_metrics
+    from veritool_rl.core.trajectory import TaskScenario, ToolCall
 
     class UnknownToolPolicy:
         name = "unknown-tool"
@@ -113,11 +113,11 @@ def test_metrics_count_parse_errors_and_transient_calls() -> None:
     from collections.abc import Iterator
     from typing import Any
 
-    from veritool_rl.agent.policy import OraclePolicy, PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.eval.metrics import compute_metrics
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.agent.policy import OraclePolicy, PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.metrics import compute_metrics
+    from veritool_rl.core.trajectory import TaskScenario
 
     class InvalidPolicy:
         name = "invalid"

@@ -57,7 +57,7 @@ def test_build_cli_writes_manifest_and_rejects_absolute_config_path(
         [
             "build",
             "--config",
-            "configs/retail_ops_v1_build.yaml",
+            "configs/retail_ops/build/retail_ops_v1_build.yaml",
             "--seed",
             "0",
             "--output_dir",
@@ -94,7 +94,7 @@ def test_evaluate_and_release_cli_dispatch(tmp_path: Path) -> None:
             [
                 "build",
                 "--config",
-                "configs/retail_ops_v1_build.yaml",
+                "configs/retail_ops/build/retail_ops_v1_build.yaml",
                 "--output_dir",
                 str(build_dir),
             ]
@@ -102,8 +102,8 @@ def test_evaluate_and_release_cli_dispatch(tmp_path: Path) -> None:
         == 0
     )
     for config, output in (
-        ("configs/retail_ops_v1_qualification_base.yaml", baseline_dir),
-        ("configs/retail_ops_v1_qualification_oracle.yaml", candidate_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_base.yaml", baseline_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_oracle.yaml", candidate_dir),
     ):
         assert (
             main(
@@ -124,7 +124,7 @@ def test_evaluate_and_release_cli_dispatch(tmp_path: Path) -> None:
             [
                 "release",
                 "--config",
-                "configs/retail_ops_v1_release.yaml",
+                "configs/retail_ops/release/retail_ops_v1_release.yaml",
                 "--baseline_dir",
                 str(baseline_dir),
                 "--candidate_dir",
@@ -142,9 +142,12 @@ def test_evaluate_and_release_cli_dispatch(tmp_path: Path) -> None:
 
 
 def test_pyproject_registers_product_command_without_package_rename() -> None:
+    """分发名与产品名一致（项目已从原 VeriTool-RL 工作区独立），但导入名仍是
+    `veritool_rl`——已提交的 reports/manifest provenance 依赖它，重命名属于
+    独立任务（见 docs/LEGACY_INVENTORY.md 的命名边界）。"""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["project"]["name"] == "veritool-rl"
+    assert pyproject["project"]["name"] == "retail-agent-ops"
     assert pyproject["project"]["scripts"]["retail-agent-ops"] == ("veritool_rl.product_cli:main")
 
 
@@ -161,14 +164,14 @@ def test_release_cli_rejects_config_bundle_different_from_evidence(
         [
             "build",
             "--config",
-            "configs/retail_ops_v1_build.yaml",
+            "configs/retail_ops/build/retail_ops_v1_build.yaml",
             "--output_dir",
             str(build_dir),
         ]
     )
     for config, output in (
-        ("configs/retail_ops_v1_qualification_base.yaml", baseline_dir),
-        ("configs/retail_ops_v1_qualification_oracle.yaml", candidate_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_base.yaml", baseline_dir),
+        ("configs/retail_ops/evaluate/retail_ops_v1_qualification_oracle.yaml", candidate_dir),
     ):
         main(
             [

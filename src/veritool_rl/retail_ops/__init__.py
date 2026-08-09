@@ -1,17 +1,6 @@
 """RetailOps 领域契约与执行组件。"""
 
-from veritool_rl.retail_ops.bundle import (
-    LoadedRetailOpsBundle,
-    ReleasePolicyConfig,
-    RetailOpsPolicies,
-    load_bundle,
-)
-from veritool_rl.retail_ops.formal_governance import (
-    AuthorizedFormalHoldout,
-    authorize_formal_holdout,
-    load_authorized_formal_holdout,
-)
-from veritool_rl.retail_ops.formal_manifests import (
+from veritool_rl.retail_ops.build.formal_manifests import (
     FormalDatasetReceipt,
     FormalHoldoutReceipt,
     FormalTaskManifest,
@@ -21,11 +10,22 @@ from veritool_rl.retail_ops.formal_manifests import (
     load_verified_formal_dataset,
     write_formal_task_set,
 )
-from veritool_rl.retail_ops.formal_tasks import (
+from veritool_rl.retail_ops.domain.bundle import (
+    LoadedRetailOpsBundle,
+    ReleasePolicyConfig,
+    RetailOpsPolicies,
+    load_bundle,
+)
+from veritool_rl.retail_ops.domain.formal_tasks import (
     FormalSplit,
     FormalTaskRecord,
     FormalTaskSet,
     build_formal_task_set,
+)
+from veritool_rl.retail_ops.release.formal_governance import (
+    AuthorizedFormalHoldout,
+    authorize_formal_holdout,
+    load_authorized_formal_holdout,
 )
 
 __all__ = [

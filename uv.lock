@@ -2200,6 +2200,65 @@ wheels = [
 ]
 
 [[package]]
+name = "retail-agent-ops"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx2" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+teacher = [
+    { name = "openai" },
+]
+train = [
+    { name = "accelerate" },
+    { name = "bitsandbytes" },
+    { name = "datasets" },
+    { name = "peft" },
+    { name = "torch" },
+    { name = "transformers" },
+    { name = "trl" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", marker = "extra == 'train'", specifier = ">=0.33" },
+    { name = "bitsandbytes", marker = "extra == 'train'", specifier = ">=0.43" },
+    { name = "datasets", marker = "extra == 'train'", specifier = ">=2.20" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'teacher'", specifier = ">=1.0" },
+    { name = "peft", marker = "extra == 'train'", specifier = ">=0.12" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.7" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "torch", marker = "extra == 'train'", specifier = "==2.13.0" },
+    { name = "transformers", marker = "extra == 'train'", specifier = ">=4.44" },
+    { name = "trl", marker = "extra == 'train'", specifier = ">=0.9" },
+    { name = "types-pyyaml", marker = "extra == 'dev'" },
+    { name = "uvicorn", specifier = ">=0.30" },
+]
+provides-extras = ["train", "teacher", "eval", "dev"]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -2541,65 +2600,6 @@ sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a2/65/b7c6c443ccc586
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/45/ec/dbb7e5a6b91f86bfb9eb7d2988a2730907b6a729875b949c7f022e8b88fa/uvicorn-0.51.0-py3-none-any.whl", hash = "sha256:5d38af6cd620f2ae3849fb44fd4879e0890aa1febe8d47eb355fb45d93fe6a5b", size = 73219, upload-time = "2026-07-08T10:59:04.44Z" },
 ]
-
-[[package]]
-name = "veritool-rl"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "httpx2" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
-]
-teacher = [
-    { name = "openai" },
-]
-train = [
-    { name = "accelerate" },
-    { name = "bitsandbytes" },
-    { name = "datasets" },
-    { name = "peft" },
-    { name = "torch" },
-    { name = "transformers" },
-    { name = "trl" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", marker = "extra == 'train'", specifier = ">=0.33" },
-    { name = "bitsandbytes", marker = "extra == 'train'", specifier = ">=0.43" },
-    { name = "datasets", marker = "extra == 'train'", specifier = ">=2.20" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "openai", marker = "extra == 'teacher'", specifier = ">=1.0" },
-    { name = "peft", marker = "extra == 'train'", specifier = ">=0.12" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rich", specifier = ">=13.7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "torch", marker = "extra == 'train'", specifier = "==2.13.0" },
-    { name = "transformers", marker = "extra == 'train'", specifier = ">=4.44" },
-    { name = "trl", marker = "extra == 'train'", specifier = ">=0.9" },
-    { name = "types-pyyaml", marker = "extra == 'dev'" },
-    { name = "uvicorn", specifier = ">=0.30" },
-]
-provides-extras = ["train", "teacher", "eval", "dev"]
 
 [[package]]
 name = "xxhash"

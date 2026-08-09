@@ -9,7 +9,7 @@ import pytest
 
 
 def test_build_writes_stable_qualification_manifest(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.retail_ops.build.manifests import build_qualification
 
     first_dir = tmp_path / "first"
     second_dir = tmp_path / "second"
@@ -39,7 +39,7 @@ def test_build_writes_stable_qualification_manifest(tmp_path: Path) -> None:
 
 
 def test_build_rejects_existing_output_directory(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.manifests import build_qualification
+    from veritool_rl.retail_ops.build.manifests import build_qualification
 
     output = tmp_path / "run"
     output.mkdir()
@@ -49,7 +49,7 @@ def test_build_rejects_existing_output_directory(tmp_path: Path) -> None:
 
 
 def test_load_built_tasks_verifies_manifest_and_task_hashes(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.manifests import (
+    from veritool_rl.retail_ops.build.manifests import (
         build_qualification,
         load_built_tasks,
         load_task_manifest,
@@ -76,8 +76,8 @@ def test_load_built_tasks_verifies_manifest_and_task_hashes(tmp_path: Path) -> N
 def test_load_built_tasks_rejects_changed_task_with_refreshed_file_hash(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.artifacts import canonical_json, sha256_file
-    from veritool_rl.retail_ops.manifests import build_qualification, load_built_tasks
+    from veritool_rl.core.artifacts import canonical_json, sha256_file
+    from veritool_rl.retail_ops.build.manifests import build_qualification, load_built_tasks
 
     output = tmp_path / "run"
     build_qualification(Path("domains/retail_ops/v1"), 11, output)

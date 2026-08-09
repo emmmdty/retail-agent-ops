@@ -65,9 +65,9 @@ def _write_full_sources(root: Path) -> dict[str, list[str]]:
 
 
 def test_build_bfcl_sft_manifest_freezes_disjoint_exact_splits(tmp_path: Path) -> None:
-    from veritool_rl.artifacts import sha256_file
-    from veritool_rl.data.bfcl import build_bfcl_manifest
-    from veritool_rl.data.bfcl_sft import build_bfcl_sft_manifest
+    from veritool_rl.core.artifacts import sha256_file
+    from veritool_rl.legacy.data.bfcl import build_bfcl_manifest
+    from veritool_rl.legacy.data.bfcl_sft import build_bfcl_sft_manifest
 
     data_root = tmp_path / "data"
     _write_full_sources(data_root)
@@ -137,8 +137,8 @@ def test_build_bfcl_sft_manifest_freezes_disjoint_exact_splits(tmp_path: Path) -
 
 
 def test_ground_truth_to_tool_calls_handles_optional_nested_and_variable_values() -> None:
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.data.bfcl_sft import ground_truth_to_tool_calls
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.data.bfcl_sft import ground_truth_to_tool_calls
 
     task = BfclTask.model_validate(
         _task(
@@ -195,8 +195,8 @@ def test_ground_truth_to_tool_calls_handles_optional_nested_and_variable_values(
 
 
 def test_ground_truth_to_tool_calls_preserves_parallel_call_order() -> None:
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.data.bfcl_sft import ground_truth_to_tool_calls
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.data.bfcl_sft import ground_truth_to_tool_calls
 
     payload = _task("parallel_999")
     payload["function"].append(
@@ -242,8 +242,8 @@ class _FakeTokenizer:
 
 
 def test_tokenize_bfcl_sft_example_uses_qwen_template_and_assistant_only_labels() -> None:
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.data.bfcl_sft import tokenize_bfcl_sft_example
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.data.bfcl_sft import tokenize_bfcl_sft_example
 
     task = BfclTask.model_validate(_task("simple_python_999"))
     answer = BfclGroundTruth.model_validate(_answer(task.id))
@@ -280,8 +280,8 @@ def test_tokenize_bfcl_sft_example_rejects_prefix_mismatch_or_truncation(
     tokenizer: _FakeTokenizer,
     error: str,
 ) -> None:
-    from veritool_rl.data.bfcl import BfclGroundTruth, BfclTask
-    from veritool_rl.data.bfcl_sft import tokenize_bfcl_sft_example
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth, BfclTask
+    from veritool_rl.legacy.data.bfcl_sft import tokenize_bfcl_sft_example
 
     task = BfclTask.model_validate(_task("simple_python_999"))
     answer = BfclGroundTruth.model_validate(_answer(task.id))
@@ -294,8 +294,8 @@ def test_build_bfcl_sft_data_writes_only_non_holdout_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from veritool_rl.artifacts import sha256_file, write_json
-    from veritool_rl.data.bfcl import build_bfcl_manifest
+    from veritool_rl.core.artifacts import sha256_file, write_json
+    from veritool_rl.legacy.data.bfcl import build_bfcl_manifest
 
     monkeypatch.chdir(tmp_path)
     data_root = Path("data/bfcl")
@@ -320,7 +320,7 @@ def test_build_bfcl_sft_data_writes_only_non_holdout_targets(
         "bfcl_commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
         "holdout_manifest_path": str(holdout_path),
         "split_manifest_path": "manifests/sft-split.json",
-        "audit_report_path": "reports/bfcl/data-audit.json",
+        "audit_report_path": "reports/legacy/bfcl/data-audit.json",
         "model": {"name": str(model_path), "max_seq_len": 8},
         "official_eval": {
             "python": str(evaluator_python),
@@ -345,14 +345,14 @@ def test_build_bfcl_sft_data_writes_only_non_holdout_targets(
         }
 
     monkeypatch.setattr(
-        "scripts.build_bfcl_sft_data._load_tokenizer",
+        "scripts.legacy.bfcl.build_bfcl_sft_data._load_tokenizer",
         lambda path: _FakeTokenizer(),
     )
     monkeypatch.setattr(
-        "scripts.build_bfcl_sft_data._run_official_target_validation",
+        "scripts.legacy.bfcl.build_bfcl_sft_data._run_official_target_validation",
         fake_validate,
     )
-    from scripts.build_bfcl_sft_data import build_bfcl_sft_data
+    from scripts.legacy.bfcl.build_bfcl_sft_data import build_bfcl_sft_data
 
     audit = build_bfcl_sft_data(config_path, seed=0, output_dir=Path("data/output"))
 
@@ -374,4 +374,4 @@ def test_build_bfcl_sft_data_writes_only_non_holdout_targets(
     assert audit["token_lengths"]["full"]["max"] == 5
     assert audit["truncation_count"] == 0
     assert audit["split_manifest_sha256"] == sha256_file(Path("manifests/sft-split.json"))
-    assert json.loads(Path("reports/bfcl/data-audit.json").read_text()) == audit
+    assert json.loads(Path("reports/legacy/bfcl/data-audit.json").read_text()) == audit

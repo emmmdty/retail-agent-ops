@@ -18,12 +18,12 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from veritool_rl.agent.qwen import GpuMeasurement, HardwareProvider, hash_local_model_files
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.formal_manifests import write_formal_task_set
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
-from veritool_rl.retail_ops.teacher_client import TeacherResponse
-from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot
+from veritool_rl.core.agent.qwen import GpuMeasurement, HardwareProvider, hash_local_model_files
+from veritool_rl.retail_ops.build.formal_manifests import write_formal_task_set
+from veritool_rl.retail_ops.build.teacher_client import TeacherResponse
+from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
@@ -266,7 +266,7 @@ def test_r1_build_config_without_pipeline_still_runs(tmp_path: Path) -> None:
         [
             "build",
             "--config",
-            "configs/retail_ops_v1_build.yaml",
+            "configs/retail_ops/build/retail_ops_v1_build.yaml",
             "--output_dir",
             str(tmp_path / "build"),
         ]
@@ -284,7 +284,7 @@ def test_r1_build_rejects_input_dir_when_config_has_no_pipeline(tmp_path: Path) 
             [
                 "build",
                 "--config",
-                "configs/retail_ops_v1_build.yaml",
+                "configs/retail_ops/build/retail_ops_v1_build.yaml",
                 "--input_dir",
                 str(tmp_path / "nope"),
                 "--output_dir",
@@ -731,7 +731,7 @@ def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
     失败），而不是用宽泛的 `pytest.raises(Exception)` 掩盖"其实读了环境变量
     然后自己炸了"这种情况。"""
     from veritool_rl.product_cli import _run_formal_dev_base, build_product_parser, main
-    from veritool_rl.retail_ops.teacher_data import TeacherQualityGateError
+    from veritool_rl.retail_ops.build.teacher_data import TeacherQualityGateError
 
     _poison_teacher_environ(monkeypatch)
 
@@ -741,7 +741,7 @@ def test_non_teacher_collect_pipelines_never_touch_hostile_environ(
             [
                 "build",
                 "--config",
-                str(REPO_ROOT / "configs" / "retail_ops_v1_build.yaml"),
+                str(REPO_ROOT / "configs" / "retail_ops/build/retail_ops_v1_build.yaml"),
                 "--output_dir",
                 str(tmp_path / "r1-build"),
             ]
@@ -866,7 +866,7 @@ def test_train_export_fails_gate_with_no_prior_teacher_evidence(
     workspace: Path, tmp_path: Path
 ) -> None:
     from veritool_rl.product_cli import main
-    from veritool_rl.retail_ops.teacher_data import TeacherQualityGateError
+    from veritool_rl.retail_ops.build.teacher_data import TeacherQualityGateError
 
     config_path = workspace / "export.yaml"
     _write_yaml(config_path, _train_export_config(teacher_attempt_id="never-ran"))
@@ -901,7 +901,7 @@ def _dev_base_backend_factory(config: Any, models_root: Path) -> Any:
             tools: list[dict[str, Any]],
             max_new_tokens: int,
         ) -> Any:
-            from veritool_rl.agent.qwen import GeneratedText
+            from veritool_rl.core.agent.qwen import GeneratedText
 
             del max_new_tokens
             assert tools
@@ -1041,7 +1041,7 @@ def _poison_public_dev_manifest_isolation(workspace: Path, rel_dir: Path) -> Pat
     修好 `dataset.json` 里的 `public_files_sha256`，确保测试真正命中隔离断言，
     而不是提前被文件哈希校验拦下。
     """
-    from veritool_rl.artifacts import canonical_json, sha256_file
+    from veritool_rl.core.artifacts import canonical_json, sha256_file
 
     source = workspace / PUBLIC_REL
     target = workspace / rel_dir
@@ -1096,7 +1096,7 @@ def test_formal_dev_base_rejects_dev_manifest_detached_from_published_receipt(
     workspace: Path, tmp_path: Path
 ) -> None:
     """`dev.json` 必须就是 `dataset.json` 绑定的那一份，不能是旁边的另一个文件。"""
-    from veritool_rl.artifacts import canonical_json
+    from veritool_rl.core.artifacts import canonical_json
     from veritool_rl.product_cli import main
 
     detached_rel = Path("manifests/retail_ops/v1/detached")

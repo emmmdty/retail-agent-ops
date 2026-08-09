@@ -6,7 +6,7 @@ from collections import Counter
 
 
 def test_generated_task_splits_are_deterministic_balanced_and_disjoint() -> None:
-    from veritool_rl.envs.mini_retail import build_mvp_task_splits
+    from veritool_rl.core.envs.mini_retail import build_mvp_task_splits
 
     first = build_mvp_task_splits(seed=7)
     second = build_mvp_task_splits(seed=7)
@@ -33,8 +33,8 @@ def test_generated_task_splits_are_deterministic_balanced_and_disjoint() -> None
 
 
 def test_eligible_refund_requires_lookup_and_reaches_target_state() -> None:
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TaskScenario
 
     task = next(
         task
@@ -63,8 +63,8 @@ def test_eligible_refund_requires_lookup_and_reaches_target_state() -> None:
 
 
 def test_recovery_task_fails_once_then_succeeds() -> None:
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TaskScenario
 
     task = next(
         task
@@ -85,8 +85,8 @@ def test_recovery_task_fails_once_then_succeeds() -> None:
 
 
 def test_denied_refund_task_succeeds_without_state_change_after_lookup() -> None:
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TaskScenario
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TaskScenario
 
     task = next(
         task
@@ -103,7 +103,7 @@ def test_denied_refund_task_succeeds_without_state_change_after_lookup() -> None
 
 
 def test_schema_perturbation_is_deterministic_and_keeps_alias_executable() -> None:
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
 
     task = build_mvp_task_splits(seed=4)["test"][0]
     first = MiniRetailEnv(task)

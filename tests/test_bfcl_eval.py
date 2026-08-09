@@ -9,7 +9,7 @@ import pytest
 
 
 def _task(category: str, functions: list[dict[str, object]] | None = None):
-    from veritool_rl.data.bfcl import BfclTask
+    from veritool_rl.legacy.data.bfcl import BfclTask
 
     default_function = {
         "name": "lookup",
@@ -33,7 +33,7 @@ def _task(category: str, functions: list[dict[str, object]] | None = None):
 
 
 def _truth(category: str, calls: list[dict[str, dict[str, list[object]]]]):
-    from veritool_rl.data.bfcl import BfclGroundTruth
+    from veritool_rl.legacy.data.bfcl import BfclGroundTruth
 
     return BfclGroundTruth(id=f"{category}_0", ground_truth=calls)
 
@@ -70,7 +70,7 @@ def test_parse_bfcl_tool_calls_supports_all_fixed_categories(
     raw_text: str,
     expected_count: int,
 ) -> None:
-    from veritool_rl.eval.bfcl import parse_bfcl_tool_calls
+    from veritool_rl.legacy.eval.bfcl import parse_bfcl_tool_calls
 
     del category
     parsed = parse_bfcl_tool_calls(raw_text + "<|im_end|>")
@@ -80,7 +80,7 @@ def test_parse_bfcl_tool_calls_supports_all_fixed_categories(
 
 
 def test_parse_bfcl_tool_calls_rejects_invalid_json() -> None:
-    from veritool_rl.eval.bfcl import parse_bfcl_tool_calls
+    from veritool_rl.legacy.eval.bfcl import parse_bfcl_tool_calls
 
     parsed = parse_bfcl_tool_calls("<tool_call>\n{bad}\n</tool_call>")
 
@@ -89,7 +89,7 @@ def test_parse_bfcl_tool_calls_rejects_invalid_json() -> None:
 
 
 def test_parse_bfcl_tool_calls_mirrors_official_qwen_newline_contract() -> None:
-    from veritool_rl.eval.bfcl import parse_bfcl_tool_calls
+    from veritool_rl.legacy.eval.bfcl import parse_bfcl_tool_calls
 
     parsed = parse_bfcl_tool_calls(
         '<tool_call>{"name":"lookup","arguments":{"value":1}}</tool_call>'
@@ -129,7 +129,7 @@ def test_diagnose_bfcl_generation_counts_schema_errors(
     field: str,
     expected: int,
 ) -> None:
-    from veritool_rl.eval.bfcl import diagnose_bfcl_generation
+    from veritool_rl.legacy.eval.bfcl import diagnose_bfcl_generation
 
     task = _task("simple_python")
     truth = _truth("simple_python", [{"lookup": {"value": [1], "label": [""]}}])
@@ -141,7 +141,7 @@ def test_diagnose_bfcl_generation_counts_schema_errors(
 
 
 def test_diagnose_bfcl_generation_separates_call_count_and_structure_errors() -> None:
-    from veritool_rl.eval.bfcl import diagnose_bfcl_generation
+    from veritool_rl.legacy.eval.bfcl import diagnose_bfcl_generation
 
     task = _task("parallel")
     truth = _truth(
@@ -161,7 +161,7 @@ def test_diagnose_bfcl_generation_separates_call_count_and_structure_errors() ->
 
 
 def test_diagnose_counts_offered_but_wrong_function_name() -> None:
-    from veritool_rl.eval.bfcl import diagnose_bfcl_generation
+    from veritool_rl.legacy.eval.bfcl import diagnose_bfcl_generation
 
     functions = [
         {
@@ -187,7 +187,7 @@ def test_diagnose_counts_offered_but_wrong_function_name() -> None:
 
 
 def test_diagnose_parallel_structure_compares_function_name_multiset() -> None:
-    from veritool_rl.eval.bfcl import diagnose_bfcl_generation
+    from veritool_rl.legacy.eval.bfcl import diagnose_bfcl_generation
 
     functions = [
         {
@@ -218,7 +218,7 @@ def test_diagnose_parallel_structure_compares_function_name_multiset() -> None:
 
 
 def test_diagnose_rejects_parameter_outside_schema_enum() -> None:
-    from veritool_rl.eval.bfcl import diagnose_bfcl_generation
+    from veritool_rl.legacy.eval.bfcl import diagnose_bfcl_generation
 
     task = _task(
         "simple_python",
@@ -253,8 +253,8 @@ def test_diagnose_rejects_parameter_outside_schema_enum() -> None:
 
 
 def test_build_official_result_preserves_raw_output_and_usage() -> None:
-    from veritool_rl.agent.qwen import GeneratedText
-    from veritool_rl.eval.bfcl import build_official_result_row
+    from veritool_rl.core.agent.qwen import GeneratedText
+    from veritool_rl.legacy.eval.bfcl import build_official_result_row
 
     raw = '<tool_call>\n{"name":"lookup","arguments":{"value":1}}\n</tool_call>'
     generated = GeneratedText(
@@ -276,7 +276,7 @@ def test_build_official_result_preserves_raw_output_and_usage() -> None:
 
 
 def test_validate_official_result_ids_rejects_missing_extra_and_duplicates() -> None:
-    from veritool_rl.eval.bfcl import validate_official_result_ids
+    from veritool_rl.legacy.eval.bfcl import validate_official_result_ids
 
     validate_official_result_ids(["simple_python_0"], [{"id": "simple_python_0"}])
 
@@ -298,7 +298,7 @@ def test_validate_official_result_ids_rejects_missing_extra_and_duplicates() -> 
 
 
 def test_write_official_result_files_groups_and_sorts_by_source_index(tmp_path: Path) -> None:
-    from veritool_rl.eval.bfcl import write_official_result_files
+    from veritool_rl.legacy.eval.bfcl import write_official_result_files
 
     rows = [
         {"id": "parallel_10", "result": "ten"},
@@ -332,7 +332,7 @@ def test_write_official_result_files_groups_and_sorts_by_source_index(tmp_path: 
 
 
 def test_load_official_scores_validates_counts_and_failure_ids(tmp_path: Path) -> None:
-    from veritool_rl.eval.bfcl import load_official_scores
+    from veritool_rl.legacy.eval.bfcl import load_official_scores
 
     model_dir = tmp_path / "Qwen_Qwen3-1.7B-FC/non_live"
     model_dir.mkdir(parents=True)
@@ -382,7 +382,7 @@ def test_load_official_scores_validates_counts_and_failure_ids(tmp_path: Path) -
 
 
 def test_compute_bfcl_metrics_reports_official_and_diagnostic_counts() -> None:
-    from veritool_rl.eval.bfcl import (
+    from veritool_rl.legacy.eval.bfcl import (
         BfclDiagnostic,
         BfclOfficialScore,
         compute_bfcl_metrics,

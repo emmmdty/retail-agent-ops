@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.dev_sft_export import (
+from veritool_rl.retail_ops.build.dev_sft_export import (
     build_dev_sft_rows,
     write_dev_sft_export,
 )
-from veritool_rl.retail_ops.environment import RetailOpsEnv
-from veritool_rl.retail_ops.formal_tasks import FormalTaskRecord, build_formal_task_set
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord, build_formal_task_set
 
 _DATASET_VERSION = "test-dataset-r3-dev-sft"
 _BUNDLE = load_bundle(Path("domains/retail_ops/v1"))

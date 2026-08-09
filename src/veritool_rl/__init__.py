@@ -1,7 +1,9 @@
-"""VeriTool-RL: 面向小型工具智能体的可验证课程式后训练方法。
+"""RetailAgentOps：零售工具 Agent 的单卡领域适配与发布流水线。
 
-以问题为中心的研究型代码库。设计与验收标准以仓库根目录的 SPEC.md 为准。
-当前为标准骨架: 目录结构与接口签名已定义, 核心逻辑待按 SPEC.md 分步实现。
+产品契约见仓库根目录的 SPEC.md，阶段状态见 docs/EXECUTION_PLAN.md。
+
+导入名仍为 `veritool_rl`：已提交的运行产物与 manifest 记录了它，改名会切断
+"代码 commit ↔ 产物"的可追溯链；分发名与 CLI 入口均已是 retail-agent-ops。
 """
 
 __version__ = "0.0.1"

@@ -13,18 +13,21 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.agent.qwen import GeneratedText, GpuMeasurement, hash_local_model_files
-from veritool_rl.retail_ops.base_evaluation import load_base_run_evidence, load_verified_formal_dev
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.formal_manifests import (
+from veritool_rl.core.agent.qwen import GeneratedText, GpuMeasurement, hash_local_model_files
+from veritool_rl.core.trajectory import ToolCall
+from veritool_rl.retail_ops.build.formal_manifests import (
     load_formal_task_manifest,
     load_verified_formal_dataset,
 )
-from veritool_rl.retail_ops.formal_tasks import FormalTaskRecord, build_formal_task_set
-from veritool_rl.retail_ops.teacher_client import TeacherResponse
-from veritool_rl.retail_ops.teacher_data import TeacherAttemptEvidence
-from veritool_rl.retail_ops.teacher_route import TeacherRouteSnapshot
-from veritool_rl.trajectory import ToolCall
+from veritool_rl.retail_ops.build.teacher_client import TeacherResponse
+from veritool_rl.retail_ops.build.teacher_data import TeacherAttemptEvidence
+from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord, build_formal_task_set
+from veritool_rl.retail_ops.evaluate.base_evaluation import (
+    load_base_run_evidence,
+    load_verified_formal_dev,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
@@ -58,7 +61,7 @@ def test_formal_freeze_is_byte_identical_across_two_isolated_roots(
 ) -> None:
     from veritool_rl.product_cli import main
 
-    config_path = REPO_ROOT / "configs" / "retail_ops_v1_r2_formal_freeze.yaml"
+    config_path = REPO_ROOT / "configs" / "retail_ops/build/retail_ops_v1_r2_formal_freeze.yaml"
     roots: list[Path] = []
     for name in ("run-a", "run-b"):
         root = _fresh_workspace(tmp_path, monkeypatch, name)
@@ -95,7 +98,7 @@ def test_formal_freeze_is_byte_identical_across_two_isolated_roots(
 
 @pytest.fixture(scope="module")
 def _formal_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    from veritool_rl.retail_ops.formal_manifests import write_formal_task_set
+    from veritool_rl.retail_ops.build.formal_manifests import write_formal_task_set
 
     root = tmp_path_factory.mktemp("r2-e2e-source")
     bundle_dst = root / BUNDLE_REL
@@ -173,7 +176,7 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         _run_train_export,
         build_product_parser,
     )
-    from veritool_rl.retail_ops.formal_manifests import load_formal_split
+    from veritool_rl.retail_ops.build.formal_manifests import load_formal_split
 
     dataset = load_verified_formal_dataset(PUBLIC_REL)
     train_records = list(load_formal_split(dataset, "train", PRIVATE_REL / "train.jsonl"))
@@ -342,7 +345,10 @@ def _fake_code_commit_factory() -> str:
 
 @pytest.mark.parametrize(
     "config_name",
-    ["retail_ops_v1_r2_qwen3_1_7b_dev.yaml", "retail_ops_v1_r2_qwen3_4b_dev.yaml"],
+    [
+        "retail_ops/evaluate/retail_ops_v1_r2_qwen3_1_7b_dev.yaml",
+        "retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml",
+    ],
 )
 def test_both_qwen_dev_base_configs_run_through_fake_backends(
     workspace: Path, tmp_path: Path, config_name: str

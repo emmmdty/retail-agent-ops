@@ -8,11 +8,11 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.retail_ops.teacher_client import (
+from veritool_rl.retail_ops.build.teacher_client import (
     OpenAICompatibleTeacherClient,
     TeacherClientError,
 )
-from veritool_rl.retail_ops.teacher_route import load_teacher_route
+from veritool_rl.retail_ops.build.teacher_route import load_teacher_route
 
 API_KEY = "teacher-api-key-material"
 

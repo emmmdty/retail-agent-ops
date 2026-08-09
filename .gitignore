@@ -26,6 +26,10 @@ htmlcov/
 *.env
 !.env.example
 
+# ---- Coding agent 本地工作产物（不随仓库分发的过程文件）----
+/.superpowers/
+/.codex/
+
 # ---- 编辑器 / 系统 ----
 .idea/
 .vscode/
@@ -59,11 +63,11 @@ logs/
 /reports/**/checkpoints/
 
 # BFCL 官方 score / 失败明细嵌入原始 prompt、schema 和 possible answer，不进 git
-/reports/bfcl/**/official_scores/
-/reports/bfcl/**/failures.jsonl
-/reports/bfcl/**/comparison_analysis.jsonl
+/reports/legacy/bfcl/**/official_scores/
+/reports/legacy/bfcl/**/failures.jsonl
+/reports/legacy/bfcl/**/comparison_analysis.jsonl
 # 单任务 GPU smoke 仅作运行前全链路验证，保留在本地和远程产物目录
-/reports/bfcl/*-smoke-*/
+/reports/legacy/bfcl/*-smoke-*/
 # RetailOps qualification evidence 由固定命令本地重建，不提交逐任务运行产物
 /reports/retail_ops/
 

@@ -116,11 +116,11 @@ def _prepare_run(
         encoding="utf-8",
     )
     config = yaml.safe_load(
-        Path("configs/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
+        Path("configs/legacy/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
     )
     if adapter:
         config["policy"]["adapter_path"] = (
-            "reports/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
+            "reports/legacy/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
         )
         config["official_eval"]["project_root"] = "data/bfcl_eval_runtime/sft"
     config["seed"] = 0
@@ -133,7 +133,7 @@ def _prepare_run(
 def test_aggregate_bfcl_runs_pairs_exact_ids_and_repeats_bootstrap(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+    from veritool_rl.legacy.eval.bfcl_compare import aggregate_bfcl_runs
 
     manifest = _load_manifest()
     base_failure = manifest["tasks"][0]["task_id"]
@@ -194,7 +194,7 @@ def test_aggregate_bfcl_runs_pairs_exact_ids_and_repeats_bootstrap(
 
 
 def test_aggregate_bfcl_runs_rejects_missing_or_extra_raw_id(tmp_path: Path) -> None:
-    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+    from veritool_rl.legacy.eval.bfcl_compare import aggregate_bfcl_runs
 
     manifest = _load_manifest()
     baseline_dir = tmp_path / "base"
@@ -230,7 +230,7 @@ def test_aggregate_bfcl_runs_rejects_missing_or_extra_raw_id(tmp_path: Path) -> 
 def test_aggregate_bfcl_runs_rejects_manifest_changed_after_evaluation(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+    from veritool_rl.legacy.eval.bfcl_compare import aggregate_bfcl_runs
 
     manifest = _load_manifest()
     baseline_dir = tmp_path / "base"
@@ -264,7 +264,7 @@ def test_aggregate_bfcl_runs_rejects_manifest_changed_after_evaluation(
 def test_aggregate_bfcl_runs_requires_embedded_frozen_manifest(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.eval.bfcl_compare import aggregate_bfcl_runs
+    from veritool_rl.legacy.eval.bfcl_compare import aggregate_bfcl_runs
 
     manifest = _load_manifest()
     baseline_dir = tmp_path / "base"

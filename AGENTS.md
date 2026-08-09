@@ -12,7 +12,7 @@
 ## 不可违反的边界
 
 - 项目目标是可部署的零售工具 Agent 工程闭环，**不产出论文，不以论文实验为交付物**。
-- 当前产品名是 **RetailAgentOps**；Python 包暂保留 `veritool_rl`，未经单独计划不得全仓改名。
+- 产品名、分发名与 CLI 是 **RetailAgentOps** / `retail-agent-ops`；Python 导入名仍是 `veritool_rl`，未经单独计划不得全仓改名（理由见 `docs/REPO_MAP.md` 第 5 节）。
 - 用户负责产品方向、重大方案选择、验收与面试复盘；Codex/Claude 可以实现全部代码和测试。
 - 未经用户确认，不得新增产品方向、业务领域、训练算法、模型家族或大型基础设施。
 - 本地 WSL 只运行 CPU 开发、测试、lint 和类型检查；不得在本地运行 GPU 推理或训练。
@@ -36,9 +36,12 @@
 
 ## 当前状态
 
-- 当前阶段：`R2` CPU 实现；R1 产品契约与 v0.1 已完成。
-- R2 已完成方案审批，批准的正式规格与计划位于 `docs/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
+- 当前阶段：`R3` 单卡适配与服务 v1；R1 产品契约与 v0.1、R2 数据与评测流水线均已完成。
+- R2 已完成方案审批，批准的正式规格与计划位于 `docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
 - 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。
-- 已继承 MiniRetail、BFCL 固定评测、QLoRA-SFT 与可追溯运行基础；R2 不训练 adapter。
+- R3 已完成：首次真实 Qwen3-4B QLoRA-SFT（`reports/retail_ops/v1/r3/sft-001/`）与 60 条 dev 候选配对评测。
+- R3 候选结论：格式/安全类失败清零（invalid_call 21→0、policy_violation 8→0），但 task_success 48/60→43/60，回退集中在需 ≥2 次工具调用的场景，**不适合直接替换 base**；这是 dev 结论，不是 release 判定。
+- 尚未进入：正式 120 条 holdout 评测、release GO/NO-GO、serve 部署。
 - 当前 BFCL Base/SFT 为 163/200 与 167/200，差值置信区间跨 0，不能声称稳定改善。
-- 正式 RetailOps holdout 在 R2 不运行真实模型；任何后续 release 访问仍须满足 sealed purpose/hash 门禁。
+- 正式 RetailOps holdout 至今未运行真实模型；任何 release 访问仍须满足 sealed purpose/hash 门禁。
+- 仓库形态：唯一 `main` 分支、0 remote、对原 `veritool-rl` 工作区零依赖；目录职责见 `docs/REPO_MAP.md`。

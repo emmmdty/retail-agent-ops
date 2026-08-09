@@ -8,14 +8,14 @@ from typing import Literal, cast
 import pytest
 from pydantic import ValidationError
 
-from veritool_rl.artifacts import sha256_file
-from veritool_rl.retail_ops.governance import (
+from veritool_rl.core.artifacts import sha256_file
+from veritool_rl.retail_ops.build.manifests import TaskManifest
+from veritool_rl.retail_ops.release.governance import (
     EvidencePurpose,
     HoldoutReceipt,
     assert_split_isolation,
     authorize_holdout,
 )
-from veritool_rl.retail_ops.manifests import TaskManifest
 
 PRIVATE_HOLDOUT_PATH = Path(
     "data/private/retail_ops/v1/holdout/tasks.jsonl"

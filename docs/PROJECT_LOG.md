@@ -1946,3 +1946,69 @@ McNemar p=0.0625，配合"回退与所需调用数完全对应"这一结构性�
 换成了另一类（漏执行）。本条不构成 SPEC 发布门禁的 GO/NO-GO 判定（那需要走 release 流程，
 属于独立范围）。未打开正式 120 条 holdout、未做 release 决策、未部署 serve。失败类别
 明确、可复现、有机制，符合 R4「失败驱动优化」的输入条件；具体改进方案需用户确认后再启动。
+
+### LOG-20260809-01：仓库收敛——Git 单分支化、切断原工作区依赖、按四接口重排目录
+
+- 日期：2026-08-09
+- 阶段/任务：R3 阶段间的仓库收敛任务（不推进 R3 剩余目标）
+- 状态：解决
+- 关联：LOG-20260807-09
+
+**用户决策（三选一逐项确认）**：外部依赖只本地化被引用的 gorilla；Python 导入名保留
+`veritool_rl` 不改；目录采用**激进重构**（按四个稳定接口重排 src 与 configs，legacy 下沉）。
+执行中用户追加两条要求：确保本项目后续是独立项目、做好废弃文件归档与清理。
+
+**Git 收敛**：`feature/r2-formal-data-and-base-eval` 重命名为 `main`；
+`portfolio/retail-agent-ops-init`（a3c748b）经 `git merge-base --is-ancestor` 确认是
+`main` 的祖先后删除。101 个提交与 HEAD（acdc0f0）均未变。
+
+**独立性（本条是本次的核心结论）**：原 `data/external_repos` 是指向
+`../../veritool-rl/data/external_repos` 的 ignored 软链接，这是本项目对原工作区的**最后
+一处依赖**。实测只有 gorilla 被引用（4 个 bfcl config + `tests/test_bfcl_official.py`），
+tau2-bench(847M)/appworld(14M)/ToolSandbox(1.9M) 在本仓库零引用。因此只复制 gorilla。
+
+**一个被实测推翻的决策细节**：原计划剥离 gorilla 的 `.git` 以求"不依赖任何外部 git"。
+剥离后 `scripts/legacy/bfcl/run_bfcl_official_ast.py::_verify_checkout` 的两项校验
+（`rev-parse HEAD` 与 `status --porcelain` 为空）全部失效，2 个测试立即失败。该 `.git`
+并非对任何**本地仓库**的依赖，而是自包含快照的 provenance 凭证；自建等价校验需要新代码、
+新测试和每次运行的全树哈希开销。结论：保留（+42 MB），并在 `BFCL_PIN.txt` 写明理由。
+教训记录：**"切断依赖"的目标是消除对原工作区的耦合，不是机械删除一切 `.git`**。
+
+审计结论：唯一 `main`、0 remote、无 submodule、无 linked worktree、无
+`.git/objects/info/alternates`、无跟踪软链接、无跨仓库文件系统链接、虚拟环境只指向本目录。
+**删除原 `veritool-rl` 工作区不影响本项目任何命令。**
+
+**身份独立**：分发名 `veritool-rl` → `retail-agent-ops`（`pyproject.toml`），description
+从旧研究表述改为当前产品定位。导入名 `veritool_rl` 按用户决策保留——已提交的 `reports/`
+产物与 manifest 记录了产出它们的代码标识，改名会切断"代码 commit ↔ 运行产物"的可追溯链，
+而可追溯性正是本项目的核心主张。`uv.lock` 仅自身包条目变化。
+
+**目录重排**：`src/veritool_rl` 分为 core（跨领域基础设施）/ retail_ops
+（domain·build·evaluate·release·serve）/ training / legacy；configs 按四接口分层；
+scripts、reports、docs 分离活动与 legacy/archive。全程只做 `git mv` + import 重写，
+**函数体零改动**；86 个文件的 import 经单次正则扫描重写（按长度降序的 alternation，
+避免 `retail_ops.release` → `release.release` 这类级联误替换），残留检查 0 命中。
+
+**行为不变的证明**（不是"测试通过"这种弱证明）：三份真实运行证据重新加载后
+`run_id` 自哈希复算全部一致——R2 base qwen3-1.7b `07671235…`、R2 base qwen3-4b
+`d57654e9…`、R3 candidate `29648b8c…`（后者还通过了逐产物 SHA-256 校验）。这直接证明
+`_content_id` 覆盖的全部字段与产物内容在重构前后逐字节相同。
+
+**新增结构治理**：两项测试把 REPO_MAP 的架构主张变成可验证不变量——
+(1) 分层单向依赖：core 不依赖 retail_ops/legacy/training，retail_ops 与 training 不依赖
+legacy，product_cli 不依赖 legacy；(2) 四个稳定接口在模块目录与 configs 目录各有归属
+且配置非空。测试基线 585 → 587。
+
+**清理**：删除 18 个 `__pycache__`、空 `.codex/`、41 MB 工具缓存（可重建）。
+`.superpowers/` 与 `.codex/` 的忽略规则从**本地私有**的 `.git/info/exclude` 迁入
+随仓库分发的 `.gitignore`——前者不随克隆分发，属于可移植性缺陷。仓库体积
+（不含 .git/.venv/data/tools）83M → 40M。`.superpowers/` 的 37 个 review diff 保留在本地。
+
+**历史记录处理**：`docs/PROJECT_LOG.md`、`findings.md`、`progress.md` 旧条目与
+`reports/legacy/**` 内已提交产物中的旧路径**一律未改写**（append-only 原则），
+改由 `docs/REPO_MAP.md` 第 6 节的路径对照表回溯。
+
+**验收**：587 passed、Ruff、mypy 64 源文件、`uv lock --check`、`git diff --check` 全绿。
+
+**边界**：未推进 R3 剩余目标（正式 120 条 holdout、release GO/NO-GO、serve 部署），
+未运行任何 GPU 或商业 API，未创建远程仓库，未 push。

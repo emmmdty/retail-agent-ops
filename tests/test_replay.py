@@ -6,10 +6,10 @@ import pytest
 
 
 def test_oracle_trajectory_replays_exactly() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory.replay import replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory.replay import replay_trajectory
 
     task = build_mvp_task_splits(seed=6)["dev"][3]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=6)
@@ -21,11 +21,11 @@ def test_oracle_trajectory_replays_exactly() -> None:
 
 
 def test_replay_reports_tampered_observation_step() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import Observation
-    from veritool_rl.trajectory.replay import ReplayMismatch, replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import Observation
+    from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 
     task = build_mvp_task_splits(seed=8)["dev"][1]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=8)
@@ -37,10 +37,10 @@ def test_replay_reports_tampered_observation_step() -> None:
 
 
 def test_replay_rejects_tampered_action() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory.replay import ReplayMismatch, replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 
     task = build_mvp_task_splits(seed=8)["dev"][1]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=8)
@@ -53,10 +53,10 @@ def test_replay_rejects_tampered_action() -> None:
 
 
 def test_replay_rejects_tampered_final_state_and_reward() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory.replay import ReplayMismatch, replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 
     task = build_mvp_task_splits(seed=8)["dev"][1]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=8)
@@ -73,10 +73,10 @@ def test_replay_rejects_tampered_final_state_and_reward() -> None:
 
 
 def test_replay_rejects_non_contiguous_recorded_step_index() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory.replay import ReplayMismatch, replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 
     task = build_mvp_task_splits(seed=8)["dev"][1]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=8)
@@ -90,13 +90,13 @@ def test_replay_rejects_non_contiguous_recorded_step_index() -> None:
 def test_retail_ops_denial_trajectory_replays_terminal_response() -> None:
     from pathlib import Path
 
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario
-    from veritool_rl.trajectory.replay import replay_trajectory
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.core.trajectory.replay import replay_trajectory
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(

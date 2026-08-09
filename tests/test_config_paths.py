@@ -13,14 +13,20 @@ ROOT = Path(__file__).parents[1]
 MODEL_PATH = "models/Qwen3-1.7B"
 
 
-@pytest.mark.parametrize("config_name", ["mvp_eval_qwen_base.yaml", "mvp_eval_qwen_sft.yaml"])
+@pytest.mark.parametrize(
+    "config_name",
+    ["legacy/mvp_eval_qwen_base.yaml", "legacy/mvp_eval_qwen_sft.yaml"],
+)
 def test_qwen_eval_configs_use_local_model_symlink(config_name: str) -> None:
     config = _load_config(config_name)
 
     assert config["policy"]["model_name"] == MODEL_PATH
 
 
-@pytest.mark.parametrize("config_name", ["mvp_sft_qwen3_1_7b.yaml", "sft.example.yaml"])
+@pytest.mark.parametrize(
+    "config_name",
+    ["legacy/mvp_sft_qwen3_1_7b.yaml", "examples/sft.example.yaml"],
+)
 def test_sft_configs_use_local_model_symlink(config_name: str) -> None:
     config = _load_config(config_name)
 
@@ -28,7 +34,7 @@ def test_sft_configs_use_local_model_symlink(config_name: str) -> None:
 
 
 def test_smoke_config_limits_one_local_qwen_task() -> None:
-    config = _load_config("mvp_eval_qwen_smoke.yaml")
+    config = _load_config("legacy/mvp_eval_qwen_smoke.yaml")
 
     assert config["task_limit"] == 1
     assert config["policy"]["model_name"] == MODEL_PATH
@@ -36,9 +42,9 @@ def test_smoke_config_limits_one_local_qwen_task() -> None:
 
 def test_git_ignores_report_adapters_and_checkpoints() -> None:
     paths = [
-        "reports/mvp/sft-seed0/adapter/adapter_config.json",
-        "reports/mvp/sft-seed0/adapter/tokenizer.json",
-        "reports/mvp/sft-seed0/checkpoints/checkpoint-1/trainer_state.json",
+        "reports/legacy/mvp/sft-seed0/adapter/adapter_config.json",
+        "reports/legacy/mvp/sft-seed0/adapter/tokenizer.json",
+        "reports/legacy/mvp/sft-seed0/checkpoints/checkpoint-1/trainer_state.json",
     ]
 
     for path in paths:
@@ -62,9 +68,9 @@ def test_git_ignores_serena_user_directory() -> None:
 
 def test_git_ignores_bfcl_outputs_that_embed_raw_benchmark_data() -> None:
     paths = [
-        "reports/bfcl/qwen3-1.7b-base-seed0/failures.jsonl",
+        "reports/legacy/bfcl/qwen3-1.7b-base-seed0/failures.jsonl",
         (
-            "reports/bfcl/qwen3-1.7b-base-seed0/official_scores/"
+            "reports/legacy/bfcl/qwen3-1.7b-base-seed0/official_scores/"
             "Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
         ),
     ]
@@ -99,7 +105,7 @@ def test_all_config_file_references_are_project_relative() -> None:
         "bundle_dir",
     }
     references: list[tuple[str, str]] = []
-    for config_path in sorted((ROOT / "configs").glob("*.yaml")):
+    for config_path in sorted((ROOT / "configs").rglob("*.yaml")):
         config = _load_yaml(config_path)
         references.extend(_collect_paths(config, path_keys, prefix=config_path.name))
         model = config.get("model")

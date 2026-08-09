@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from veritool_rl.trajectory import ExpectedDecision, TaskScenario, TaskSpec
+from veritool_rl.core.trajectory import ExpectedDecision, TaskScenario, TaskSpec
 
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
 _SPLITS = ("train", "dev", "holdout")
@@ -48,7 +48,7 @@ def _task_with_state_change(
 
 
 def test_formal_task_set_is_deterministic_and_has_exact_family_quotas() -> None:
-    from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+    from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
     first = build_formal_task_set(DATASET_VERSION, seed=0)
     second = build_formal_task_set(DATASET_VERSION, seed=0)
@@ -79,7 +79,7 @@ def test_formal_task_set_is_deterministic_and_has_exact_family_quotas() -> None:
 
 
 def test_formal_task_fingerprints_are_stable_and_split_isolated() -> None:
-    from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+    from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
     task_set = build_formal_task_set(DATASET_VERSION, seed=0)
     first_family = next(record.family_fingerprint for record in task_set.records("train"))
@@ -112,7 +112,7 @@ def test_formal_task_fingerprints_are_stable_and_split_isolated() -> None:
 
 
 def test_fingerprints_distinguish_policy_and_surface_changes() -> None:
-    from veritool_rl.retail_ops.formal_tasks import (
+    from veritool_rl.retail_ops.domain.formal_tasks import (
         FormalTaskRecord,
         build_formal_task_set,
     )
@@ -145,7 +145,7 @@ def test_fingerprints_distinguish_policy_and_surface_changes() -> None:
 
 
 def test_derivation_fingerprint_tracks_real_policy_and_answer_state() -> None:
-    from veritool_rl.retail_ops.formal_tasks import (
+    from veritool_rl.retail_ops.domain.formal_tasks import (
         FormalTaskRecord,
         build_formal_task_set,
     )
@@ -212,7 +212,7 @@ def test_derivation_fingerprint_tracks_real_policy_and_answer_state() -> None:
 
 
 def test_exact_quotas_reject_duplicate_variants_and_fingerprint_tampering() -> None:
-    from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+    from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
     task_set = build_formal_task_set(DATASET_VERSION, seed=0)
     train = list(task_set.train)
@@ -243,8 +243,8 @@ def test_exact_quotas_reject_duplicate_variants_and_fingerprint_tampering() -> N
 
 
 def test_formal_catalog_matches_every_frozen_family_axis() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.formal_tasks import _REASONS, build_formal_task_set
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.formal_tasks import _REASONS, build_formal_task_set
 
     scenarios = (
         TaskScenario.LOOKUP_STATUS,
@@ -366,9 +366,9 @@ def test_formal_catalog_matches_every_frozen_family_axis() -> None:
 
 
 def test_all_formal_tasks_execute_in_the_frozen_environment() -> None:
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task_set = build_formal_task_set(DATASET_VERSION, seed=0)

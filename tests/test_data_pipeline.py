@@ -11,10 +11,10 @@ import yaml
 
 
 def test_success_trajectory_converts_to_trl_tool_call_example() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.data.generators import trajectory_to_sft_example
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.generators import trajectory_to_sft_example
 
     task = build_mvp_task_splits(seed=0)["train"][1]
     trajectory = run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=0)
@@ -47,7 +47,7 @@ def test_build_trajectories_cli_is_reproducible(tmp_path: Path) -> None:
         subprocess.run(
             [
                 sys.executable,
-                str(root / "scripts/build_trajectories.py"),
+                str(root / "scripts/legacy/mvp/build_trajectories.py"),
                 "--config",
                 str(config),
                 "--seed",
@@ -92,7 +92,7 @@ def test_evaluate_cli_writes_oracle_metrics(tmp_path: Path) -> None:
     subprocess.run(
         [
             sys.executable,
-            str(root / "scripts/evaluate.py"),
+            str(root / "scripts/legacy/mvp/evaluate.py"),
             "--config",
             str(config),
             "--seed",
@@ -137,7 +137,7 @@ def test_evaluate_cli_respects_task_limit(tmp_path: Path) -> None:
     subprocess.run(
         [
             sys.executable,
-            str(root / "scripts/evaluate.py"),
+            str(root / "scripts/legacy/mvp/evaluate.py"),
             "--config",
             str(config),
             "--seed",
@@ -173,7 +173,7 @@ def test_evaluate_cli_rejects_non_positive_task_limit(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            str(root / "scripts/evaluate.py"),
+            str(root / "scripts/legacy/mvp/evaluate.py"),
             "--config",
             str(config),
             "--seed",

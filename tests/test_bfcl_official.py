@@ -52,7 +52,7 @@ def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
 
     command = [
         str(python),
-        "scripts/run_bfcl_official_ast.py",
+        "scripts/legacy/bfcl/run_bfcl_official_ast.py",
         "--bfcl-repo",
         "data/external_repos/gorilla/berkeley-function-call-leaderboard",
         "--expected-commit",
@@ -151,7 +151,7 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
     )
     command = [
         str(python),
-        "scripts/run_bfcl_official_ast.py",
+        "scripts/legacy/bfcl/run_bfcl_official_ast.py",
         "--bfcl-repo",
         "data/external_repos/gorilla/berkeley-function-call-leaderboard",
         "--expected-commit",

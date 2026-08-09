@@ -10,10 +10,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import veritool_rl.retail_ops.formal_manifests as formal_manifest_module
-from veritool_rl.artifacts import canonical_json, sha256_file
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.formal_manifests import (
+import veritool_rl.retail_ops.build.formal_manifests as formal_manifest_module
+from veritool_rl.core.artifacts import canonical_json, sha256_file
+from veritool_rl.retail_ops.build.formal_manifests import (
     FormalDatasetReceipt,
     FormalHoldoutReceipt,
     FormalTaskManifest,
@@ -25,7 +24,8 @@ from veritool_rl.retail_ops.formal_manifests import (
     load_verified_formal_dataset,
     write_formal_task_set,
 )
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
 BUNDLE_DIR = Path("domains/retail_ops/v1")

@@ -7,7 +7,7 @@ from typing import Any
 
 
 def test_qwen_parser_accepts_one_hermes_tool_call() -> None:
-    from veritool_rl.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.parser import parse_qwen_response
 
     output = parse_qwen_response(
         '<tool_call>\n{"name":"get_order","arguments":{"order_id":"O-1"}}\n</tool_call><|im_end|>'
@@ -20,7 +20,7 @@ def test_qwen_parser_accepts_one_hermes_tool_call() -> None:
 
 
 def test_qwen_parser_rejects_multiple_or_malformed_tool_calls() -> None:
-    from veritool_rl.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.parser import parse_qwen_response
 
     multiple = parse_qwen_response(
         '<tool_call>{"name":"get_order","arguments":{}}</tool_call>'
@@ -33,10 +33,10 @@ def test_qwen_parser_rejects_multiple_or_malformed_tool_calls() -> None:
 
 
 def test_oracle_runner_completes_all_scenarios() -> None:
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TaskScenario, TerminationReason
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TaskScenario, TerminationReason
 
     tasks = build_mvp_task_splits(seed=9)["test"][:4]
     trajectories = [run_episode(task, MiniRetailEnv, OraclePolicy(task), seed=9) for task in tasks]
@@ -61,10 +61,10 @@ def test_oracle_runner_completes_all_scenarios() -> None:
 
 
 def test_format_errors_consume_steps_without_crashing_episode() -> None:
-    from veritool_rl.agent.policy import PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TerminationReason
+    from veritool_rl.core.agent.policy import PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TerminationReason
 
     class InvalidPolicy:
         name = "invalid"
@@ -92,10 +92,10 @@ def test_format_errors_consume_steps_without_crashing_episode() -> None:
 
 
 def test_policy_violation_terminates_episode() -> None:
-    from veritool_rl.agent.policy import PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
-    from veritool_rl.trajectory import TaskScenario, TerminationReason, ToolCall
+    from veritool_rl.core.agent.policy import PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.envs.mini_retail import MiniRetailEnv, build_mvp_task_splits
+    from veritool_rl.core.trajectory import TaskScenario, TerminationReason, ToolCall
 
     class RefundFirstPolicy:
         name = "refund-first"
@@ -134,12 +134,12 @@ def test_tool_call_history_is_openai_wire_format_compatible() -> None:
     import json
     from pathlib import Path
 
-    from veritool_rl.agent.policy import PolicyOutput
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario, ToolCall
+    from veritool_rl.core.agent.policy import PolicyOutput
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario, ToolCall
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(
@@ -194,12 +194,12 @@ def test_tool_call_history_is_openai_wire_format_compatible() -> None:
 def test_runner_records_terminal_response_before_verification() -> None:
     from pathlib import Path
 
-    from veritool_rl.agent.policy import OraclePolicy
-    from veritool_rl.agent.runner import run_episode
-    from veritool_rl.retail_ops.bundle import load_bundle
-    from veritool_rl.retail_ops.environment import RetailOpsEnv
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
-    from veritool_rl.trajectory import TaskScenario, TerminationReason
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario, TerminationReason
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     bundle = load_bundle(Path("domains/retail_ops/v1"))
     task = next(

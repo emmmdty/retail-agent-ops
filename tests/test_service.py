@@ -11,9 +11,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from veritool_rl.artifacts import sha256_file, write_json
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.evaluation import EvaluationMode, RunEvidence
+from veritool_rl.core.artifacts import sha256_file, write_json
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.evaluate.evaluation import EvaluationMode, RunEvidence
 
 _ARTIFACT_HASHES = {
     "config.yaml": "c" * 64,
@@ -59,8 +59,8 @@ def _release_fixture(
     success: float,
     invalid: int,
 ) -> tuple[Path, Path]:
-    from veritool_rl.retail_ops.manifests import build_qualification
-    from veritool_rl.retail_ops.release import decide_release, write_release_report
+    from veritool_rl.retail_ops.build.manifests import build_qualification
+    from veritool_rl.retail_ops.release.release import decide_release, write_release_report
 
     build_dir = tmp_path / f"build-{policy_type}"
     release_dir = tmp_path / f"release-{policy_type}"
@@ -91,7 +91,7 @@ def _release_fixture(
 
 
 def _app(tmp_path: Path, policy_type: str, success: float, invalid: int) -> FastAPI:
-    from veritool_rl.retail_ops.service import create_app
+    from veritool_rl.retail_ops.serve.service import create_app
 
     build_dir, release_dir = _release_fixture(
         tmp_path,
@@ -109,7 +109,7 @@ def test_serve_parser_requires_release_and_built_input_dirs() -> None:
         [
             "serve",
             "--config",
-            "configs/retail_ops_v1_serve.yaml",
+            "configs/retail_ops/serve/retail_ops_v1_serve.yaml",
             "--release_dir",
             "reports/retail_ops/v1/release",
             "--input_dir",
@@ -145,7 +145,7 @@ def test_no_go_release_falls_back_to_baseline(tmp_path: Path) -> None:
 def test_service_runs_allowed_denied_and_recovery_without_truth_leak(
     tmp_path: Path,
 ) -> None:
-    from veritool_rl.retail_ops.tasks import build_qualification_tasks
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
 
     client = TestClient(_app(tmp_path, "oracle", 1.0, 0))
     tasks = build_qualification_tasks(seed=0)
@@ -171,7 +171,7 @@ def test_service_returns_404_for_unknown_task(tmp_path: Path) -> None:
 
 
 def test_service_rejects_release_bundle_mismatch(tmp_path: Path) -> None:
-    from veritool_rl.retail_ops.service import create_app
+    from veritool_rl.retail_ops.serve.service import create_app
 
     build_dir, release_dir = _release_fixture(tmp_path, "oracle", 1.0, 0)
     release_path = release_dir / "release.json"
@@ -202,7 +202,7 @@ def test_serve_cli_writes_manifest_before_uvicorn(
             [
                 "serve",
                 "--config",
-                "configs/retail_ops_v1_serve.yaml",
+                "configs/retail_ops/serve/retail_ops_v1_serve.yaml",
                 "--release_dir",
                 str(release_dir),
                 "--input_dir",

@@ -7,11 +7,13 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.environment import RetailOpsEnv
-from veritool_rl.retail_ops.formal_tasks import FormalTaskRecord, build_formal_task_set
-from veritool_rl.retail_ops.teacher_client import TeacherClientError, TeacherResponse, TeacherUsage
-from veritool_rl.retail_ops.teacher_data import (
+from veritool_rl.core.trajectory import TaskScenario, ToolCall
+from veritool_rl.retail_ops.build.teacher_client import (
+    TeacherClientError,
+    TeacherResponse,
+    TeacherUsage,
+)
+from veritool_rl.retail_ops.build.teacher_data import (
     TeacherAttemptEvidence,
     TeacherAttemptOutcome,
     TeacherCollectionCheckpoint,
@@ -27,7 +29,9 @@ from veritool_rl.retail_ops.teacher_data import (
     write_teacher_attempt_evidence,
     write_teacher_checkpoint,
 )
-from veritool_rl.trajectory import TaskScenario, ToolCall
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord, build_formal_task_set
 
 _DUMMY_SHA = "0" * 64
 _DATASET_VERSION = "test-dataset-r2-task4"
@@ -213,8 +217,8 @@ def test_transient_recovery_within_a_single_episode_succeeds() -> None:
 def test_replay_mismatch_is_rejected_even_though_trajectory_succeeded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import veritool_rl.retail_ops.teacher_data as teacher_data_module
-    from veritool_rl.trajectory.replay import ReplayMismatch
+    import veritool_rl.retail_ops.build.teacher_data as teacher_data_module
+    from veritool_rl.core.trajectory.replay import ReplayMismatch
 
     def _always_mismatch(trajectory: Any, env_factory: Any) -> None:
         raise ReplayMismatch("forced mismatch for test")

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from veritool_rl.retail_ops.teacher_route import load_teacher_route
+from veritool_rl.retail_ops.build.teacher_route import load_teacher_route
 
 DEEPSEEK_KEY = "deepseek-key-material"
 OTHER_KEY = "other-key-material"

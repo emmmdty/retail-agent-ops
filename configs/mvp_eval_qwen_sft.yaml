@@ -1,9 +1,0 @@
-# 与基线完全相同，仅挂载 QLoRA adapter。
-environment: mini_retail
-split: test
-bootstrap_samples: 1000
-policy:
-  type: qwen
-  model_name: models/Qwen3-1.7B
-  adapter_path: reports/mvp/sft-seed0/adapter
-  max_new_tokens: 256

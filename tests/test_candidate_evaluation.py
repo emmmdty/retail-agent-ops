@@ -14,16 +14,18 @@ from typing import Any
 
 import pytest
 
-from veritool_rl.agent.qwen import GeneratedText, GenerationSettings, GpuMeasurement
-from veritool_rl.retail_ops.base_evaluation import (
+from veritool_rl.core.agent.qwen import GeneratedText, GenerationSettings, GpuMeasurement
+from veritool_rl.retail_ops.build.formal_manifests import write_formal_task_set
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.evaluate.base_evaluation import (
     BaseEvaluationConfig,
     ModelArtifact,
     evaluate_formal_dev_base,
     load_base_run_evidence,
     load_verified_formal_dev,
 )
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.candidate_evaluation import (
+from veritool_rl.retail_ops.evaluate.candidate_evaluation import (
     AdapterArtifact,
     CandidateEvaluationConfig,
     CandidateRunEvidence,
@@ -32,8 +34,6 @@ from veritool_rl.retail_ops.candidate_evaluation import (
     evaluate_formal_dev_candidate,
     load_candidate_run_evidence,
 )
-from veritool_rl.retail_ops.formal_manifests import write_formal_task_set
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
@@ -209,7 +209,7 @@ def workspace(_source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 def _model_artifact(workspace: Path) -> ModelArtifact:
-    from veritool_rl.agent.qwen import hash_local_model_files
+    from veritool_rl.core.agent.qwen import hash_local_model_files
 
     return ModelArtifact(
         repo="Qwen/Qwen3-4B",
@@ -220,7 +220,7 @@ def _model_artifact(workspace: Path) -> ModelArtifact:
 
 
 def _adapter_artifact(workspace: Path) -> AdapterArtifact:
-    from veritool_rl.agent.qwen import hash_local_model_files
+    from veritool_rl.core.agent.qwen import hash_local_model_files
 
     run_dir = "reports/retail_ops/v1/r3/sft-001"
     return AdapterArtifact(
@@ -244,7 +244,7 @@ def _candidate_config(workspace: Path, **overrides: Any) -> CandidateEvaluationC
 
 def _run_candidate(workspace: Path, config: CandidateEvaluationConfig, attempt: str) -> Any:
     manifest_dir = workspace / PUBLIC_REL
-    from veritool_rl.retail_ops.formal_manifests import load_verified_formal_dataset
+    from veritool_rl.retail_ops.build.formal_manifests import load_verified_formal_dataset
 
     dataset = load_verified_formal_dataset(manifest_dir)
     manifest = dataset.dev_manifest
@@ -304,7 +304,7 @@ def test_candidate_run_rejects_tampered_adapter_files(workspace: Path) -> None:
 def test_candidate_run_rejects_backend_without_adapter(workspace: Path) -> None:
     """config 声明了 adapter，后端却没挂——证据会谎称跑了候选，必须拒绝。"""
     config = _candidate_config(workspace)
-    from veritool_rl.retail_ops.formal_manifests import load_verified_formal_dataset
+    from veritool_rl.retail_ops.build.formal_manifests import load_verified_formal_dataset
 
     dataset = load_verified_formal_dataset(workspace / PUBLIC_REL)
     manifest = dataset.dev_manifest
@@ -332,7 +332,7 @@ def test_candidate_run_rejects_backend_without_adapter(workspace: Path) -> None:
 
 def test_base_path_still_rejects_backend_with_adapter(workspace: Path) -> None:
     """base 通道的既有防线不得因候选功能而放宽。"""
-    from veritool_rl.retail_ops.formal_manifests import load_verified_formal_dataset
+    from veritool_rl.retail_ops.build.formal_manifests import load_verified_formal_dataset
 
     dataset = load_verified_formal_dataset(workspace / PUBLIC_REL)
     manifest = dataset.dev_manifest
@@ -378,7 +378,7 @@ def test_candidate_public_report_leaks_no_task_identifiers(workspace: Path) -> N
     _run_candidate(workspace, config, "cand-001")
 
     text = (workspace / "out-cand-001/candidate-report.json").read_text(encoding="utf-8")
-    from veritool_rl.retail_ops.formal_manifests import load_verified_formal_dataset
+    from veritool_rl.retail_ops.build.formal_manifests import load_verified_formal_dataset
 
     dataset = load_verified_formal_dataset(workspace / PUBLIC_REL)
     records = load_verified_formal_dev(workspace / PRIVATE_REL, dataset.dev_manifest)
@@ -394,7 +394,7 @@ def test_candidate_public_report_leaks_no_task_identifiers(workspace: Path) -> N
 
 
 def _base_evidence(workspace: Path, attempt: str = "base-001") -> Any:
-    from veritool_rl.retail_ops.formal_manifests import load_verified_formal_dataset
+    from veritool_rl.retail_ops.build.formal_manifests import load_verified_formal_dataset
 
     dataset = load_verified_formal_dataset(workspace / PUBLIC_REL)
     manifest = dataset.dev_manifest

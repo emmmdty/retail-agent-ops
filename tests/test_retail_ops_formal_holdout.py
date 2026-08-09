@@ -11,22 +11,22 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-import veritool_rl.retail_ops.formal_governance as formal_governance_module
-from veritool_rl.artifacts import canonical_json, sha256_file
-from veritool_rl.retail_ops.bundle import load_bundle
-from veritool_rl.retail_ops.formal_governance import (
-    AuthorizedFormalHoldout,
-    authorize_formal_holdout,
-    load_authorized_formal_holdout,
-)
-from veritool_rl.retail_ops.formal_manifests import (
+import veritool_rl.retail_ops.release.formal_governance as formal_governance_module
+from veritool_rl.core.artifacts import canonical_json, sha256_file
+from veritool_rl.retail_ops.build.formal_manifests import (
     FormalHoldoutReceipt,
     VerifiedFormalDataset,
     load_verified_formal_dataset,
     write_formal_task_set,
 )
-from veritool_rl.retail_ops.formal_tasks import build_formal_task_set
-from veritool_rl.retail_ops.governance import EvidencePurpose
+from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.release.formal_governance import (
+    AuthorizedFormalHoldout,
+    authorize_formal_holdout,
+    load_authorized_formal_holdout,
+)
+from veritool_rl.retail_ops.release.governance import EvidencePurpose
 
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
 LOGICAL_HOLDOUT = Path("data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/holdout.jsonl")

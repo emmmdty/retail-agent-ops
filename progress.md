@@ -303,3 +303,34 @@ train/dev/holdout、调用模型或进入训练。
   "说完就停、未执行状态变更"；根因是训练数据 66.7% 只有 1 次工具调用。
 - 结论：该候选不适合直接替换 base。未做 release GO/NO-GO 判定、未打开正式 holdout、
   未部署 serve。失败类别明确可复现，符合 R4 输入条件，具体改进需用户确认。
+
+## 2026-08-09 — 仓库收敛（Git 单分支化、独立性切断、四接口目录重排）
+
+- Git：`feature/r2-formal-data-and-base-eval` 重命名为 `main`，删除已被完全包含的
+  `portfolio/retail-agent-ops-init`；101 个提交与 HEAD 均未变。最终形态：唯一 `main`、
+  0 remote、无 submodule、无 linked worktree、无 alternates、无跟踪软链接。
+- 独立性：`data/external_repos` 由指向 `../../veritool-rl` 的软链接改为自包含目录，
+  只本地化被引用的 gorilla（BFCL）固定 checkout。**保留 gorilla 自身 `.git`**——
+  实测剥离后 `run_bfcl_official_ast.py::_verify_checkout` 的 commit 与工作树校验失效、
+  2 个测试失败；42 MB 换一个已被测试覆盖的 provenance 校验。写 `BFCL_PIN.txt` 记录
+  上游、commit、保留理由与三个未随迁 checkout 的获取方式。
+- 分发名 `veritool-rl` → `retail-agent-ops`（导入名 `veritool_rl` 按用户决策保留，
+  理由是已提交产物的 provenance 可追溯链）；`uv.lock` 仅自身条目变化。
+- src 分层：core（跨领域基础设施）/ retail_ops（domain·build·evaluate·release·serve）/
+  training / legacy。86 个文件的 import 经单次扫描重写，0 残留；**函数体零改动**。
+- configs 按四接口分层，scripts/reports/docs 分离活动与 legacy/archive；
+  `.gitignore` 规则跟随迁移并实测 4 条关键路径仍被覆盖。
+- 行为不变的强证明：三份真实运行证据（R2 qwen3-1.7b/4b base、R3 candidate）重新加载后
+  `run_id` 自哈希与逐产物哈希复算全部一致。
+- 新增两项治理测试：分层单向依赖（core 不依赖 retail_ops/legacy、主线不依赖 legacy）、
+  四接口在模块与配置上各有归属且非空。测试基线 585 → 587。
+- 清理：删除 18 个 `__pycache__`、空 `.codex/`、41 MB 工具缓存；`.superpowers/` 与
+  `.codex/` 的忽略规则从本地私有的 `.git/info/exclude` 迁入随仓库分发的 `.gitignore`。
+  仓库体积（不含 .git/.venv/data/tools）83M → 40M。
+- 文档：新增 `docs/REPO_MAP.md`（目录职责、依赖方向、路径对照表）；README、CLAUDE.md、
+  AGENTS.md、HANDOFF、LEGACY_INVENTORY 同步到 R3 与新布局。历史台账
+  （PROJECT_LOG、findings、progress 旧条目、reports/legacy 内产物）按 append-only
+  原则**未改写**，靠 REPO_MAP 的对照表回溯。
+- 全量门禁：587 passed、Ruff、mypy 64 源文件、`uv lock --check`、`git diff --check` 全绿。
+- 未进入：R3 剩余目标（正式 120 条 holdout、release GO/NO-GO、serve 部署）、任何 GPU 与
+  API 调用、远程仓库创建与 push。

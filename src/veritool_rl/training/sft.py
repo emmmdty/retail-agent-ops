@@ -12,9 +12,9 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from veritool_rl.agent.qwen import verify_local_model_files
-from veritool_rl.artifacts import write_json, write_yaml
-from veritool_rl.paths import validate_project_relative_path
+from veritool_rl.core.agent.qwen import verify_local_model_files
+from veritool_rl.core.artifacts import write_json, write_yaml
+from veritool_rl.core.paths import validate_project_relative_path
 
 _MODEL_FILE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -292,7 +292,7 @@ def reload_adapter_offline(model_path: Path, adapter_path: Path) -> dict[str, An
         raise FileNotFoundError(model_path)
     if not adapter_path.is_dir():
         raise FileNotFoundError(adapter_path)
-    from veritool_rl.agent.qwen import TransformersBackend
+    from veritool_rl.core.agent.qwen import TransformersBackend
 
     started = time.perf_counter()
     backend = TransformersBackend.from_pretrained(
