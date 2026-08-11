@@ -80,14 +80,20 @@ git diff --check
 
 ## 9. 当前状态
 
-- 当前阶段：R3「单卡适配与服务 v1」进行中。Task 1（首次真实 Qwen3-4B QLoRA-SFT）与
-  Task 2（候选 dev 配对评测）已完成；正式 120 条 holdout、release GO/NO-GO 与 serve
-  部署尚未进入，需逐项确认。
+- 当前阶段：R3「单卡适配与服务 v1」进行中。Task 1（首次真实 Qwen3-4B QLoRA-SFT）、
+  Task 2（候选 dev 配对评测）与 Task 3（发布闭环的**代码侧**补齐）已完成。
+  Task 3 打通了 formal 轨道的 `evaluate`（封存 holdout）→ `release`（GO/NO-GO）→
+  `serve`（按决策加载 base+adapter 或回滚 base）。
+  **代码完成不等于已经运行**：正式 120 条 holdout 至今从未执行，因此没有任何 sealed
+  证据、没有 formal 发布结论、没有部署过真实模型服务。下一步是用户确认后先只跑 base 侧
+  holdout（base 是固定参照，不涉及候选选择，不产生选择性泄漏）。
 - 已知结论：R3 候选把格式/安全类失败清零（invalid_call 21→0、policy_violation 8→0），
   但需 ≥2 次工具调用的场景显著回退（task_success 48/60→43/60），不适合直接替换 base。
   失败机制已定位（训练数据 66.7% 只含 1 次工具调用），属 R4 输入。
 - 仓库形态：唯一 `main` 分支、无 remote、对原 `veritool-rl` 工作区零依赖；
   `src/veritool_rl` 按 core / retail_ops(domain·build·evaluate·release·serve) /
-  training / legacy 分层，目录职责见 `docs/REPO_MAP.md`。
-- 当前基线：585 tests passed，Ruff/mypy/uv lock 全部通过。
+  training / legacy 分层，目录职责与**四接口双轨完成度**见 `docs/REPO_MAP.md`。
+- 不可逆约束：`SealedEvaluationReport` 的字段集合自 LOG-20260810-02 起冻结，
+  再改会作废届时已产出的 holdout 证据（`report_id` 是全字段自哈希）。
+- 当前基线：624 tests passed，Ruff/mypy/uv lock 全部通过。
 - 不自动推进 R3 剩余目标、模型下载或 GPU 运行；下一任务先等待用户确认。

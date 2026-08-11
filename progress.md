@@ -334,3 +334,38 @@ train/dev/holdout、调用模型或进入训练。
 - 全量门禁：587 passed、Ruff、mypy 64 源文件、`uv lock --check`、`git diff --check` 全绿。
 - 未进入：R3 剩余目标（正式 120 条 holdout、release GO/NO-GO、serve 部署）、任何 GPU 与
   API 调用、远程仓库创建与 push。
+
+## 2026-08-10 — R3 Task 3 A（sealed holdout provenance 与 CLI 入口，纯 CPU）
+
+- A1+A2（合并）：新增 `SealedEvaluationConfig`（继承 `BaseEvaluationConfig`，adapter 可选）；
+  `SealedEvaluationReport` 补 model/adapter/generation/hardware/config_sha256/code_commit/
+  uv_lock_sha256，去掉与 `generation` 重复的 `max_new_tokens`；`evaluate_authorized_holdout`
+  改收 config + models_root + hardware_provider，并接上 `_require_backend_matches_pin` 双向
+  绑定；新增 `require_comparable_sealed_runs` 与 `SEALED_PAIRING_FIELDS`。
+- A3：`evaluate` 新增 `formal_holdout_base` / `formal_holdout_candidate` 两条流水线与
+  `_default_sealed_backend` 工厂；新增两份已提交 config（model 段与 R2 dev base 逐字段相同，
+  adapter 段与 R3 dev candidate 相同，均由脚本从既有 config 复制而非手抄哈希）。
+- TDD 记录：两次 RED 均先失败于符号缺失（`require_comparable_sealed_runs`、
+  `_run_formal_holdout`）；adapter 双向绑定的两条测试另做突变验证——注释掉
+  `_require_backend_matches_pin` 调用后立即 `DID NOT RAISE`，恢复后转绿。
+- 测试基线 587 → 604 passed；Ruff、mypy(64 源文件)、`git diff --check` 全绿。
+- **未进入**：任何 holdout 实际运行（GPU 与授权门未开）、B（formal release 门禁）、
+  C（真实模型 serve）。
+
+## 2026-08-10 — R3 Task 3 B/C（formal 发布门禁与真实模型 serve，纯 CPU）
+
+- B：`release.py` 抽出 `build_release_gates` 与公开 `GATE_IDS`（R1 行为不变，22 项相关测试
+  通过）；新增 `release/formal_release.py`——`FormalReleaseReport` + `decide_formal_release`
+  + JSON/Markdown/HTML 三份报告 + 回滚说明；`release` 命令按 `pipeline: formal_release`
+  分发，新增已提交 config。
+- C：`serve/service.py` 新增 `create_formal_app`（R1 `create_app` 未改）：按 `deployment`
+  加载 base+adapter 或回滚 base，双重校验；串行 episode（超限 503）、请求体上限（超限 413）、
+  `/v1/tasks` 暴露工具 allowlist、`/health` 暴露决策/失败门禁/回滚。`serve` 命令按
+  `pipeline: formal_serve` 分发，`backend_factory`/`app_runner` 两个注入缝，新增已提交 config。
+- 突变验证三处安全关键行：`require_comparable_sealed_runs`、
+  `_require_backend_matches_deployment`、`_MAX_CONCURRENT_EPISODES`，去掉后对应测试均立即失败。
+- 验收：624 passed（587 → 624）、Ruff、mypy(65 源文件)、`uv lock --check`、
+  `git diff --check` 全绿；三份真实证据 run_id 复算一致（`07671235…`/`d57654e9…`/`29648b8c…`），
+  R1 两份 qualification release 报告仍可加载。
+- **未进入**：任何 holdout 实际运行、任何 GPU/商业 API 调用、任何 formal 发布结论、
+  任何真实模型服务部署。

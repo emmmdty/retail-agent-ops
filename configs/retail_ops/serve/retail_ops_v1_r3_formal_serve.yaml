@@ -1,0 +1,16 @@
+# R3 formal_serve: 按封存 holdout 的发布决策启动真实模型服务。
+#
+# 部署选择不由本文件决定，而由 --release_dir 下的 release.json 决定：
+#   deployment=candidate  → 加载锁定基座 + 锁定 adapter
+#   deployment=baseline   → 回滚，只加载冻结基座，绝不加载 adapter
+# 这条回滚不是文档承诺：服务在启动时还会核对后端真正挂载的 adapter 与发布报告
+# 一致，工厂即使无视指令挂上 adapter 也会被拒绝（SPEC §4 最后一条）。
+#
+# --input_dir 是 R1 build 产出的 qualification 演示任务集，不是 holdout。
+# 服务串行跑 episode（单卡显存峰值可预测）、限制请求体大小，并在 /health 暴露
+# 决策、失败门禁与回滚路径。
+pipeline: formal_serve
+bundle_dir: domains/retail_ops/v1
+models_root: models
+host: 127.0.0.1
+port: 8000

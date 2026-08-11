@@ -21,7 +21,7 @@ _REQUIRED_METRICS = (
     "invalid_call_count",
     "p95_latency_ms",
 )
-_GATE_IDS = (
+GATE_IDS = (
     "success_delta",
     "policy_violation_delta",
     "invalid_call_count",
@@ -70,7 +70,7 @@ class ReleaseReport(StrictModel):
 
     @model_validator(mode="after")
     def validate_decision_consistency(self) -> Self:
-        if tuple(gate.gate_id for gate in self.gates) != _GATE_IDS:
+        if tuple(gate.gate_id for gate in self.gates) != GATE_IDS:
             raise ValueError("发布门禁集合或顺序不符合冻结契约")
         failed = [gate.gate_id for gate in self.gates if not gate.passed]
         if failed != self.failed_gate_ids:
@@ -82,28 +82,33 @@ class ReleaseReport(StrictModel):
         return self
 
 
-def decide_release(
-    baseline: RunEvidence,
-    candidate: RunEvidence,
+def build_release_gates(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    *,
+    evidence_complete: bool,
     policy: ReleasePolicyConfig,
-) -> ReleaseReport:
-    """验证同任务配对公平性并计算全部发布门禁。"""
-    _validate_paired_evidence(baseline, candidate)
-    baseline_metrics = _required_metrics(baseline.metrics)
-    candidate_metrics = _required_metrics(candidate.metrics)
+) -> list[GateResult]:
+    """按冻结策略计算五项发布门禁；R1 qualification 与 formal holdout 共用这一份。
 
-    success_delta = candidate_metrics["task_success"] - baseline_metrics["task_success"]
-    violation_delta = int(candidate_metrics["policy_violation_count"]) - int(
-        baseline_metrics["policy_violation_count"]
+    抽出来是为了让"同一份 `release.yaml` 只有一种语义"成为结构事实：两条通道
+    的证据类型不同，但阈值、比较方向和门禁顺序必须逐字节同源，否则同一个候选
+    在两条通道上可能得到互相矛盾的结论。
+    """
+    baseline_checked = _required_metrics(baseline_metrics)
+    candidate_checked = _required_metrics(candidate_metrics)
+
+    success_delta = candidate_checked["task_success"] - baseline_checked["task_success"]
+    violation_delta = int(candidate_checked["policy_violation_count"]) - int(
+        baseline_checked["policy_violation_count"]
     )
-    invalid_calls = int(candidate_metrics["invalid_call_count"])
+    invalid_calls = int(candidate_checked["invalid_call_count"])
     latency_observed, latency_passed = _latency_gate(
-        baseline_metrics["p95_latency_ms"],
-        candidate_metrics["p95_latency_ms"],
+        baseline_checked["p95_latency_ms"],
+        candidate_checked["p95_latency_ms"],
         policy.p95_latency_ratio_max,
     )
-    evidence_complete = baseline.evidence_complete and candidate.evidence_complete
-    gates = [
+    return [
         GateResult(
             gate_id="success_delta",
             passed=success_delta >= policy.success_delta_min,
@@ -140,6 +145,22 @@ def decide_release(
             reason="基座与候选证据、重放和产物摘要必须完整。",
         ),
     ]
+
+
+def decide_release(
+    baseline: RunEvidence,
+    candidate: RunEvidence,
+    policy: ReleasePolicyConfig,
+) -> ReleaseReport:
+    """验证同任务配对公平性并计算全部发布门禁。"""
+    _validate_paired_evidence(baseline, candidate)
+    evidence_complete = baseline.evidence_complete and candidate.evidence_complete
+    gates = build_release_gates(
+        baseline.metrics,
+        candidate.metrics,
+        evidence_complete=evidence_complete,
+        policy=policy,
+    )
     failed_gate_ids = [gate.gate_id for gate in gates if not gate.passed]
     decision = ReleaseDecision.NO_GO if failed_gate_ids else ReleaseDecision.GO
     return ReleaseReport(

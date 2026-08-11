@@ -1,0 +1,12 @@
+# R3 formal_release: 用两份封存 holdout 的 sealed 报告执行 SPEC §6 发布门禁。
+#
+# 输入由 --baseline_dir / --candidate_dir 指定，各自读取该目录下的 sealed-report.json
+# （由 evaluate 的 formal_holdout_base / formal_holdout_candidate 产出）。
+# 阈值来自 domains/retail_ops/v1/release.yaml，与 R1 qualification 通道共用同一份
+# build_release_gates 实现，因此同一份策略文件只有一种语义。
+#
+# 门禁计算之前先做配对契约校验：基座模型、生成参数、holdout artifact、代码 commit
+# 等逐字段相同才允许比较；base 必须无 adapter、candidate 必须有。任一不符直接失败，
+# 不产出"带警告"的发布结论。
+pipeline: formal_release
+bundle_dir: domains/retail_ops/v1

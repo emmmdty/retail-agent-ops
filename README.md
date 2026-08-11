@@ -3,8 +3,10 @@
 RetailAgentOps 是面向零售订单、退款和客服操作的单卡工具 Agent 领域适配与发布流水线。它把工具 schema、业务政策和任务转换为可执行轨迹，完成数据质检、轻量后训练、状态级评测、GO/NO-GO 发布门禁和推理服务。
 
 > **状态**：`R1` 产品契约与 v0.1、`R2` 数据与评测流水线已完成；`R3` 单卡适配与服务 v1
-> 进行中——首次真实 Qwen3-4B QLoRA-SFT 与候选 dev 配对评测已完成，正式 holdout 评测、
-> GO/NO-GO 决策与服务部署尚未进入。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA
+> 进行中——首次真实 Qwen3-4B QLoRA-SFT、候选 dev 配对评测，以及封存 holdout 评测 →
+> GO/NO-GO 门禁 → 真实模型服务这条链路的**代码**均已完成并有测试覆盖。
+> **但正式 120 条 holdout 至今从未执行**，因此不存在任何 sealed 证据、任何发布结论，
+> 也没有部署过真实模型服务。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA
 > 和可追溯评测基础，但旧研究路线已归档到 `legacy/`，不再是活动计划。
 > 分发名与 CLI 是 `retail-agent-ops`，Python 导入名仍是 `veritool_rl`（见
 > [`docs/REPO_MAP.md`](./docs/REPO_MAP.md) 的命名边界）。
@@ -97,6 +99,11 @@ R3 候选（Qwen3-4B QLoRA-SFT）在 60 条冻结 dev 任务上：非法工具�
 关键政策违规 8→0、schema 合规率 0.781→1.000（精确 McNemar `p<0.0001` / `p=0.0078`）；
 但任务成功率 48/60→43/60，回退全部集中在需 ≥2 次工具调用的场景。据此该候选**不适合
 直接替换 base**，尚未进入 release 门禁判定。这些是 dev 结论，不是发布结论。
+
+发布门禁的代码已就绪但**尚未对该候选执行**。按上述 dev 数字套用
+`domains/retail_ops/v1/release.yaml` 的阈值，五项门禁里只有 `success_delta` 会失败
+（违规数、非法调用、p95 延迟三项都改善）——这是**预期**，不是已产生的发布结论；
+真正的结论必须来自封存 holdout 上的 sealed 证据。
 
 现有 Qwen3-1.7B BFCL 固定 200 条单轮 AST holdout 上，Base/SFT 为 163/200 与 167/200；差值置信区间跨 0，不能声称稳定改善，也不能称为官方 BFCL 全量或排行榜成绩。
 

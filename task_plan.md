@@ -6,54 +6,113 @@
 
 ## Current Phase
 
-R3「单卡适配与服务 v1」的实现任务（Task 1 SFT、Task 2 候选 dev 评测）已完成并记入
-`progress.md`。当前是一次**阶段间的仓库收敛任务**，不推进 R3 剩余目标（正式 120 条
-holdout、release GO/NO-GO、serve 均不在范围内）。
+R3「单卡适配与服务 v1」。Task 1（QLoRA-SFT）、Task 2（候选 dev 配对评测）与阶段间的
+仓库收敛已完成并记入 `progress.md`。当前是 **Task 3：发布闭环的代码侧补齐**——把
+`evaluate → release → serve` 三个接口在**真实模型轨道**上打通。本任务纯 CPU，不执行
+正式 holdout 运行、不动 GPU、不调 API。
 
 ## Current Task
 
-仓库收敛：Git 单分支化、切断对原 VeriTool-RL 工作区的依赖、按四个稳定接口重排目录。
+R3 Task 3：为 formal（真实 Qwen3-4B）轨道补齐 sealed holdout 评测入口、发布门禁与
+可切换后端的服务入口。
 
-- 输入：101 个提交的独立 checkout（原分支 `feature/r2-formal-data-and-base-eval`
-  与 `portfolio/retail-agent-ops-init`、0 remote）；ignored 软链接
-  `data/external_repos → ../../veritool-rl/data/external_repos`；`src/veritool_rl` 下
-  55 个源文件按 R0 前的研究式布局（agent/data/envs/eval/rewards/trajectory/training）
-  与 RetailOps 领域包混放；configs 下 17 个 retail + 7 个 mvp + 7 个 bfcl 配置平铺。
-- 输出：单一 `main` 分支与单一 worktree；`data/external_repos` 为自包含本地目录；
-  `src/veritool_rl` 按 `core / retail_ops(domain,build,evaluate,release,serve) /
-  training / legacy` 分层；configs、scripts、reports、docs 的活动内容与旧
-  VeriTool-RL 路线分离；文档与治理测试同步到新路径。
-- 非目标：**不改任何函数体、不改行为**；不重命名 Python 包（`veritool_rl` 保留，
-  用户已决策）；不改已提交的历史产物内容（`reports/` 下 resolved_config、metrics、
-  manifest 一律逐字节保留）；不动 GPU、不调 API、不下载模型、不碰正式 holdout；
-  不创建远程仓库、不 push。
-- 失败模式：重构中误改逻辑导致行为漂移；已提交的 R2/R3 证据 `run_id` 复算失败
-  （`_content_id` 自哈希被破坏）；import 重写遗漏导致运行期而非导入期才失败；
-  治理测试的硬编码路径与新布局不一致却被顺手放宽而非修正；`.gitignore` 规则未跟随
-  reports 迁移导致 BFCL 失败明细或 adapter 权重进 Git。
-- 关键约束（已核实的代码事实）：`scripts/run_bfcl_official_ast.py::_verify_checkout`
-  同时校验 gorilla 的 HEAD commit 与 `git status --porcelain` 为空，因此本地化时必须
-  保留 gorilla 自身的 `.git`，否则该 provenance 校验失效（已实测两个测试会失败）。
-  `docs/CAREER_CONTEXT.md`/`PRODUCT_BRIEF.md`/`EXECUTION_PLAN.md`/`HANDOFF.md`/
-  `LEGACY_INVENTORY.md` 五份文档的路径被 `tests/test_project_governance.py` 断言，
-  不得移动。
-- [x] A：Git 收敛——`feature/r2-formal-data-and-base-eval` 重命名为 `main`，删除已被
-      完全包含的 `portfolio/retail-agent-ops-init`；复核 0 remote、无 alternates、
-      无 submodule、无跟踪软链接。
-- [x] B：`data/external_repos` 本地化——复制 gorilla 固定 checkout（含其自身 `.git`）
-      进本仓库，删除指向 veritool-rl 的软链接，写 `BFCL_PIN.txt` 记录上游、commit、
-      保留 `.git` 的理由与三个未随迁 checkout 的获取方式。
-- [x] C：`src/veritool_rl` 分层——core（跨领域基础设施）/ retail_ops 四接口子包 /
-      training / legacy；纯 `git mv` + import 路径重写，函数体零改动。
-- [x] D：configs、scripts、reports、docs 分离活动内容与 legacy；`.gitignore` 规则
-      跟随迁移。
-- [x] E：治理测试与文档（README、CLAUDE.md、AGENTS.md、HANDOFF、LEGACY_INVENTORY）
-      同步新布局；新增仓库地图。
-- [x] F：全量门禁 + 行为不变证明。
-- 验收命令：`.venv/bin/pytest -q`（基线 585 passed，重构后必须仍为 585 passed）、
+- 背景（本次核实的代码事实，不是文档转述）：仓库里存在**两条平行证据链**。R1
+  qualification 轨道（规则策略）四个接口全通；R2/R3 formal 轨道只到 `evaluate` 的 dev
+  部分，`release` 与 `serve` **完全不存在**。具体：
+  (1) `evaluate_authorized_holdout` / `authorize_formal_holdout` 全仓只被 `tests/` 引用，
+      `product_cli.py::_run_evaluate` 只识别 `formal_dev_base` / `formal_dev_candidate`，
+      正式 120 条 holdout 无任何命令可跑；
+  (2) `release.py::decide_release` 只接受 R1 的 `RunEvidence`，`_validate_paired_evidence`
+      比对的 `mode` / `task_manifest_sha256` / `budget` 是 formal 证据没有的字段，
+      SPEC §6 发布门禁对真实模型不可执行；
+  (3) `serve/service.py` 硬要求 `manifest.split == "qualification"` 并只构造
+      `build_qualification_policy` 规则策略，从不加载模型或 adapter。
+- 输入：已产出且已通过重载校验的三份真实证据——`qwen3-4b-dev-base-001/base-report.json`
+  （`BaseRunEvidence`，task_success 0.800）、`r3/candidate-001/candidate-report.json`
+  （`CandidateRunEvidence`，task_success 0.7167）、`r3/sft-001/adapter/`（23.6 MB）；
+  冻结数据集 `retail_ops_v1_r2_20260722` 的公开 `holdout-receipt.json`（120 条、六类各 20）
+  与私有 `data/private/retail_ops/v1/r2/<version>/holdout.jsonl`；发布策略
+  `domains/retail_ops/v1/release.yaml`（+5pp / 违规不增 / 非法调用 0 / p95 ≤1.25× / 证据完整）。
+- 输出：
+  - A：`evaluate` 新增 `formal_holdout` 流水线 + 对应已提交 config；`SealedEvaluationReport`
+    补齐 provenance 字段（见"关键约束"第 1 条），使两份 sealed 报告可在字段级证明同条件；
+  - B：`release` 新增 formal 路径，读两份 sealed 报告产出 `FormalReleaseReport`
+    （GO/NO-GO + 逐门禁观测 + JSON/Markdown/HTML），R1 路径逐字节不变；
+  - C：`serve` 新增 formal 路径，按 `FormalReleaseReport` 的 `deployment` 选择
+    base+adapter 或回滚 base，后端经工厂注入（默认本地 CPU 可启动，GPU 主机换真实后端），
+    并落实 SPEC §9 的工具 allowlist、请求大小、并发上限与回滚说明。
+- 非目标：**不执行任何 holdout 运行**（base 那一枪在代码就绪并经用户确认后另开任务）；
+  不动 GPU、不调商业 API、不下载模型；不改 R1 qualification 轨道的任何已冻结契约；
+  不改 `BaseRunEvidence` / `CandidateRunEvidence` / `ReleaseReport` 的字段集合；
+  不重命名 Python 包；不创建远程仓库、不 push；不改发布阈值。
+- 关键约束（已核实，违反即产生不可逆损失）：
+  1. **`SealedEvaluationReport` 的扩展窗口正在关闭**。`report_id` 是
+     `_content_id` 对全字段的自哈希（`sealed_evaluation.py:219` 校验），加字段会让已产出
+     报告永久加载失败——`BaseRunEvidence` 已因此被冻死（`findings.md:532`）。已核实
+     `data/private/.../sealed-eval/` 不存在、`reports/` 无任何 sealed 产物，**holdout 从未
+     跑过**，所以现在扩字段零成本；第一次运行落盘后即不可逆。**A 必须先于任何 holdout 运行。**
+  2. `ReleaseReport.validate_decision_consistency`（`release.py:71-82`）断言 gate 集合与
+     顺序精确等于 `_GATE_IDS`，且 `decide_release` 的返回类型被 `service.py` 与
+     `tests/test_release_policy.py` / `test_service.py` 依赖。formal 门禁**只能新增并行
+     类型**（沿用 Task 2 用子类扩展 `CandidateRunEvidence` 的既有做法），门禁阈值与算术
+     必须与 R1 共用同一份实现，不得复制粘贴出第二套语义。
+  3. `evaluate_authorized_holdout` 当前签名收 `model_name: str` 而非配置对象，与
+     `evaluate_formal_dev_base` 的 `BaseEvaluationConfig` 不对称；A 需要引入
+     `SealedEvaluationConfig` 并复用 `_require_backend_matches_pin` 的双向校验，
+     否则无法证明 sealed 运行用的是哪份模型/adapter。
+  4. sealed 公开报告是 allowlist 字段集，**不得**因为补 provenance 而漏进 task_id、
+     family_id、prompt、真值或逐任务失败样例；新增字段只能是模型/生成/硬件/代码标识。
+  5. `authorize_formal_holdout` 只接受 `EvidencePurpose.RELEASE`，且 logical_path 必须
+     精确等于 `data/private/retail_ops/v1/r2/<dataset_version>/holdout.jsonl`；CLI 接线
+     不得为了方便放宽这两条。
+- 失败模式：为了让 formal 证据穿过 `decide_release` 而放宽 `_validate_paired_evidence`，
+  使 R1 配对公平性检查失效；formal 门禁复制出第二套阈值语义，导致同一策略文件产生两种
+  结论；sealed 报告补字段时把 task 级信息漏进公开侧；serve 的后端工厂缝留成"CPU 假后端
+  也能标 GO 部署"，让未过门禁的模型可被加载（违反 SPEC §4 最后一条）；先跑 holdout 再改
+  schema 导致证据永久不可加载。
+- 影响文件（预计）：`src/veritool_rl/retail_ops/evaluate/sealed_evaluation.py`、
+  `src/veritool_rl/retail_ops/release/release.py`（新增并行类型，不改 R1 类型）、
+  `src/veritool_rl/retail_ops/serve/service.py`、`src/veritool_rl/product_cli.py`、
+  `configs/retail_ops/{evaluate,release,serve}/` 新增 config、`tests/` 对应新增测试、
+  `docs/REPO_MAP.md`、`CLAUDE.md`、`README.md`。
+- [x] A1+A2（合并为一个循环，配置对象与报告字段互相依赖）：`SealedEvaluationConfig`
+      （继承 `BaseEvaluationConfig`，`adapter` 可选）+ `SealedEvaluationReport` 补 provenance
+      + `evaluate_authorized_holdout` 签名对齐 + `require_comparable_sealed_runs`。
+      RED 先失败于 `require_comparable_sealed_runs` 不存在；两条 adapter 双向绑定测试
+      另经突变验证（去掉 `_require_backend_matches_pin` 调用后立即 `DID NOT RAISE`）。
+      基线 587 → 592 passed。
+- [x] A3：`evaluate` 新增 `formal_holdout_base` / `formal_holdout_candidate` 两条流水线
+      （拆成两条而非一条带可选 adapter：base/candidate 的区分是安全关键的，让配置文件
+      本身声明意图，比"有没有写 adapter 这个 key"更难误配置）+ 两份已提交 config，
+      走 `authorize_formal_holdout` 两段式授权；CPU 注入缝与 `_run_formal_dev_base` 对齐。
+      基线 592 → 604 passed。
+- [x] B1：`release.py` 抽出 `build_release_gates` 与公开的 `GATE_IDS`（R1 与 formal 共用
+      同一份阈值语义）；新增 `release/formal_release.py`（`FormalReleaseReport` +
+      `decide_formal_release` + 三份报告渲染），不改 R1 的 `ReleaseReport`。
+      配对校验的两条测试经突变验证（去掉 `require_comparable_sealed_runs` 后裸 `AssertionError`）。
+- [x] B2：`release` 命令按 `pipeline: formal_release` 分发 + 已提交 config；
+      公开 sealed 副本显式 `verify_artifacts=False`（同目录无私有产物），report_id 仍逐字校验。
+- [x] B3：用真实 dev 数字（base 0.800 / candidate 0.7167 / p95 6068 vs 5211）的端到端
+      NO-GO 回归：恰好 `success_delta` 一项失败、`deployment == "baseline"`；另有 GO 正对照、
+      报告往返、手改 decision 必须加载失败。基线 604 → 613 passed。
+- [x] C1：`serve/service.py` 新增 `create_formal_app`（R1 `create_app` 未改）：后端工厂
+      注入、按 `deployment` 选 base+adapter 或回滚 base。回滚是**双重**执行的——NO-GO 时
+      adapter 根本不传给工厂，且随后核对工厂真正返回的后端没挂 adapter（工厂是注入缝，
+      实现可能来自别处）。经突变验证。
+- [x] C2：并发上限（串行 episode，超限 503）、请求体大小上限（`MAX_REQUEST_BYTES`，
+      超限 413）、`/v1/tasks` 暴露工具 allowlist、`/health` 暴露决策/失败门禁/回滚说明。
+      并发上限经突变验证（提到 8 后测试立即失败）。
+- [x] C3：`serve` 命令按 `pipeline: formal_serve` 分发 + 已提交 config；`backend_factory`
+      与 `app_runner` 两个注入缝让本地 CPU 用 fake 后端即可装配服务并断言 provenance，
+      不加载模型、不监听端口。基线 613 → 624 passed。
+- [x] D：文档同步（REPO_MAP 新增「四接口双轨完成度」并标注"代码完成 ≠ 已经运行"、
+      CLAUDE.md §9、README 状态与结果边界）+ 全量门禁 + PROJECT_LOG。
+- 验收命令：`.venv/bin/pytest -q`（起始基线 587 → **完成时 624 passed**）、
   `.venv/bin/ruff check .`、`.venv/bin/mypy`、
   `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
-  另需证明已提交的两份 R2 base 证据与 R3 候选证据仍能加载且 `run_id` 复算一致。
+  另需证明三份已产出的真实证据（R2 两份 base、R3 一份 candidate）重新加载后 `run_id`
+  复算仍一致，且 R1 qualification 的 `release.json` 仍能被 `load_release_report` 接受。
+- 授权状态：GPU **否**、API **否**、数据下载 **否**、holdout 执行 **否**、公开发布 **否**。
 
 ## Task Rules
 

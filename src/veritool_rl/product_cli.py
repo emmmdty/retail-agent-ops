@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from fastapi import FastAPI
 
 from veritool_rl.cli import load_config
 from veritool_rl.core.agent.qwen import (
@@ -32,6 +33,7 @@ from veritool_rl.core.paths import validate_project_relative_path
 from veritool_rl.retail_ops.build.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
 from veritool_rl.retail_ops.build.formal_manifests import (
     FormalTaskManifest,
+    load_formal_holdout_receipt,
     load_formal_split,
     load_formal_task_manifest,
     load_verified_formal_dataset,
@@ -70,12 +72,24 @@ from veritool_rl.retail_ops.evaluate.evaluation import (
     evaluate_retail_ops,
     load_run_evidence,
 )
+from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
+    SealedEvaluationConfig,
+    evaluate_authorized_holdout,
+    load_sealed_evaluation_report,
+)
+from veritool_rl.retail_ops.release.formal_governance import authorize_formal_holdout
+from veritool_rl.retail_ops.release.formal_release import (
+    decide_formal_release,
+    load_formal_release_report,
+    write_formal_release_report,
+)
+from veritool_rl.retail_ops.release.governance import EvidencePurpose
 from veritool_rl.retail_ops.release.release import (
     decide_release,
     load_release_report,
     write_release_report,
 )
-from veritool_rl.retail_ops.serve.service import create_app
+from veritool_rl.retail_ops.serve.service import BackendFactory, create_app, create_formal_app
 from veritool_rl.training.sft import run_sft
 
 _R2_PRIVATE_ROOT = Path("data/private/retail_ops/v1/r2")
@@ -217,11 +231,20 @@ def _run_evaluate(args: argparse.Namespace) -> None:
     if pipeline == "formal_dev_candidate":
         _run_formal_dev_candidate(args, config)
         return
+    if pipeline in _FORMAL_HOLDOUT_PIPELINES:
+        _run_formal_holdout(args, config)
+        return
     raise ValueError(f"未知 evaluate pipeline: {pipeline!r}")
 
 
 def _run_release(args: argparse.Namespace) -> None:
     config = load_config(args.config)
+    pipeline = config.get("pipeline")
+    if pipeline == "formal_release":
+        _run_formal_release(args, config)
+        return
+    if pipeline is not None:
+        raise ValueError(f"未知 release pipeline: {pipeline!r}")
     _require_config_keys(config, {"bundle_dir"})
     bundle = load_bundle(_bundle_dir(config))
     baseline = load_run_evidence(args.baseline_dir / "run.json")
@@ -235,8 +258,23 @@ def _run_release(args: argparse.Namespace) -> None:
     write_release_report(report, args.output_dir)
 
 
-def _run_serve(args: argparse.Namespace) -> None:
+def _run_serve(
+    args: argparse.Namespace,
+    *,
+    backend_factory: BackendFactory | None = None,
+    app_runner: Callable[[FastAPI, str, int], None] | None = None,
+) -> None:
+    """启动 R1 qualification 服务，或按封存 holdout 发布决策启动真实模型服务。
+
+    `backend_factory`/`app_runner` 是注入缝：CPU 测试可以用 fake 后端装配服务并
+    断言 provenance，而不真的加载模型或监听端口。`main()` 走默认的真实实现。
+    """
     config = load_config(args.config)
+    if config.get("pipeline") == "formal_serve":
+        _run_formal_serve(args, config, backend_factory=backend_factory, app_runner=app_runner)
+        return
+    if config.get("pipeline") is not None:
+        raise ValueError(f"未知 serve pipeline: {config['pipeline']!r}")
     _require_config_keys(config, {"bundle_dir", "host", "port"})
     bundle_dir = _bundle_dir(config)
     host = config["host"]
@@ -260,6 +298,109 @@ def _run_serve(args: argparse.Namespace) -> None:
         },
     )
     uvicorn.run(app, host=host, port=port)
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: formal_serve (serve)
+# ---------------------------------------------------------------------------
+
+_FORMAL_SERVE_KEYS = {"pipeline", "bundle_dir", "models_root", "host", "port"}
+
+
+def _default_formal_backend(
+    model: ModelArtifact,
+    adapter: AdapterArtifact | None,
+    models_root: Path,
+) -> GenerationBackend:
+    """生产默认工厂：加载锁定基座，只有发布决策为 candidate 时才挂 adapter。"""
+    return TransformersBackend.from_pretrained(
+        str(models_root / model.local_dir),
+        None if adapter is None else str(adapter.adapter_dir),
+        revision=model.revision,
+        expected_file_sha256=model.file_sha256,
+        settings=GenerationSettings(),
+    )
+
+
+def _run_formal_serve(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    backend_factory: BackendFactory | None = None,
+    app_runner: Callable[[FastAPI, str, int], None] | None = None,
+) -> None:
+    """按 `FormalReleaseReport` 装配服务；未过门禁时只加载冻结 base。"""
+    _require_config_keys(config, _FORMAL_SERVE_KEYS)
+    bundle_dir = _bundle_dir(config)
+    models_root = _project_relative_path(config, "models_root")
+    host = _config_str(config, "host")
+    port = config["port"]
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("port 必须是 1 到 65535 的整数")
+
+    factory = backend_factory or (
+        lambda model, adapter: _default_formal_backend(model, adapter, models_root)
+    )
+    app = create_formal_app(
+        args.release_dir,
+        bundle_dir,
+        args.input_dir,
+        backend_factory=factory,
+    )
+    release = load_formal_release_report(args.release_dir / "release.json")
+
+    create_output_dir(args.output_dir)
+    write_json(
+        args.output_dir / "service.json",
+        {
+            "release_sha256": sha256_file(args.release_dir / "release.json"),
+            "bundle_sha256": load_bundle(bundle_dir).bundle_sha256,
+            "dataset_version": release.dataset_version,
+            "release_decision": release.decision.value,
+            "deployment": release.deployment,
+            "failed_gate_ids": list(release.failed_gate_ids),
+            "adapter_loaded": release.deployment == "candidate",
+            "host": host,
+            "port": port,
+        },
+    )
+    (app_runner or _default_app_runner)(app, host, port)
+
+
+def _default_app_runner(app: FastAPI, host: str, port: int) -> None:
+    uvicorn.run(app, host=host, port=port)
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: formal_release (release)
+# ---------------------------------------------------------------------------
+
+_FORMAL_RELEASE_KEYS = {"pipeline", "bundle_dir"}
+
+
+def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    """用两份 sealed holdout 报告执行 SPEC §6 的发布门禁并写出证据包。
+
+    公开 sealed 报告是单文件副本，同目录没有私有产物，因此这里显式传
+    `verify_artifacts=False`——`load_sealed_evaluation_report` 的默认值是校验，
+    不显式关掉会退化成"文件缺失即失败"。report_id 自哈希仍然逐字校验。
+    """
+    _require_config_keys(config, _FORMAL_RELEASE_KEYS)
+    bundle = load_bundle(_bundle_dir(config))
+    base = load_sealed_evaluation_report(
+        args.baseline_dir / "sealed-report.json", verify_artifacts=False
+    )
+    candidate = load_sealed_evaluation_report(
+        args.candidate_dir / "sealed-report.json", verify_artifacts=False
+    )
+    for label, report in (("基座", base), ("候选", candidate)):
+        if report.bundle_sha256 != bundle.bundle_sha256:
+            raise ValueError(f"{label} sealed 证据与 release bundle SHA-256 不匹配")
+
+    write_formal_release_report(
+        decide_formal_release(base, candidate, bundle.release),
+        args.output_dir,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -715,6 +856,120 @@ def _run_formal_dev_candidate(
         private_root=private_root,
         attempt_id=attempt_id,
         public_report_path=args.output_dir / "candidate-report.json",
+        hardware_provider=hardware_provider,
+    )
+
+
+# ---------------------------------------------------------------------------
+# R3 pipeline: formal_holdout_base / formal_holdout_candidate (evaluate)
+# ---------------------------------------------------------------------------
+
+#: 两条 holdout 流水线刻意分开命名：base/candidate 的区分是安全关键的，让配置
+#: 文件本身声明意图，比"有没有写 adapter 这个 key"更难被误配置。
+_FORMAL_HOLDOUT_PIPELINES = ("formal_holdout_base", "formal_holdout_candidate")
+
+_FORMAL_HOLDOUT_BASE_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "dataset_version",
+    "holdout_receipt_path",
+    "models_root",
+    "model",
+    "generation",
+    "attempt_id",
+}
+_FORMAL_HOLDOUT_CANDIDATE_KEYS = _FORMAL_HOLDOUT_BASE_KEYS | {"adapter"}
+
+#: `authorize_formal_holdout` 要求逻辑路径精确等于这个前缀下的冻结文件。
+_PRIVATE_R2_LOGICAL_ROOT = Path("data/private/retail_ops/v1/r2")
+_HOLDOUT_ARTIFACT_NAME = "holdout.jsonl"
+
+
+def _default_sealed_backend(
+    config: SealedEvaluationConfig, models_root: Path
+) -> GenerationBackend:
+    """生产环境默认工厂：真实 4-bit NF4 后端，候选侧另挂锁定的 adapter 目录。"""
+    model_dir = models_root / config.model.local_dir
+    adapter_dir = None if config.adapter is None else str(config.adapter.adapter_dir)
+    return TransformersBackend.from_pretrained(
+        str(model_dir),
+        adapter_dir,
+        revision=config.model.revision,
+        expected_file_sha256=config.model.file_sha256,
+        settings=config.generation,
+    )
+
+
+def _run_formal_holdout(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    backend_factory: Callable[[SealedEvaluationConfig, Path], GenerationBackend] | None = None,
+    hardware_provider_factory: Callable[[], HardwareProvider] | None = None,
+    code_commit_factory: Callable[[], str] | None = None,
+) -> None:
+    """在封存的正式 120 条 holdout 上跑一次 release 目的的评测。
+
+    这条流水线是 SPEC §6 发布门禁**唯一**的证据来源。它绝不接受开发用途：
+    `authorize_formal_holdout` 只签发 `EvidencePurpose.RELEASE` 的能力对象，
+    逻辑路径必须精确等于冻结数据版本的 `holdout.jsonl`，两项都不在这里放宽。
+    完整轨迹只写私有 attempt 目录，公开侧只有 allowlist 聚合报告。
+    """
+    pipeline = config.get("pipeline")
+    is_candidate = pipeline == "formal_holdout_candidate"
+    _require_config_keys(
+        config,
+        _FORMAL_HOLDOUT_CANDIDATE_KEYS if is_candidate else _FORMAL_HOLDOUT_BASE_KEYS,
+    )
+    if args.seed != 0:
+        raise ValueError(f"{pipeline} 冻结 seed=0，收到 --seed 与之不一致")
+
+    bundle_dir = _bundle_dir(config)
+    dataset_version = _dataset_version(config)
+    receipt_path = _project_relative_path(config, "holdout_receipt_path")
+    models_root = _project_relative_path(config, "models_root")
+    attempt_id = _attempt_id(config)
+    model_value = _config_mapping(config, "model")
+    generation_value = _config_mapping(config, "generation")
+
+    bundle = load_bundle(bundle_dir)
+    dataset = load_verified_formal_dataset(receipt_path.parent)
+    if dataset.receipt.dataset_version != dataset_version:
+        raise ValueError(f"{pipeline} 配置的 dataset_version 与公开 dataset receipt 不一致")
+    declared_receipt = load_formal_holdout_receipt(receipt_path)
+    if declared_receipt != dataset.holdout_receipt:
+        raise ValueError(f"{pipeline} 的 holdout receipt 不是 dataset.json 绑定的那一份")
+
+    sealed_config = SealedEvaluationConfig(
+        dataset_version=dataset_version,
+        model=ModelArtifact(**model_value),
+        adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
+        generation=GenerationSettings(**generation_value),
+        code_commit=(code_commit_factory or _current_code_commit)(),
+        uv_lock_sha256=_current_uv_lock_sha256(),
+    )
+
+    private_root = args.input_dir
+    authorization = authorize_formal_holdout(
+        dataset,
+        private_root / _HOLDOUT_ARTIFACT_NAME,
+        _PRIVATE_R2_LOGICAL_ROOT / dataset_version / _HOLDOUT_ARTIFACT_NAME,
+        EvidencePurpose.RELEASE,
+        trusted_private_root=private_root,
+    )
+
+    backend = (backend_factory or _default_sealed_backend)(sealed_config, models_root)
+    hardware_provider = (hardware_provider_factory or _default_hardware_provider)()
+
+    create_output_dir(args.output_dir)
+    evaluate_authorized_holdout(
+        authorization,
+        bundle,
+        backend,
+        sealed_config,
+        models_root=models_root,
+        attempt_id=attempt_id,
+        public_report_path=args.output_dir / "sealed-report.json",
         hardware_provider=hardware_provider,
     )
 

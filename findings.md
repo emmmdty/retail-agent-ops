@@ -534,3 +534,49 @@
   固化成一条以真实报告为输入的回归测试，而不是只写在注释里。
 - `_require_backend_matches_pin` 现在是**双向**的：base 拒绝任何 adapter（原有防线），
   candidate 拒绝缺失或不符的 adapter——否则证据会声称评测了候选而实际跑的是 base。
+
+## R3 Task 3 A：sealed holdout 的 provenance 与 CLI 入口（2026-08-10）
+
+- **schema 窗口确实还开着，现在已经用掉**：`SealedEvaluationReport` 原本缺
+  model/generation/hardware/config_sha256/code_commit/uv_lock_sha256/adapter，两份 sealed
+  报告在字段级无法证明可比。核实 `data/private/.../sealed-eval/` 不存在、`reports/` 无
+  sealed 产物后确认 holdout 从未跑过，因此补字段零成本。`_content_id` 只排除
+  `report_id` 与 `schema_version`，新增字段自动落入自哈希（已用篡改 `model.revision`
+  的测试钉住）。**此后再改 sealed schema 就会作废已产出证据。**
+- **sealed 用单一类型 + 可选 adapter，而不是像 dev 侧那样分两个类型**。理由：sealed
+  报告是对外的单一 allowlist schema，分裂成两个 schema_version 会让公开产物形态随
+  base/candidate 变化；base/candidate 的角色由 `require_comparable_sealed_runs` 显式
+  断言（base 必须无 adapter、candidate 必须有）。代价是少了一层类型级保护，因此这两条
+  断言都有测试，且两条 adapter 双向绑定测试经过突变验证。
+- **CLI 侧反过来拆成两条流水线** `formal_holdout_base` / `formal_holdout_candidate`。
+  `_require_config_keys` 是精确 key 集合，若合成一条则 adapter 只能是可选 key，
+  "漏写 adapter" 会静默变成 base 运行。拆开后配置文件本身声明意图，且 base 配置里
+  出现 adapter 会被 key 契约挡住（有测试）。
+- **突变验证的价值**：`_require_backend_matches_pin` 是在 GREEN 阶段顺手接上的，没有先
+  失败的测试。事后把那一行注释掉重跑，两条 adapter 绑定测试立即 `DID NOT RAISE`，证明
+  它们不是空测试；随后恢复。这个手法比"补一条事后测试"能给出真正的失败证据。
+- **配置层面的可归因性现在可机器检查**：新增三条测试断言 R2 dev base、R3 dev candidate、
+  两条 holdout 通道的 `model` 段逐字段相同，且 holdout candidate 与 dev candidate 的
+  `adapter` 段相同。"delta 可归因于 adapter" 在配置层的前提不再只写在注释里。
+- `authorize_formal_holdout` 的两条硬约束在 CLI 接线时**未放宽**：purpose 固定
+  `EvidencePurpose.RELEASE`，logical_path 由代码拼成
+  `data/private/retail_ops/v1/r2/<dataset_version>/holdout.jsonl`，不从配置读取。
+
+## R3 Task 3 B/C：formal 发布门禁与真实模型 serve（2026-08-10）
+
+- **同一份 `release.yaml` 只能有一种语义**，因此把门禁算术从 `decide_release` 抽成
+  `build_release_gates`，R1 与 formal 共用；`GATE_IDS` 也提升为公开常量供两侧断言顺序。
+  否则 formal 侧复制一套阈值后，同一候选可能在两条通道上得到互相矛盾的结论。
+- **`FormalReleaseReport` 的 `deployment` 是可执行指令而不是描述性字段**：`serve` 直接按
+  它决定加载什么，因此它与 `decision` 的一致性由 model validator 强制。手改 JSON 里的
+  `decision`/`deployment` 会在加载时失败（有测试）——"不能靠改字段放行"是代码事实。
+- **serve 的回滚是双重执行的**。只根据 `deployment` 决定传不传 adapter 给后端工厂不够：
+  工厂是注入缝，实现可能来自别处。`_require_backend_matches_deployment` 还会核对工厂真正
+  返回的后端声明的 `adapter_path`。突变验证：注释掉这一行后 rogue-factory 测试立即失败。
+- **并发上限设为 1 是刻意的**：单卡并发解码会让显存峰值不可预测，也会破坏逐 episode 的
+  延迟测量。超限返回 503 而不是排队——排队会让延迟指标失真。经突变验证（改成 8 即失败）。
+- `MAX_REQUEST_BYTES` 目前是**前瞻性**的：现有端点不接受请求体。保留它是为了后续新增带
+  body 的端点时，超限请求在触达模型之前就被拒绝，而不是等出问题再补。
+- **两个注入缝的分工**：`backend_factory` 让本地 CPU 用 fake 后端装配真实服务代码路径，
+  `app_runner` 让测试不必真的 `uvicorn.run` 阻塞。二者合起来使 SPEC §9 的全部约束都能在
+  没有 GPU 的机器上回归。

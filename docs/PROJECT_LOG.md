@@ -2012,3 +2012,157 @@ legacy，product_cli 不依赖 legacy；(2) 四个稳定接口在模块目录与
 
 **边界**：未推进 R3 剩余目标（正式 120 条 holdout、release GO/NO-GO、serve 部署），
 未运行任何 GPU 或商业 API，未创建远程仓库，未 push。
+
+### LOG-20260810-01：R3 Task 3 立项——发布闭环的代码侧缺口、schema 不可逆窗口与三项用户决策
+
+- 日期：2026-08-10
+- 阶段/任务：R3 / Task 3 立项（只读审查 + 计划，未实现任何代码）
+- 状态：解决（计划已冻结，实现待用户放行）
+- 关联：LOG-20260807-09、LOG-20260809-01
+
+**触发**：对当前状态做文档与代码的交叉核实，确定最值得做的下一步。实测基线
+587 passed / Ruff / mypy(64 源文件) / `git diff --check` 全绿，工作树干净，HEAD `74f526f`。
+
+**核心发现：仓库存在两条平行证据链，真实模型轨道断在 `evaluate`**。R1 qualification
+轨道（规则策略）四个接口全通；R2/R3 formal 轨道（真实 Qwen3-4B）只到 dev 评测。三处
+是**代码不存在**而非未获执行授权：
+(1) `evaluate_authorized_holdout` / `authorize_formal_holdout` 全仓只被 `tests/` 引用，
+`product_cli.py::_run_evaluate` 只识别 `formal_dev_base` / `formal_dev_candidate`，
+正式 120 条 holdout 无任何命令可跑；
+(2) `release.py::decide_release` 只接受 R1 的 `RunEvidence`，`_validate_paired_evidence`
+比对的 `mode` / `task_manifest_sha256` / `budget` 是 formal 证据没有的字段——**SPEC §6
+的发布门禁对真实模型不可执行**；
+(3) `serve/service.py:45` 硬要求 `manifest.split == "qualification"` 并只构造
+`build_qualification_policy` 规则策略，从不加载模型或 adapter。
+
+结论：PRODUCT_BRIEF 主打的差异化「输出是决策而非指标」目前只在玩具规则策略上成立。
+
+**约束变化（不可逆窗口，本条是本次最重要的记录）**：`SealedEvaluationReport`
+（`sealed_evaluation.py:64`）缺 `model` / `generation` / `hardware` / `config_sha256` /
+`code_commit` / `uv_lock_sha256` / adapter —— 恰是 `compare_dev_runs` 用来证明 base 与
+candidate 同条件的那组字段，两份 sealed 报告放在一起无法在字段级证明可比。而
+`report_id` 是 `_content_id` 对全字段的自哈希，加字段会让已产出报告永久加载失败，
+`BaseRunEvidence` 已因此被冻死（`findings.md:532`）。已核实
+`data/private/.../sealed-eval/` 不存在、`reports/` 无任何 sealed 产物，**holdout 从未
+跑过**，所以现在扩字段零成本，**第一次 holdout 运行落盘的瞬间窗口关闭**。因此
+「补 schema」被定为 Task 3 的 A1，且必须先于任何 holdout 运行。
+
+**设计决定**：formal 发布门禁**只新增并行类型**（`FormalReleaseReport`），不改
+`ReleaseReport`。理由是 `ReleaseReport.validate_decision_consistency`（`release.py:71-82`）
+断言 gate 集合与顺序精确等于 `_GATE_IDS`，且 `decide_release` 的返回类型被
+`service.py` 与 `tests/test_release_policy.py` / `test_service.py` 依赖。沿用 Task 2 用
+子类扩展 `CandidateRunEvidence` 的既有做法。**被否决的替代方案**：放宽
+`_validate_paired_evidence` 让 formal 证据穿过现有 `decide_release`——会使 R1 的配对
+公平性检查失效；以及复制一套 formal 门禁算术——会让同一份 `release.yaml` 产生两种语义。
+两者均写入计划的失败模式。
+
+**已识别的安全陷阱**：serve 的可切换后端注入缝容易写成「CPU 假后端也能标 GO 并部署」，
+违反 SPEC §4「没有通过发布门禁的模型不得被服务入口默认加载」。C1 的 RED 先钉死这条。
+
+**用户决策（三项）**：
+1. Task 3 范围 = A+B+C 一次做完（holdout CLI 入口与 schema 补全 + formal release 门禁 +
+   真实模型 serve），纯 CPU、TDD；
+2. holdout 时机 = 代码就绪后**先只跑 base**。理由：base 是固定参照、不涉及候选选择，
+   跑它不产生选择性泄漏，且未来每次发布决策都要用；候选侧的第一枪留到 R4 出更好候选
+   再打，不花在已知会 FAIL 的当前候选上；
+3. serve 形态 = 后端经工厂注入、默认本地 CPU 可启动，GPU 主机上换真实
+   Qwen3-4B+adapter；测试不依赖 GPU。
+
+**当前候选按 `domains/retail_ops/v1/release.yaml` 的预判**（dev 数字，非 holdout）：
+success_delta −0.083（阈值 +0.05）**FAIL**；policy_violation_delta −8 PASS；
+invalid_call_count 0 PASS；p95 ratio 5211/6068 = 0.859 PASS；evidence_complete PASS。
+5 项里 4 项通过，唯一失败的是唯一重要的那项。注意 p95 反而下降——base 的尾延迟被它
+自己的违规/重试拉高。这组数字将作为 B3 的端到端 NO-GO 回归输入。
+
+**顺带修正的文档漂移**：`CLAUDE.md:92` 与 `docs/REPO_MAP.md:25` 仍写 585，实际 587
+（收敛任务新增 2 项治理测试），已改。`REPO_MAP.md:84` 的 585 描述的是「重构行为不变的
+证明用的是重构前那 585 项」，语境正确，未动。
+
+**边界**：本次只做只读审查与计划，未实现任何代码，未运行 GPU/商业 API/holdout，
+未提交。实现从 A1 开始，待用户放行。
+
+### LOG-20260810-02：sealed 报告 schema 窗口已关闭；holdout 评测入口落地
+
+- 日期：2026-08-10
+- 阶段/任务：R3 / Task 3 A（纯 CPU 实现，未运行 holdout）
+- 状态：解决
+- 关联：LOG-20260810-01
+
+**不可逆约束变化（本条的核心）**：`SealedEvaluationReport` 已补入
+`model`/`adapter`/`generation`/`hardware`/`config_sha256`/`code_commit`/`uv_lock_sha256`，
+并去掉与 `generation` 重复的 `max_new_tokens`。补字段之所以可行，是因为实测确认
+`data/private/.../sealed-eval/` 不存在、`reports/` 无任何 sealed 产物——**holdout 从未跑过**。
+`_content_id` 只排除 `report_id` 与 `schema_version`，新字段自动进入自哈希（已用篡改
+`model.revision` 后 `report_id` 失配的测试钉住）。**自本条起，sealed schema 的修改窗口
+关闭：再改会作废届时已产出的 holdout 证据，与 `BaseRunEvidence` 当前的处境相同。**
+
+**设计决定一：sealed 报告用单一类型 + 可选 adapter，不复制 dev 侧的双类型模式。**
+dev 侧是 `BaseRunEvidence` / `CandidateRunEvidence` 两个类型，靠类型不兼容互相排斥。
+sealed 报告是**对外的单一 allowlist 产物**，若分裂成两个 schema_version，公开产物形态会
+随 base/candidate 变化。改为由 `require_comparable_sealed_runs` 显式断言角色（base 必须
+无 adapter、candidate 必须有）。代价是少一层类型级保护，因此这两条断言各有测试。
+
+**设计决定二：CLI 侧反过来拆成两条流水线** `formal_holdout_base` /
+`formal_holdout_candidate`。`_require_config_keys` 是精确 key 集合；若合成一条，adapter
+只能是可选 key，**"漏写 adapter" 会静默降级成一次 base 运行并被标为候选证据**。拆开后
+配置文件本身声明意图，且 base 配置里出现 adapter 会被 key 契约挡住。两个方向相反的选择
+各有其理由，记录在此以免后续被"统一风格"重构掉。
+
+**过程失误与其纠正**：`_require_backend_matches_pin` 的接线是在 GREEN 阶段顺手写的，
+没有先失败的测试。事后把该调用注释掉重跑，两条 adapter 双向绑定测试立即
+`DID NOT RAISE`，随后恢复转绿。结论：对"顺手补上的守卫"，突变验证比补一条事后测试
+更能给出真实失败证据；后续 B/C 段沿用。
+
+**新增的可机器检查主张**：三条测试断言 R2 dev base、R3 dev candidate 与两条 holdout
+通道的 `model` 段逐字段相同，且 holdout candidate 与 dev candidate 的 `adapter` 段相同。
+"delta 可归因于 adapter" 在配置层的前提不再只写在注释里。
+
+**授权边界未放宽**：CLI 接线中 purpose 固定 `EvidencePurpose.RELEASE`，logical_path 由
+代码拼成 `data/private/retail_ops/v1/r2/<dataset_version>/holdout.jsonl`，不从配置读取。
+
+**验收**：604 passed（587 → 604）、Ruff、mypy 64 源文件、`git diff --check` 全绿。
+未运行任何 GPU/商业 API/holdout，未提交，未进入 B（formal release 门禁）与 C（真实模型 serve）。
+
+### LOG-20260810-03：R3 Task 3 完成——formal 轨道的 evaluate→release→serve 代码闭环
+
+- 日期：2026-08-10
+- 阶段/任务：R3 / Task 3（B 段发布门禁、C 段真实模型服务，纯 CPU）
+- 状态：解决（代码闭环完成；**尚未执行任何 holdout 运行**）
+- 关联：LOG-20260810-01、LOG-20260810-02
+
+**阶段性事实变化**：LOG-20260810-01 记录的三处缺口已全部补齐。formal（真实 Qwen3-4B）
+轨道现在四个接口齐备：`evaluate` 有封存 holdout 的 base/candidate 两条流水线，
+`release` 有 `decide_formal_release`，`serve` 有 `create_formal_app`。R1 qualification
+轨道的已冻结契约逐字未改（`ReleaseReport`、`create_app` 及其 22 项相关测试全通过）。
+
+**设计决定：门禁算术抽成 `build_release_gates`，R1 与 formal 共用。** 被否决的替代方案是
+让 formal 侧自带一套阈值实现——那样同一份 `domains/retail_ops/v1/release.yaml` 会有两种
+语义，同一个候选可能在两条通道上得到互相矛盾的结论。`GATE_IDS` 一并提升为公开常量，
+使门禁集合与顺序在两侧都可断言。
+
+**设计决定：serve 的回滚是双重执行的。** 只根据 `deployment` 决定传不传 adapter 给后端
+工厂并不够——工厂是注入缝，实现可能来自别处。因此 `create_formal_app` 还会核对工厂真正
+返回的后端所声明的 `adapter_path`。这是 SPEC §4"没有通过发布门禁的模型不得被服务入口
+加载"从文档承诺变成代码事实的地方。
+
+**设计决定：并发上限固定为 1，超限返回 503 而不是排队。** 单卡并发解码会让显存峰值不可
+预测，排队则会让逐 episode 的延迟测量失真——而延迟是发布门禁的一项。
+
+**方法沿用**：LOG-20260810-02 记录的突变验证在本段用于三处安全关键行
+（`require_comparable_sealed_runs`、`_require_backend_matches_deployment`、
+`_MAX_CONCURRENT_EPISODES`）。三处去掉后对应测试均立即失败，随后恢复。
+
+**用真实 dev 数字固化的 NO-GO 回归**：以 base 0.800 / candidate 0.7167 /
+p95 6068 vs 5211 为输入，断言五项门禁里恰好 `success_delta` 失败、`deployment` 为
+`baseline`。这条测试把 LOG-20260807-09 的结论变成了可执行回归。**它是预期而非结论**：
+真正的发布判定必须来自封存 holdout 上的 sealed 证据。
+
+**边界（重要，勿被"闭环完成"误读）**：正式 120 条 holdout **至今从未执行**。因此不存在
+任何 sealed 证据、任何 formal GO/NO-GO 结论、任何真实模型服务部署。R3 的验收目标里
+"候选满足发布门禁才标 GO""服务能完成允许/拒绝/异常恢复流程"仍未达成——它们需要 GPU
+运行，属下一个授权门。已按用户 2026-08-10 的决定，把"先只跑 base 侧 holdout"记为下一步。
+
+**验收**：624 passed（587 → 624）、Ruff、mypy 65 源文件、`uv lock --check`、
+`git diff --check` 全绿；三份真实证据 `run_id` 复算与 LOG-20260809-01 记录一致
+（`07671235…`/`d57654e9…`/`29648b8c…`），R1 两份 qualification release 报告仍可加载。
+未运行 GPU/商业 API/holdout，未提交，未创建远程仓库。

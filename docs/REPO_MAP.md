@@ -22,7 +22,7 @@
 | `domains/retail_ops/v1/` | 活动 | 领域 bundle：工具 schema、业务政策、发布策略（版本化输入） |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
-| `tests/` | 活动 | 585 项测试，含治理契约测试 |
+| `tests/` | 活动 | 624 项测试，含治理契约测试 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
@@ -50,8 +50,8 @@ src/veritool_rl/
 │   ├── domain/             #   领域事实来源：bundle, tasks, policies, environment, formal_tasks
 │   ├── build/              #   数据侧：manifests, formal_manifests, teacher_*, dev_sft_export
 │   ├── evaluate/           #   评测侧：evaluation, base_/candidate_/sealed_evaluation
-│   ├── release/            #   决策侧：release, governance, formal_governance
-│   └── serve/              #   服务侧：service
+│   ├── release/            #   决策侧：release(R1), formal_release(holdout), governance, formal_governance
+│   └── serve/              #   服务侧：service（R1 规则策略 + formal 真实模型两条通道）
 ├── training/sft.py         # 单卡 QLoRA-SFT
 └── legacy/                 # 旧 VeriTool-RL 路线（bfcl 数据与评测、MVP evaluator、grpo/preference）
 ```
@@ -64,11 +64,30 @@ src/veritool_rl/
 | 路径 | 消费命令 |
 |---|---|
 | `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线） |
-| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate） |
-| `configs/retail_ops/release/` | `retail-agent-ops release` |
-| `configs/retail_ops/serve/` | `retail-agent-ops serve` |
+| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate） |
+| `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release） |
+| `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
 | `configs/examples/` | 模板 |
 | `configs/legacy/` | 旧 MVP/BFCL 配置 |
+
+## 4.1 四个接口的双轨完成度
+
+仓库里有**两条平行证据链**，读代码时必须先分清在看哪一条：
+
+| 接口 | R1 qualification 轨道（规则策略） | formal 轨道（真实 Qwen3-4B） |
+|---|---|---|
+| `build` | 完成 | 完成（formal_freeze / teacher_collect / train_export / dev_sft_export / sft） |
+| `evaluate` | 完成 | 完成（dev base/candidate + 封存 holdout base/candidate） |
+| `release` | 完成（`release.py`） | 完成（`formal_release.py`，与 R1 共用 `build_release_gates`） |
+| `serve` | 完成（`create_app`） | 完成（`create_formal_app`，后端工厂注入） |
+
+两条轨道**共用一份阈值语义**：`domains/retail_ops/v1/release.yaml` 经
+`release.build_release_gates` 同时服务于两者，因此同一个候选不可能在两条通道上
+得到互相矛盾的结论。R1 的 `ReleaseReport` 契约已冻结（gate 集合与顺序被
+`validate_decision_consistency` 断言），formal 侧是并行类型而不是它的扩展。
+
+**代码完成 ≠ 已经运行**：截至 2026-08-10，正式 120 条 holdout **从未执行**，
+因此不存在任何 sealed 证据、任何 formal GO/NO-GO 结论，也没有部署过真实模型服务。
 
 ## 5. 命名边界
 

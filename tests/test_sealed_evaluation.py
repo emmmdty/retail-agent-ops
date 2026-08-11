@@ -11,7 +11,12 @@ from typing import Any, cast
 
 import pytest
 
-from veritool_rl.core.agent.qwen import GeneratedText
+from veritool_rl.core.agent.qwen import (
+    GeneratedText,
+    GenerationSettings,
+    GpuMeasurement,
+    hash_local_model_files,
+)
 from veritool_rl.retail_ops.build.formal_manifests import (
     VerifiedFormalDataset,
     load_verified_formal_dataset,
@@ -19,8 +24,10 @@ from veritool_rl.retail_ops.build.formal_manifests import (
 )
 from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle, load_bundle
 from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
 from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
     SEALED_ARTIFACT_NAMES,
+    SealedEvaluationConfig,
     SealedEvaluationReport,
     evaluate_authorized_holdout,
     load_sealed_evaluation_report,
@@ -35,7 +42,9 @@ from veritool_rl.retail_ops.release.governance import EvidencePurpose
 DATASET_VERSION = "retail_ops_v1_r2_20260722"
 BUNDLE_DIR = Path("domains/retail_ops/v1")
 LOGICAL_HOLDOUT = Path(f"data/private/retail_ops/v1/r2/{DATASET_VERSION}/holdout.jsonl")
-MODEL_NAME = "models/Qwen3-1.7B-pinned"
+MODEL_DIR_NAME = "Qwen3-1.7B-pinned"
+MODEL_FILES = ("config.json", "tokenizer.json")
+REVISION = "70d244cf5c3e5b4f0d5b6a0c9b58a5b2f9a1c3d7"
 ORDER_PATTERN = re.compile(r"O-[A-Z0-9]{12}")
 
 
@@ -82,12 +91,30 @@ class ExplodingPath:
         raise AssertionError("private path existence was checked too early")
 
 
+class _FakeHardwareProvider:
+    """CPU 测试用的硬件测量替身；不触碰 CUDA。"""
+
+    def reset_peak_memory(self) -> None:
+        return None
+
+    def measure(self) -> GpuMeasurement:
+        return GpuMeasurement(
+            gpu_index=0,
+            gpu_uuid="GPU-8f6d3c21-4b5a-4c7d-9e10-2f3a4b5c6d7e",
+            gpu_name="fake-gpu",
+            cuda_visible_devices="0",
+            cuda_device="cuda:0",
+            peak_memory_bytes=1024,
+        )
+
+
 @dataclass(frozen=True)
 class FormalFixture:
     """一次性构建、可复制的正式数据快照。"""
 
     private_dir: Path
     public_dir: Path
+    models_root: Path
     dataset: VerifiedFormalDataset
 
 
@@ -100,6 +127,10 @@ def formal_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
         root / "private",
         root / "public",
     )
+    model_dir = root / "models" / MODEL_DIR_NAME
+    model_dir.mkdir(parents=True)
+    for name in MODEL_FILES:
+        (model_dir / name).write_text(f"model-{name}", encoding="utf-8")
     return root
 
 
@@ -111,7 +142,26 @@ def formal(formal_source: Path, tmp_path: Path) -> FormalFixture:
     return FormalFixture(
         private_dir=target / "private",
         public_dir=public_dir,
+        models_root=target / "models",
         dataset=load_verified_formal_dataset(public_dir),
+    )
+
+
+def _sealed_config(formal: FormalFixture) -> SealedEvaluationConfig:
+    """base 侧 sealed 契约：无 adapter，模型逐文件哈希锁定。"""
+    return SealedEvaluationConfig(
+        dataset_version=DATASET_VERSION,
+        model=ModelArtifact(
+            repo="Qwen/Qwen3-1.7B",
+            revision=REVISION,
+            local_dir=MODEL_DIR_NAME,
+            file_sha256=hash_local_model_files(
+                formal.models_root / MODEL_DIR_NAME, MODEL_FILES
+            ),
+        ),
+        generation=GenerationSettings(max_new_tokens=256),
+        code_commit="1" * 40,
+        uv_lock_sha256="0" * 64,
     )
 
 
@@ -142,9 +192,11 @@ def _evaluate(
         _authorize(formal),
         bundle,
         ScriptedBackend(),
-        model_name=MODEL_NAME,
+        _sealed_config(formal),
+        models_root=formal.models_root,
         attempt_id=attempt_id,
         public_report_path=public_report_path or (tmp_path / "public" / "sealed-report.json"),
+        hardware_provider=_FakeHardwareProvider(),
     )
 
 
@@ -173,9 +225,11 @@ def test_sealed_evaluator_rejects_unauthorized_inputs(
             cast(AuthorizedFormalHoldout, authorization),
             bundle,
             ScriptedBackend(),
-            model_name=MODEL_NAME,
+            _sealed_config(formal),
+            models_root=formal.models_root,
             attempt_id="sealed-001",
             public_report_path=tmp_path / "public" / "sealed-report.json",
+            hardware_provider=_FakeHardwareProvider(),
         )
     assert not (formal.private_dir / "sealed-eval").exists()
 
@@ -192,9 +246,11 @@ def test_sealed_evaluator_rejects_forged_authorization_capability(
             forged,
             bundle,
             ScriptedBackend(),
-            model_name=MODEL_NAME,
+            _sealed_config(formal),
+            models_root=formal.models_root,
             attempt_id="sealed-001",
             public_report_path=tmp_path / "public" / "sealed-report.json",
+            hardware_provider=_FakeHardwareProvider(),
         )
 
 
@@ -215,9 +271,11 @@ def test_sealed_evaluator_rejects_bundle_that_does_not_match_the_receipt(
             _authorize(formal),
             load_bundle(other_bundle_dir),
             ScriptedBackend(),
-            model_name=MODEL_NAME,
+            _sealed_config(formal),
+            models_root=formal.models_root,
             attempt_id="sealed-001",
             public_report_path=tmp_path / "public" / "sealed-report.json",
+            hardware_provider=_FakeHardwareProvider(),
         )
 
 
@@ -298,7 +356,6 @@ def test_sealed_public_report_only_exposes_allowlisted_aggregates(
         "seed",
         "split",
         "policy_id",
-        "max_new_tokens",
         "max_steps",
         "task_count",
         "category_counts",
@@ -306,6 +363,13 @@ def test_sealed_public_report_only_exposes_allowlisted_aggregates(
         "holdout_receipt_sha256",
         "system_prompt_sha256",
         "tool_schema_sha256",
+        "config_sha256",
+        "code_commit",
+        "uv_lock_sha256",
+        "model",
+        "adapter",
+        "generation",
+        "hardware",
         "metrics",
         "failure_type_counts",
         "failure_category_counts",
