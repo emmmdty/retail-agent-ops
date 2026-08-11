@@ -442,3 +442,46 @@ train/dev/holdout、调用模型或进入训练。
 | Date | Command | Result |
 |---|---|---|
 | 2026-08-11 | 文档收口后全量门禁 | 624 passed；Ruff / mypy 65 源文件 / lock / diff 全绿 |
+
+## 2026-08-11 — R4 第 0 步：只读核查（未改任何产品文件）
+
+- 按 R4 提示词第八节执行**只读**排查：数据覆盖 → 模板/parser → 工具 schema → verifier。
+  只使用 train(240) 与 dev(60)；**未打开任何 sealed holdout 产物**。
+- 66.7% 从 `train-export-001/sft.jsonl` 独立复算成立（160/240）。同时发现该口径偏粗：
+  动作长度与场景类别完全共变；真正的竞争比例是「核实/检查口吻要求退款」上下文族内的
+  120:40 = 3:1；训练集中 100% 的自然语言监督来自 4 个单步类别，多步类别贡献 0 字符。
+- 候选 dev 失败逐条检查：17/17 是同一行为——正确判定可退后**向用户请求确认并停止**，
+  而非中性的"说完就停"。
+- 模板/parser、工具 schema、verifier 三层均无缺陷；但 parser 的
+  `mixed_tool_call_content` 规则约束了改进方案（工具调用消息不得带文本）。
+- 推翻两条方案前提：train 每类别 40 条是 `assert_exact_quotas` 硬契约，新增任务需重新冻结
+  数据集并作废已有证据可比性；`system_prompt_sha256` 属 sealed 配对字段，改提示词会让
+  已有 sealed holdout base 证据不可再用。
+- 未做任何改进实现；等待用户在五项决策门上裁决。详见 `findings.md` 同日小节与
+  LOG-20260811-06。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | 训练集动作长度/文本分布重算（本地 CPU） | 160/240 单次调用；多步类别文本字符 0 |
+| 2026-08-11 | dev 候选轨迹逐条检查（本地 CPU） | refund_eligible 0/10、refund_recovery 3/10；17/17 失败为请求确认 |
+| 2026-08-11 | bundle tools vs 训练集 tools 比对 | 逐字节一致；system prompt 唯一且等于 runner.SYSTEM_PROMPT |
+| 2026-08-11 | 只读核查后全量门禁 | 624 passed；Ruff / mypy 65 源文件 / lock / diff 全绿 |
+
+## 2026-08-11 — R4 Task 1 CPU 侧（重复采样导出与配置）
+
+- 用户裁定（LOG-20260811-07）：阶段切到 R4；第一轮方案 = 对多步家族重复采样；
+  预设收益门槛 = dev `refund_eligible` ≥7/10 且格式/安全三项不退化。
+- 实现（TDD，两处安全关键断言各经突变验证）：`export_formal_train` /
+  `write_formal_train_export` 支持按场景 `sft_oversample`，只重复 `sft.jsonl` 行；
+  `train_export` 配置契约新增**必填** `sft_oversample`；新增 R4 导出与训练两份配置；
+  治理测试把 R4 配置纳入既有 secret/路径/BFCL/holdout/模型 pin 扫描。
+- 本地 CPU 导出产出 `train-export-002`：`train.jsonl`/`selection.json` 与 001 逐字节相同，
+  `sft.jsonl` 400 行、去重后仍是原 240 条，单步占比 66.7%→40.0%，
+  「核实/检查口吻要求退款」族内 3:1→1:1。
+- 候选评测 config **推迟**到训练之后——`adapter.file_sha256` 是运行产物，提前写就是占位。
+- **未执行**任何 GPU 训练或评测；工作树待提交后才能跑远端（`_current_code_commit` 拒绝脏树）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | `build --config …r4_train_export_rebalanced.yaml`（本地 CPU） | 240→400 行 sft；provenance 与 001 逐字节相同；质量门 238/240 复算一致 |
+| 2026-08-11 | R4 Task 1 CPU 收口全量门禁 | **636 passed**（624→636）；Ruff / mypy 65 源文件 / lock / diff 全绿 |

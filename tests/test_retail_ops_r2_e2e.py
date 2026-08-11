@@ -243,6 +243,7 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         "dataset_version": DATASET_VERSION,
         "teacher_attempt_id": "e2e-teacher-001",
         "attempt_id": "e2e-export-001",
+        "sft_oversample": {},
     }
     export_args = parser.parse_args(
         [
@@ -282,6 +283,49 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
     for record in train_records:
         assert record.task.task_id not in quality_text
         assert record.task.user_request not in quality_text
+
+    # R4：同一批任务与证据再导出一次，只加重复采样。走完整 CLI 路径，证明
+    # 因子确实从 YAML 穿到产物，而不是只有 export_formal_train 的单测覆盖。
+    rebalanced_config = {
+        **export_config,
+        "attempt_id": "e2e-export-002",
+        "sft_oversample": {"refund_eligible": 3, "refund_recovery": 3},
+    }
+    rebalanced_args = parser.parse_args(
+        [
+            "build",
+            "--config",
+            "unused.yaml",
+            "--input_dir",
+            str(PRIVATE_REL),
+            "--output_dir",
+            str(workspace / "export-quality-rebalanced"),
+        ]
+    )
+    _run_train_export(rebalanced_args, rebalanced_config)
+
+    rebalanced_dir = PRIVATE_REL / "train-export" / "e2e-export-002"
+    # provenance 两份文件必须与未重采样的那次逐字节相同：重采样只动训练输入。
+    for name in ("train.jsonl", "selection.json"):
+        assert (rebalanced_dir / name).read_bytes() == (export_dir / name).read_bytes()
+    rebalanced_sft = (rebalanced_dir / "sft.jsonl").read_text("utf-8").splitlines()
+    assert len(rebalanced_sft) == 240 + 80 * 2  # 两个多步家族各 40 条，×3 即各多出 80 条
+
+    scenario_by_task = {record.task.task_id: record.task.scenario.value for record in train_records}
+    counts: dict[str, int] = {}
+    for line in rebalanced_sft:
+        scenario = scenario_by_task[json.loads(line)["task_id"]]
+        counts[scenario] = counts.get(scenario, 0) + 1
+    assert counts["refund_eligible"] == 120
+    assert counts["refund_recovery"] == 120
+    assert counts["lookup_status"] == 40
+
+    manifest = json.loads((rebalanced_dir / "sft_oversample.json").read_text("utf-8"))
+    assert manifest == {
+        "factors": {"refund_eligible": 3, "refund_recovery": 3},
+        "train_row_count": 240,
+        "sft_row_count": 400,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -9,3 +9,6 @@ public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
 dataset_version: retail_ops_v1_r2_20260722
 teacher_attempt_id: teacher-full-001
 attempt_id: train-export-001
+# 本次不做任何重复采样：这份导出是 R3 候选的训练输入，也是 R4 重平衡实验的对照基线。
+# 该键必填，空 mapping 与省略不等价——省略会被命令契约拒绝。
+sft_oversample: {}

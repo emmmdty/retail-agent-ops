@@ -427,3 +427,59 @@ def test_four_stable_interfaces_have_config_and_module_homes() -> None:
         assert module_dir.is_dir(), interface
         assert (module_dir / "__init__.py").is_file(), interface
         assert list(config_dir.glob("*.yaml")), interface
+
+
+_R4_CONFIG_NAMES = (
+    "retail_ops/build/retail_ops_v1_r4_train_export_rebalanced.yaml",
+    "retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml",
+)
+
+
+def test_r4_configs_hold_the_same_governance_line_as_r2_and_r3() -> None:
+    """R4 新增 config 必须落在与 R2/R3 完全相同的治理口径下。
+
+    新阶段最容易发生的退化不是写错哈希，而是"这只是个实验配置"心态下漏掉扫描：
+    配置里出现绝对路径、私有根字面量、凭据，或者悄悄引用 BFCL/正式 holdout。
+    这条测试把 R4 的新文件明确纳入既有断言，而不是依赖下一个人记得加。
+    """
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R4_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        lowered = text.lower()
+        assert "bfcl" not in lowered, name
+        assert "holdout" not in lowered, name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
+
+        if parsed.get("pipeline") == "sft":
+            model = parsed["model"]
+            assert len(model["revision"]) >= 7, name
+            assert model["file_sha256"], name
+            for digest in model["file_sha256"].values():
+                assert len(digest) == 64, name
+
+
+def test_r4_rebalanced_export_output_stays_ignored() -> None:
+    """重平衡导出的私有训练数据与公开 quality.json 都必须仍被既有 `.gitignore`
+    覆盖，不需要为 R4 新增规则——训练数据永远不进 Git。"""
+    for ignored_path in (
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "train-export-002/sft.jsonl",
+        "reports/retail_ops/v1/r4/train-export-002/quality.json",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path

@@ -6,12 +6,103 @@
 
 ## Current Phase
 
-R3「单卡适配与服务 v1」。Task 1（QLoRA-SFT）、Task 2（候选 dev 配对评测）与阶段间的
-仓库收敛已完成并记入 `progress.md`。当前是 **Task 3：发布闭环的代码侧补齐**——把
-`evaluate → release → serve` 三个接口在**真实模型轨道**上打通。本任务纯 CPU，不执行
-正式 holdout 运行、不动 GPU、不调 API。
+R4「失败驱动优化」（用户 2026-08-11 确认 R3 收口并切换阶段，LOG-20260811-07）。
+第 0 步只读核查已完成（LOG-20260811-06），根因精确化为「训练集在
+『get_order 已返回 + 用户以核实/检查口吻要求退款』这一族内 120:40 = 3:1 偏向写文本，
+且多步类别贡献 0 文本字符」。当前是 **R4 Task 1：训练数据的动作分布重平衡（重复采样）**。
+本任务的 CPU 部分（代码 + 配置 + 测试 + 新导出产物）可端到端完成；GPU 训练与 dev 评测
+是**两个独立的用户确认门**，不在本任务内自动执行。
 
 ## Current Task
+
+R4 Task 1：对多步家族做重复采样，产出 `train-export-002`，并把 SFT 与评测配置接好，
+使一轮"改数据 → 训练 → dev 配对"可在用户批准后直接执行。
+
+- 针对的失败类别（唯一）：`premature_final_response` 中**向用户请求确认后停止**这一支。
+  dev 候选 `refund_eligible` 0/10、`refund_recovery` 3/10，17/17 失败末句均为请求确认。
+- 输入：现有冻结数据集 `retail_ops_v1_r2_20260722`（240/60/120，**不改**）；
+  已通过质量门的 teacher 证据 `teacher-collection/teacher-full-001/`；
+  现有导出 `train-export-001/`（**不覆盖**）；R3 训练配置
+  `configs/retail_ops/build/retail_ops_v1_r3_sft.yaml`；dev 评测配置
+  `configs/retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml`。
+- 输出：
+  - A：`export_formal_train` 支持按场景的 `sft_oversample`，**只重复 `sft.jsonl` 的行**；
+    `train.jsonl` 与 `selection.json` 保持与 240 条冻结任务 1:1，使 provenance 不说谎。
+    重复因子与结果行数写入私有 `sft_oversample.json` 并纳入 `private_artifact_sha256`，
+    产物自描述。
+  - B：`train_export` 的配置契约新增**必填** `sft_oversample` 键（现有 R2 config 显式写
+    `{}`，不做静默默认——沿用 A3「让配置文件本身声明意图」的先例）；新增
+    `retail_ops_v1_r4_train_export_rebalanced.yaml`（`attempt_id: train-export-002`，
+    `refund_eligible: 3`、`refund_recovery: 3`）。
+  - C：新增 R4 训练配置与 dev 候选评测配置，各自指向新导出与新输出目录，不覆盖 R3 产物。
+  - D：本地 CPU 执行一次导出，产出 `train-export-002`，并核对非重采样部分与
+    `train-export-001` 逐条一致。
+- 重采样设计与预期效果：`refund_eligible` ×3、`refund_recovery` ×3，sft 行数 240 → 400。
+  「核实/检查口吻要求退款」族内比例从 **120:40 = 3:1** 变为 **120:120 = 1:1**；
+  全局单步样本占比 66.7% → 40%。四个单步类别的**条数一件不动**，因此格式/安全类
+  （invalid_call 41→0、policy_violation 16→0）的训练信号不被削弱——这是选重复采样
+  而非降采 denied 的理由。
+- **预设收益门槛（用户裁定，LOG-20260811-07）**：dev 上 `refund_eligible` **≥7/10**，
+  且 `invalid_call_count` = 0、`policy_violation_count` = 0、`schema_valid_rate` = 1.0。
+- **停止条件**：dev 上 `refund_eligible` < 7/10，或格式/安全三项任一退化 → **本轮判负、
+  停止**，如实记录负结果，**不得转而改训练目标、改提示词或扩展算法**。第二轮是否开、
+  开什么，另行请示。
+- 非目标：不改 `assert_exact_quotas` 的 40/10/20 冻结配额；不新增任务、不重新冻结数据集；
+  不调 teacher API；不改 system prompt（`system_prompt_sha256` 是 dev 与 sealed 双侧配对
+  字段）；不改 `SealedEvaluationReport`/`BaseRunEvidence` 字段集合；不改发布门禁阈值；
+  不动 holdout；不进入 DPO/GRPO/在线 RL；不自动执行 GPU 训练或评测。
+- 失败模式（实现层）：
+  1. 重复采样漏进 `train.jsonl`/`selection.json`，使 provenance 声称 400 条任务——
+     必须有断言锁死这两个文件恒为 240 行且与 001 逐条一致。
+  2. 为省事给 `sft_oversample` 加静默默认值，导致"没写这个键"和"写了空 dict"行为相同，
+     配置意图不可见。
+  3. 重复因子作用到不存在的场景名而静默无效——未知场景名必须硬失败。
+  4. 覆盖 `train-export-001` 或 R3 训练/评测产物目录。
+  5. 让 assistant 工具调用消息带上文本（"先声明再执行"），触发 parser 的
+     `mixed_tool_call_content`，把 invalid_call 从 0 打回去——**本轮不做任何消息内容改写**。
+- 影响文件（预计）：`src/veritool_rl/retail_ops/build/teacher_data.py`、
+  `src/veritool_rl/product_cli.py`、
+  `configs/retail_ops/build/retail_ops_v1_r2_train_export.yaml`（补 `sft_oversample: {}`）、
+  新增 `configs/retail_ops/build/retail_ops_v1_r4_train_export_rebalanced.yaml`、
+  新增 `configs/retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml`、
+  新增 `configs/retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml`、
+  `tests/` 对应新增测试、`docs/REPO_MAP.md`、`CLAUDE.md`、`README.md`。
+- 预计成本：CPU 实现 + 本地导出；GPU 侧（**需单独批准**）训练约 224 s（400/240 × 134 s，
+  75 steps）、dev 候选评测约 251 s。**base dev 不需要重跑**——`compare_dev_runs` 的
+  `PAIRING_FIELDS` 不含 `code_commit`，现有 `qwen3-4b-dev-base-001`（0.800）仍可直接配对。
+- 验收命令：`.venv/bin/pytest -q`（起始基线 624）、`.venv/bin/ruff check .`、
+  `.venv/bin/mypy`、`env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、
+  `git diff --check`；另需证明 `train-export-002` 的 `train.jsonl`/`selection.json` 与
+  `train-export-001` 逐字节相同，且 `sft.jsonl` 恰为 400 行、按场景计数为
+  40/40/40/40/120/120。
+- [x] A：`export_formal_train` / `write_formal_train_export` 支持 `sft_oversample`。
+      RED 先失败于 `TypeError: unexpected keyword argument 'sft_oversample'`。
+      两条断言各经突变验证：把重复漏进 `train_rows` → `test_export_oversample_repeats_only_sft_rows`
+      与 `..._default_is_identity` 立即失败；把 `sft_rows.extend(...)` 改回 `append` →
+      重采样断言立即失败。未知场景名与非正因子硬失败（不静默忽略）。
+- [x] B：`_TRAIN_EXPORT_KEYS` 新增**必填** `sft_oversample`；R2 config 显式写 `{}`；
+      新增 `retail_ops_v1_r4_train_export_rebalanced.yaml`。既有 R2 CLI/e2e 测试同步补键。
+- [x] C：新增 `retail_ops_v1_r4_sft_rebalanced.yaml`；
+      `test_r4_sft_config_changes_exactly_one_variable` 断言 model/lora/training 三段与 R3
+      逐字段相同，`data` 只有 `train_relpath` 一处不同——把"每轮只改一个主要变量"变成可执行断言。
+      **候选评测 config 推迟到训练之后**：`adapter.file_sha256` 是运行产物，现在写即是无验证占位。
+- [x] D：本地 CPU 执行导出，产出 `train-export-002`。核验结果：
+      `train.jsonl` 与 `selection.json` 与 001 **逐字节相同**（`29f02425…` / `f60744f7…`）；
+      `sft.jsonl` 400 行，场景计数 40/40/40/40/120/120；去重后 240 条且集合与 001 完全相同
+      （只重复、未改写任何内容）；单步样本占比 66.7% → **40.0%**；
+      「核实/检查口吻要求退款」族内 denied:eligible 由 **3:1 → 1:1**；
+      `sft_oversample.json` 记录因子与行数并进入 `private_artifact_sha256`。
+      teacher 质量门复算一致（238/240 = 99.17%，`refund_denied_window` 0.95）。
+- [x] E：治理测试把 R4 新配置纳入既有扫描（secret/绝对路径/私有根/BFCL/holdout/模型 pin），
+      并断言新导出与 `reports/retail_ops/v1/r4/` 仍被 `.gitignore` 覆盖。经突变验证。
+- [ ] F（**待用户批准**）：提交 → 同步 gpu-5090 → GPU 训练（约 224 s）→ dev 候选评测
+      （约 251 s）→ 与既有 `qwen3-4b-dev-base-001` 配对比较。
+- 验收结果：**636 passed**（624 → 636，+12）、Ruff、mypy 65 源文件、`uv lock --check`、
+  `git diff --check` 全绿。
+- 授权状态：GPU **否**（训练与评测各需单独确认）、API **否**、数据下载 **否**、
+  holdout 执行 **否**、公开发布 **否**。
+
+## 历史任务：R3 Task 3（已完成，摘要见 progress.md）
 
 R3 Task 3：为 formal（真实 Qwen3-4B）轨道补齐 sealed holdout 评测入口、发布门禁与
 可切换后端的服务入口。

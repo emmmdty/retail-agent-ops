@@ -1,0 +1,26 @@
+# R4 Task 1 train_export（重平衡）：与 R2 导出使用**同一份**冻结数据集
+# （retail_ops_v1_r2_20260722，240/60/120）和**同一批** teacher 采集证据
+# （teacher-full-001），不新增任务、不重新冻结、不调 teacher API。
+#
+# 唯一差别是 sft_oversample：把两个多步家族各重复 3 次。依据 LOG-20260811-06——
+# 在「get_order 已返回 + 用户以核实/检查口吻要求退款」这一族内，训练数据是
+# 120 条 denied（写文本并停止）对 40 条 refund_eligible（调 refund_order），即 3:1
+# 偏向写文本；候选在 dev 上 refund_eligible 0/10，17/17 失败均为向用户请求确认后停止。
+# ×3 之后该族内变为 120:120 = 1:1，全局单步样本占比 66.7% -> 40%。
+#
+# 刻意**不**降采 denied 三类：它们正是 invalid_call 41->0、policy_violation 16->0
+# 这一侧收益的训练信号来源，砍掉会同时丢掉已经拿到的东西。
+#
+# 重复采样只作用于 sft.jsonl；train.jsonl 与 selection.json 仍与 240 条冻结任务 1:1，
+# 因子与行数写入 sft_oversample.json 并纳入 private_artifact_sha256。
+#
+# attempt_id 是新目录：train-export-001 是 R3 候选的训练输入，不得覆盖。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-002
+sft_oversample:
+  refund_eligible: 3
+  refund_recovery: 3

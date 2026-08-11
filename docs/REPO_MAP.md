@@ -63,7 +63,7 @@ src/veritool_rl/
 
 | 路径 | 消费命令 |
 |---|---|
-| `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线） |
+| `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 的 `sft_oversample` 是**必填**键：空 mapping 表示不重采样，省略会被命令契约拒绝——不给默认值是为了让"忘了写"与"故意不重采样"在配置层可分辨 |
 | `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate） |
 | `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release） |
 | `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
@@ -86,8 +86,16 @@ src/veritool_rl/
 得到互相矛盾的结论。R1 的 `ReleaseReport` 契约已冻结（gate 集合与顺序被
 `validate_decision_consistency` 断言），formal 侧是并行类型而不是它的扩展。
 
-**代码完成 ≠ 已经运行**：截至 2026-08-10，正式 120 条 holdout **从未执行**，
-因此不存在任何 sealed 证据、任何 formal GO/NO-GO 结论，也没有部署过真实模型服务。
+四接口在 formal 轨道上均已实际运行：2026-08-11 完成封存 120 条 holdout 的
+base/candidate 背靠背评测、首个 formal 发布判定（**NO-GO / baseline**）与按该判定
+回滚基座的服务演示（LOG-20260811-03、-04）。**封存 holdout 已被观测一次**；
+其结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择。
+
+**配对可比性的连带约束**（R4 起必须知道）：`code_commit`、`uv_lock_sha256`、
+`system_prompt_sha256` 都在 `SEALED_PAIRING_FIELDS` 内，因此任何后续改动提交后，
+已有的 sealed holdout base 证据都不再可与新候选配对——下一次发布判定必然是
+base + candidate **两侧**重跑。dev 侧的 `PAIRING_FIELDS` 不含 `code_commit`，
+所以改数据/代码不需要重跑 base dev，只有改 system prompt 才需要。
 
 ## 5. 命名边界
 

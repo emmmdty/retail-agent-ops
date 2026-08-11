@@ -2407,3 +2407,99 @@ base 在 qualification fixture 上同样会"说完就停"，只是频率低于�
 **阶段状态未改**：`docs/EXECUTION_PLAN.md` 的 R3 仍为「当前」。R2 的先例
 （LOG-20260807-03）是由用户确认后才更新阶段状态；R3 的第五项验收目标「可在面试中演示」
 其成立与否取决于用户实际走读与脱稿复盘，不是 agent 产出文档即可宣告达成。
+
+### LOG-20260811-06：R4 只读核查——根因精确化，并推翻两条改进方案的成本前提
+
+- 日期：2026-08-11
+- 阶段/任务：R4 第 0 步（只读核查，未改任何产品文件，未动 GPU/API）
+- 状态：解决（核查完成；改进方案待用户裁决）
+- 关联：LOG-20260807-09、LOG-20260811-03、LOG-20260811-05
+
+**范围声明**：只使用 train(240) 与 dev(60)。**未打开任何 sealed holdout 产物**
+（`sealed-eval/` 下两份 `trajectories.jsonl` 全程未读），holdout 的第二次观测未被消耗。
+
+**66.7% 独立复算成立**（160/240 恰好 1 次工具调用），但它是粗口径。三条精确化：
+
+1. **动作长度与场景类别完全共变**——每个场景的工具调用次数是常数（4 类各 1 次、
+   `refund_eligible` 2 次、`refund_recovery` 3 次）。因此"重平衡动作长度"在本数据集上
+   等价于"重平衡类别比例"，不存在只动长度不动类别的做法。
+2. **训练集中「输出自然语言」与「回合结束」100% 共变**：被监督文本 29519 字符
+   （字符代理，本地无 tokenizer）**全部**来自 4 个单步类别，两个多步类别贡献 0 字符。
+   根源在环境而非导出——`runner.py:123` 在 `final_state == 1.0` 时立即 break，而
+   `environment.py:59` 对 REFUND 类不要求终局回复，退款成功那刻轨迹即截断。
+3. **真正的竞争在「get_order 已返回 + 用户以核实/检查口吻要求退款」这一族内，
+   比例 120:40 = 3:1 偏向写文本**。`formal_tasks.py:516` 给 `refund_eligible` 与三个
+   `refund_denied_*` 的措辞几乎不可区分，判别信号只在 get_order 返回值里。
+
+**失败行为比"premature_final_response"这个标签具体得多**：dev 候选 17/17 失败末句均为
+向用户请求确认（"请问您需要我为您办理退款吗？"）。模型**已正确读出状态并正确判定可退**，
+只是不肯自己动手。这是行为倾向问题，不是能力丢失。
+
+**模板/parser、工具 schema、verifier 三层均无缺陷**。工具 schema 与 system prompt
+逐字节一致，`perturb_schema` 评测路径不启用；verifier 判定正确（候选一次都没调
+`refund_order`）。assistant-only loss 不重开（LOG-20260807-06 已实测）；附一条备忘：
+adapter 目录里的 `chat_template.jinja` 没有 `{% generation %}` 标记，那是
+`save_pretrained` 存下的模型自带模板而非训练口径，容易被后来者误判为缺陷。
+
+**两条被推翻的方案前提（本条的核心，直接改变 R4 成本排序）**：
+
+1. **「给 `refund_eligible` 增采」不是 API 花销问题，是要重新冻结数据集。**
+   `formal_tasks.py:118` 的 `assert_exact_quotas` 把每类别 40/10/20 写成硬契约；新增任务
+   将改变 `dataset_version` 与 manifest 哈希，**已产出的 dev base、sealed holdout
+   base/candidate 证据全部失去可比性**。R4 提示词第五节把该方案的代价估为"新的 teacher
+   采集（有 API 成本）"，低估了。对现有 80 条多步样本做**重复采样**则不触碰任务契约。
+2. **系统提示词是 sealed 配对字段。** `system_prompt_sha256` 在
+   `SEALED_PAIRING_FIELDS`（`sealed_evaluation.py:307`）内。给 system prompt 补一句
+   "确认符合政策后直接执行"是本次证据下最省力的干预，但它会让已有 sealed holdout base
+   证据不可再用——将来任何发布判定都要**同时**重跑 base 与 candidate，一次判定消耗两侧
+   观测而非一侧。
+
+**由第 2 条追出的更强结论（适用于全部 R4 方案，不只提示词方案）**：
+`code_commit` 与 `uv_lock_sha256` 同样在 `SEALED_PAIRING_FIELDS` 内，而
+`_current_code_commit`（`product_cli.py:743`）取的是 git HEAD 且拒绝脏工作树。因此
+**任何 R4 改进（哪怕只改导出脚本）落成提交后，已有 sealed holdout base 证据都不再可配对**，
+未来的发布判定必须 base + candidate 一起重跑。这抹平了各方案在这一项上的差别：
+"改提示词会额外消耗 base 侧观测"不构成选型依据，因为改代码同样会。真正的结论是
+**R4 之后的任何一次 release 判定 = 封存 holdout 的第二次完整观测（两侧）**，
+gate 4 的代价应按此计价。不得为规避这一点去放宽 `require_comparable_sealed_runs`。
+
+**约束：parser 限制了改进方案的形状。** `parser.py:29-31` 把「文本 + 工具调用同时出现」
+判为 `mixed_tool_call_content` 即非法调用。任何"让模型先声明再执行"的数据方案都会把
+invalid_call 从 0 打回去；assistant 工具调用消息必须保持 `content` 为空。
+
+**成本口径**：训练 134 s、dev 评测 base 154 s / candidate 251 s——一轮"改数据 → 训练 →
+dev 配对"约 7 分钟 GPU。**便宜的是实验，贵的是 holdout 观测。**
+
+**未做**：任何改进实现、任何 GPU/API 调用、任何 holdout 访问、任何阶段状态变更。
+全量门禁复跑 624 passed / Ruff / mypy 65 源文件 / lock / diff 全绿，工作树干净。
+
+### LOG-20260811-07：用户确认 R3 收口，阶段切换到 R4；第一轮方案与收益门槛已裁定
+
+- 日期：2026-08-11
+- 阶段/任务：R3 → R4 阶段变更（按 `docs/EXECUTION_PLAN.md`「阶段变更规则」1）
+- 状态：解决
+- 关联：LOG-20260811-04、LOG-20260811-05、LOG-20260811-06、LOG-20260807-03（R2 先例）
+
+**R3 五项验收目标复核**（前四项证据见 LOG-20260811-03/-04，第五项见 LOG-20260811-05）：
+GPU 命令均经确认并记录物理 GPU/时长/产物 ✓；正式运行目录不可覆盖、配置与产物完整 ✓；
+候选未满足门禁因而诚实标 NO-GO ✓；服务完成允许/拒绝/异常恢复三条流程并展示工具轨迹 ✓；
+「前 6 周交付可在面试中演示且不依赖论文叙事」——交付文档已产出，**其成立由用户确认**。
+用户于本日确认该项达成。`docs/EXECUTION_PLAN.md` 的 R3 改为「已完成」、R4 改为「当前」。
+沿用 R2 先例：阶段状态由用户确认后才改，agent 不自行宣告。
+
+**用户裁定的三项 R4 决策**：
+
+1. **第一轮方案 = 对多步家族重复采样**（不新增任务、不改冻结配额、不调 teacher API）。
+   选它而不是"重新冻结数据集真增采"的依据是 LOG-20260811-06：后者会改变
+   `dataset_version` 与 manifest 哈希，作废已有 dev base 与两份 sealed holdout 证据的
+   可比性。选它而不是"改 system prompt"的依据是 `system_prompt_sha256` 在 dev 的
+   `PAIRING_FIELDS` 内而 `code_commit` 不在——改数据/代码无需重跑 base dev，改提示词必须重跑。
+2. **预设收益门槛 = 机制导向**：dev 上 `refund_eligible` 从 0/10 回到 **≥7/10**，
+   同时 `invalid_call_count` 与 `policy_violation_count` 保持 0、`schema_valid_rate` 保持
+   1.0。**不以 `task_success` 总数、不以 `verifier_reward`、不以 loss 作为判据**。
+   理由：n=60 的 dev 上总成功率 CI 太宽，分不清小幅差异；而 20/20 全崩 → 回升是结构性
+   可辨信号。**达不到即停止，不得转而扩展算法。**
+3. **未裁决、留待下游的两项**：是否消耗封存 holdout 的第二次观测（按 LOG-20260811-06，
+   该次判定必然是 base + candidate **两侧**重跑）；简历若要写"提升"是否安排一次独立重建复验。
+
+**teacher API 预算门在本轮不适用**：重复采样不产生任何新的 teacher 采集。

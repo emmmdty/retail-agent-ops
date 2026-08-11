@@ -644,3 +644,103 @@
   下游当作前提引用，就会脱离产物；让它从 train 导出文件重算一遍，成本极低而防漂移。
 - **阶段状态不由 agent 宣告**。R3 第五项验收目标是「可在面试中演示」，其成立取决于用户
   实际走读与脱稿复盘。产出文档 ≠ 达成该目标，沿用 R2 由用户确认收口的先例。
+
+## R4 只读核查：失败根因的精确化与两条被推翻的方案前提（2026-08-11）
+
+只用 train(240) 与 dev(60)，未打开任何 sealed holdout 产物。按「数据覆盖 → 模板/parser →
+工具 schema → verifier」四层逐项排查。
+
+**66.7% 已独立复算成立，但它是根因的粗口径表述。** 从 `train-export-001/sft.jsonl` 重新
+统计：160/240 恰好 1 次工具调用（66.6667%），`refund_eligible` 40 条为 2 次、
+`refund_recovery` 40 条为 3 次。**动作长度与场景类别完全共变**，每个场景的调用次数是常数，
+因此"重平衡动作长度"在本数据集上等价于"重平衡类别比例"，不存在只动长度不动类别的做法。
+
+**更精确的机制（三条，均为本次新发现）**：
+
+1. **训练集中「输出自然语言」与「回合结束」100% 共变。** 被监督的自然语言文本共 29519
+   字符（字符代理，本地无 tokenizer，不冒充 token 计数），**其中 100% 来自 4 个单步类别**；
+   `refund_eligible` 与 `refund_recovery` 的 assistant 消息 `content` 长度全为 0，两类合计
+   贡献 0 个文本字符。模型从未见过"先说话再继续调工具"的样本，也从未见过多步场景里的任何
+   自然语言。根源在环境而非导出：`runner.py:123` 在 `final_state == 1.0` 时立即 break，
+   而 `environment.py:59` 的 `verify_final_state` 对 REFUND 类**不要求**终局回复，
+   退款成功那一刻轨迹即被截断。
+2. **真正的竞争发生在「get_order 已返回 + 用户以核实/检查口吻要求退款」这一上下文族内，
+   比例是 120 : 40 = 3:1 偏向写文本。** `_user_request`（`formal_tasks.py:516`）给
+   `refund_eligible` 与三个 `refund_denied_*` 的措辞几乎不可区分（核实/检查/查看/核验），
+   唯一判别信号在 get_order 返回值里。该族内 120 条 denied 训练样本教「写文本并停止」，
+   只有 40 条 eligible 教「调 refund_order」。`refund_recovery` 用的是无"核实"字样的祈使句
+   （"请为订单 X 按 Y 办理退款"），候选在 dev 上该类 3/10 成功而 `refund_eligible` 0/10——
+   与该口径一致。
+3. **候选的失败不是"说完就停"这么中性，17/17 是同一个具体行为：向用户请求确认后停止。**
+   dev 候选轨迹逐条检查：`refund_eligible` 10/10、`refund_recovery` 7/10 失败，末句全部形如
+   "请问您需要我为您办理退款吗？""请问您是否确认要继续办理退款？"。模型**已正确读出订单状态
+   并正确判定可退**（"退款截止日期是第 30 天，当前是第 20 天，仍在退款期内。因此，我可以为您
+   办理退款"），只是不肯自己动手。这不是能力丢失，是行为倾向。旁证：训练集 160 条终局文本里
+   大量以礼貌问句/邀请结尾（"请问还有其他需要帮助的吗？" 27 次等），teacher 的客服人设被继承。
+
+**模板/parser：无缺陷，但有一条对改进方案的硬约束。** `parse_qwen_response` 正确解析了
+失败轨迹第 0 步的 `<tool_call>`（`parse_error=None`），失败不是解析问题。但
+`parser.py:29-31` 把「文本 + 工具调用同时出现」判为 `mixed_tool_call_content` 即非法调用——
+因此**任何"让模型先声明再执行"的数据方案都会把 invalid_call 从 0 打回去**，
+assistant 工具调用消息必须保持 `content` 为空。assistant-only loss 一项不重开：
+LOG-20260807-06 已实测 TRL 1.8 自动换用带 `{% generation %}` 的训练模板、空 mask 行 0 条。
+（adapter 目录里的 `chat_template.jinja` 无 generation 标记，那是 `save_pretrained` 存下的
+模型自带模板，不是训练时口径——容易误判，记此备忘。）
+
+**工具 schema：逐字节一致。** `load_bundle('domains/retail_ops/v1')` 的
+`to_transformers()` 与 `sft.jsonl` 内嵌 `tools` 完全相等；训练集 system prompt 唯一且等于
+`runner.SYSTEM_PROMPT`；`perturb_schema` 全仓只被 `tests/test_mini_retail_env.py` 调用，
+评测路径不启用。
+
+**verifier：判定正确，但本身贡献了同一处不对称。** REFUND 类只看 `_refund_applied` +
+状态匹配，INFORM/DENY 类额外要求 `_terminal_response`。候选一次都没调 `refund_order`，
+失败是真实的，不是 verifier 造成的。
+
+**两条前提被实测推翻，直接改变 R4 方案的成本排序**：
+
+- **「给 `refund_eligible` 家族增采」不是"多花点 teacher API 钱"，而是要重新冻结数据集。**
+  `formal_tasks.py:118` 的 `assert_exact_quotas` 把 train/dev/holdout 每类别
+  40/10/20 写成硬契约，多一条任务就要改契约并重新冻结，`dataset_version` 与 manifest 哈希
+  随之变化，已产出的 dev base、sealed holdout base/candidate 证据**全部失去可比性**。
+  相比之下，对现有 80 条多步样本做**重复采样**只改 SFT 导出产物，任务契约、manifest、
+  已有证据均不受影响。
+- **系统提示词是 sealed 配对字段。** `system_prompt_sha256` 在
+  `SEALED_PAIRING_FIELDS`（`sealed_evaluation.py:307`）内。给 system prompt 补一句
+  "确认符合政策后直接执行，不要再向用户确认"是本次证据下最省力的干预，但它会让**已有的
+  sealed holdout base 证据不可再用**——将来任何发布判定都需要重跑 base，即一次判定要消耗
+  base + candidate 两侧的 holdout 观测，而不是只消耗候选一侧。
+
+**由上一条追出的、适用于全部方案的结论**：`code_commit` 与 `uv_lock_sha256` 同样在
+`SEALED_PAIRING_FIELDS` 内，而 `_current_code_commit`（`product_cli.py:743`）取 git HEAD
+并拒绝脏工作树。因此**任何 R4 改进提交后，已有 sealed holdout base 证据都不再可配对**。
+这抹平了各方案在这一项上的差别——"改提示词会额外消耗 base 侧观测"不能用作选型理由，
+因为改代码同样会。真正的结论是：**R4 之后的任何一次 release 判定都等于封存 holdout 的
+第二次完整观测（base + candidate 两侧）**。不得为规避这点放宽 `require_comparable_sealed_runs`。
+
+**成本口径（用于排优先级）**：训练 134 s、dev 评测 base 154 s / candidate 251 s。
+一轮"改数据 → 训练 → dev 配对"的 GPU 时间约 7 分钟，**便宜的是实验，贵的是 holdout 观测**。
+
+## R4 Task 1 实现取舍：重复采样落在数据产物而不是训练代码（2026-08-11）
+
+- **重复采样只作用于 `sft.jsonl`，`train.jsonl` 与 `selection.json` 保持与 240 条冻结任务
+  1:1**。后两者是 provenance，声称"本次导出覆盖了哪些冻结任务"；让重复漏进去会让产物
+  声称 400 条任务，而冻结契约只有 240 条。实测两份文件与 `train-export-001` **逐字节相同**
+  （`29f02425…` / `f60744f7…`），这同时证明了导出过程是确定的、重采样没有污染其余环节。
+- **选"重复行"而不是"训练侧样本权重"**：改动完全落在可哈希的数据产物里，训练代码一行不改，
+  与 R3 候选的差异因此可以精确到一个文件。`test_r4_sft_config_changes_exactly_one_variable`
+  把这条纪律变成断言——R4 训练配置除 `data.train_relpath` 外，model/lora/training 三段
+  必须与 R3 逐字段相同。
+- **`sft_oversample` 是必填配置键，不给默认值**。有默认值时"忘了写"与"故意不重采样"
+  产出同一份数据，事后无法从配置本身分辨这轮实验是否设置过。同理，未知场景名与非正因子
+  一律硬失败：静默忽略会产出一份与未重采样逐字节相同的文件，却让整轮结论挂在一个没发生的改动上。
+- **新增 `sft_oversample.json` 并纳入 `private_artifact_sha256`**：只看 `sft.jsonl` 无法区分
+  "400 条任务"与"240 条任务、其中 80 条重复三次"，而这两者对结论的含义完全不同。
+- **刻意不降采 denied 三类**：它们正是 invalid_call 41→0、policy_violation 16→0 这一侧收益的
+  训练信号来源。降采能同样改变比例，但会把已经拿到的东西一起丢掉。
+- **本轮不做任何消息内容改写**。"让模型先声明再执行"看起来能直接治好"请求确认"这个行为，
+  但 `parser.py` 把「文本+工具调用同时出现」判为 `mixed_tool_call_content` 即非法调用——
+  那样会把 invalid_call 从 0 打回去，用一个已解决的失败换另一个。
+- 实测效果（本地 CPU 导出，非模型结果）：sft 400 行、场景计数 40/40/40/40/120/120、
+  去重后 240 条且集合与 001 完全相同；单步样本占比 66.7% → **40.0%**；
+  「核实/检查口吻要求退款」族内 denied:eligible 由 **3:1 → 1:1**。
+  这些是**输入分布**的变化，不是能力证明——候选是否变好只能由 dev 行为式评测回答。

@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,7 @@ from veritool_rl.core.agent.runner import run_episode
 from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, write_jsonl
 from veritool_rl.core.envs.base import ToolEnv, ToolSchema
 from veritool_rl.core.generators import trajectory_to_sft_example
-from veritool_rl.core.trajectory import TaskSpec, TerminationReason, Trajectory
+from veritool_rl.core.trajectory import TaskScenario, TaskSpec, TerminationReason, Trajectory
 from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 from veritool_rl.core.trajectory.schema import StrictModel
 from veritool_rl.retail_ops.build.teacher_client import (
@@ -508,6 +508,36 @@ ExportResult = tuple[
 ]
 
 
+def _resolve_sft_oversample(
+    sft_oversample: Mapping[str, int] | None,
+    scenario_by_task_id: Mapping[str, str],
+) -> dict[str, int]:
+    """校验重复采样因子，未知场景名与非正因子一律硬失败。
+
+    静默忽略写错的场景名是这里最危险的行为：产出会与未重采样的导出逐字节相同，
+    而实验记录却声称重平衡已经生效，整轮结论都会挂在一个没发生的改动上。
+    因子必须 ≥1——0 会把整个类别从训练集里悄悄删掉，那是另一种实验，不是重采样。
+    """
+    if not sft_oversample:
+        return {}
+    known = {scenario.value for scenario in TaskScenario}
+    resolved: dict[str, int] = {}
+    for scenario, factor in sft_oversample.items():
+        if scenario not in known:
+            msg = f"sft_oversample 指定了未知场景: {scenario}"
+            raise ValueError(msg)
+        if not isinstance(factor, int) or isinstance(factor, bool) or factor < 1:
+            msg = f"sft_oversample 的重复因子必须是 ≥1 的整数: {scenario}={factor!r}"
+            raise ValueError(msg)
+        resolved[scenario] = factor
+    present = set(scenario_by_task_id.values())
+    missing = sorted(set(resolved) - present)
+    if missing:
+        msg = f"sft_oversample 指定的场景未出现在本次导出的任务里: {missing}"
+        raise ValueError(msg)
+    return resolved
+
+
 def export_formal_train(
     records: Sequence[FormalTaskRecord],
     evidences: Sequence[TeacherAttemptEvidence],
@@ -515,6 +545,7 @@ def export_formal_train(
     config: TeacherCollectionConfig,
     scenario_by_task_id: dict[str, str],
     seed: int,
+    sft_oversample: Mapping[str, int] | None = None,
 ) -> ExportResult:
     """质量门通过后，为每条任务选一条轨迹并独立 replay 全部导出集合。
 
@@ -525,7 +556,13 @@ def export_formal_train(
     `config` 是本次导出的治理上下文：每条被选中的 teacher 证据都要先通过
     `_require_evidence_binds_record`，证明它确实属于当前记录（而不只是 task_id
     对得上），否则整次导出失败。
+
+    `sft_oversample` 按场景重复 **sft 行**，用于重平衡训练集的动作分布。它刻意
+    不影响 `train_rows`/`selections`：那两份是 provenance，声称"本次导出覆盖了哪些
+    冻结任务"，让重复采样漏进去会使产物声称的任务数超过冻结契约。重复而不是
+    加权，是为了让改动完全落在数据产物里、训练代码一行不改，变量单一且可哈希追溯。
     """
+    resolved_oversample = _resolve_sft_oversample(sft_oversample, scenario_by_task_id)
     report = compute_teacher_quality_report(evidences, scenario_by_task_id)
     if not report.passes_gate:
         raise TeacherQualityGateError(
@@ -570,7 +607,9 @@ def export_formal_train(
                 "trajectory": trajectory.model_dump(mode="json"),
             }
         )
-        sft_rows.append(trajectory_to_sft_example(trajectory))
+        repeat = resolved_oversample.get(scenario_by_task_id[task_id], 1)
+        sft_example = trajectory_to_sft_example(trajectory)
+        sft_rows.extend(sft_example for _ in range(repeat))
 
     if len(train_rows) != len(records):
         msg = "formal train 导出数量与输入任务数不一致"
@@ -658,13 +697,18 @@ def write_formal_train_export(
     selections: Sequence[TrainExportSelection],
     train_rows: Sequence[dict[str, Any]],
     sft_rows: Sequence[dict[str, Any]],
+    sft_oversample: Mapping[str, int] | None = None,
 ) -> dict[str, str]:
     """把完整训练数据写到 private ignored root，公开 root 只留聚合质量报告。
 
-    private 三个文件通过 staging 目录一次性原子发布（rename）；只要公开
+    private 四个文件通过 staging 目录一次性原子发布（rename）；只要公开
     quality.json 写入失败或此前任一步骤失败，已发布的 private 目录会被
     整体回滚删除，不留半成品——不会出现 private 已发布但公开缺失、或
     private 只写了部分文件的中间状态。
+
+    `sft_oversample.json` 让产物自证行数来源：只看 `sft.jsonl` 无法区分
+    "400 条任务" 与 "240 条任务、其中 80 条重复三次"，而这两者对结论的含义完全不同。
+    它同样纳入 `private_artifact_sha256`，手改即被发现。
     """
     _validate_path_component(attempt_id, label="attempt_id")
     private_target = _resolve_within(private_root, "train-export", attempt_id)
@@ -679,10 +723,19 @@ def write_formal_train_export(
             staging / "selection.json",
             [selection.model_dump(mode="json") for selection in selections],
         )
+        write_json(
+            staging / "sft_oversample.json",
+            {
+                "factors": dict(sorted((sft_oversample or {}).items())),
+                "train_row_count": len(train_rows),
+                "sft_row_count": len(sft_rows),
+            },
+        )
         artifact_hashes = {
             "train.jsonl": sha256_file(staging / "train.jsonl"),
             "sft.jsonl": sha256_file(staging / "sft.jsonl"),
             "selection.json": sha256_file(staging / "selection.json"),
+            "sft_oversample.json": sha256_file(staging / "sft_oversample.json"),
         }
         _publish_staging_dir(staging, private_target)
         private_published = True

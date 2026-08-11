@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -779,3 +780,123 @@ def test_write_formal_train_export_rolls_back_private_dir_on_public_conflict(
         )
 
     assert not (private_root / "train-export" / _ATTEMPT_ID).exists()
+
+
+# ---------------------------------------------------------------------------
+# R4 Task 1：多步家族重复采样（只重复 sft 行，provenance 保持 1:1）
+# ---------------------------------------------------------------------------
+
+
+def _oversample_fixture() -> tuple[
+    list[FormalTaskRecord], list[TeacherAttemptEvidence], dict[str, str]
+]:
+    """10 条 lookup_status 全部接受，用于观察重复采样对三份产物的不同影响。"""
+    records = _real_train_records([TaskScenario.LOOKUP_STATUS])[:10]
+    evidences = [_evidence(record.task.task_id, accepted=True) for record in records]
+    scenarios = {record.task.task_id: record.task.scenario.value for record in records}
+    return records, evidences, scenarios
+
+
+def test_export_oversample_repeats_only_sft_rows() -> None:
+    """重复采样必须只作用于 sft.jsonl。
+
+    `train.jsonl` 与 `selection.json` 是 provenance：它们声称"这次导出覆盖了哪些冻结
+    任务"。让重复采样漏进去会使产物声称 30 条任务，而冻结契约只有 10 条。
+    """
+    records, evidences, scenarios = _oversample_fixture()
+
+    _, selections, train_rows, sft_rows = export_formal_train(
+        records,
+        evidences,
+        _env_factory,
+        _config(),
+        scenarios,
+        seed=0,
+        sft_oversample={"lookup_status": 3},
+    )
+
+    assert len(train_rows) == 10
+    assert len(selections) == 10
+    assert len(sft_rows) == 30
+    assert [row["task_id"] for row in sft_rows] == [
+        record.task.task_id for record in records for _ in range(3)
+    ]
+
+
+def test_export_oversample_default_is_identity() -> None:
+    """不传 `sft_oversample` 与传空 mapping 都必须等价于原样导出。"""
+    records, evidences, scenarios = _oversample_fixture()
+
+    _, _, _, without = export_formal_train(
+        records, evidences, _env_factory, _config(), scenarios, seed=0
+    )
+    _, _, _, empty = export_formal_train(
+        records, evidences, _env_factory, _config(), scenarios, seed=0, sft_oversample={}
+    )
+
+    assert without == empty
+    assert len(without) == 10
+
+
+def test_export_oversample_rejects_unknown_scenario() -> None:
+    """写错场景名必须硬失败，而不是静默无效——静默无效会产出一份和
+    未重采样逐字节相同的产物，却让人以为实验已经生效。"""
+    records, evidences, scenarios = _oversample_fixture()
+
+    with pytest.raises(ValueError, match="未知场景"):
+        export_formal_train(
+            records,
+            evidences,
+            _env_factory,
+            _config(),
+            scenarios,
+            seed=0,
+            sft_oversample={"refund_eligible_typo": 3},
+        )
+
+
+def test_export_oversample_rejects_non_positive_factor() -> None:
+    """因子 0 会静默丢掉整个类别，负数无意义；两者都必须拒绝。"""
+    records, evidences, scenarios = _oversample_fixture()
+
+    for factor in (0, -1):
+        with pytest.raises(ValueError, match="重复因子"):
+            export_formal_train(
+                records,
+                evidences,
+                _env_factory,
+                _config(),
+                scenarios,
+                seed=0,
+                sft_oversample={"lookup_status": factor},
+            )
+
+
+def test_write_formal_train_export_records_oversample_manifest(tmp_path: Path) -> None:
+    """重采样因子必须随产物落盘并纳入哈希，否则 sft.jsonl 的行数无法自证来源。"""
+    private_root, public_root = _train_export_roots(tmp_path)
+    record = _train_record(TaskScenario.LOOKUP_STATUS)
+    report = compute_teacher_quality_report(
+        [_evidence(record.task.task_id, accepted=True)],
+        {record.task.task_id: record.task.scenario.value},
+    )
+
+    hashes = write_formal_train_export(
+        private_root=private_root,
+        public_root=public_root,
+        attempt_id=_ATTEMPT_ID,
+        dataset_version=_DATASET_VERSION,
+        report=report,
+        selections=[TrainExportSelection(task_id=record.task.task_id, source="teacher")],
+        train_rows=[{"task_id": record.task.task_id}],
+        sft_rows=[{"task_id": record.task.task_id}, {"task_id": record.task.task_id}],
+        sft_oversample={"lookup_status": 2},
+    )
+
+    assert "sft_oversample.json" in hashes
+    manifest = json.loads(
+        (private_root / "train-export" / _ATTEMPT_ID / "sft_oversample.json").read_text("utf-8")
+    )
+    assert manifest["factors"] == {"lookup_status": 2}
+    assert manifest["train_row_count"] == 1
+    assert manifest["sft_row_count"] == 2

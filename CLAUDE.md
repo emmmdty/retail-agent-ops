@@ -80,14 +80,16 @@ git diff --check
 
 ## 9. 当前状态
 
-- 当前阶段：R3「单卡适配与服务 v1」进行中。Task 1（首次真实 Qwen3-4B QLoRA-SFT）、
-  Task 2（候选 dev 配对评测）、Task 3（发布闭环代码）与 Task 4（封存 holdout 执行、
-  发布判定、真实模型服务演示）已完成。formal 轨道四个接口均已在真实模型上跑通。
-  **R3 交付物已齐备，等待用户验收确认**：模型卡 `docs/MODEL_CARD.md`、系统卡
-  `docs/SYSTEM_CARD.md`、演示流程 `docs/DEMO.md`、简历证据 `docs/RESUME_EVIDENCE.md`
-  已产出（LOG-20260811-05）。按 R2 先例（LOG-20260807-03），阶段状态由用户确认后才改，
-  agent 不得自行把 `docs/EXECUTION_PLAN.md` 的 R3 标为已完成。
-  R4 执行提示词已就绪：`docs/handoffs/2026-08-11-r4-execution-prompt.md`。
+- 当前阶段：**R4「失败驱动优化」**（用户于 2026-08-11 确认 R3 收口并切换阶段，
+  LOG-20260811-07）。R3 四个 Task 全部完成，formal 轨道四接口已在真实模型上跑通，
+  交付文档见 `docs/MODEL_CARD.md`、`docs/SYSTEM_CARD.md`、`docs/DEMO.md`、
+  `docs/RESUME_EVIDENCE.md`。R4 执行提示词：`docs/handoffs/2026-08-11-r4-execution-prompt.md`
+  （注意：该提示词第五节对方案一的成本估计已被 LOG-20260811-06 推翻，以后者为准）。
+- R4 第一轮已裁定（LOG-20260811-07）：方案 = **对多步家族重复采样**（不新增任务、
+  不改冻结配额、不调 teacher API）；预设收益门槛 = **机制导向**——dev 上
+  `refund_eligible` 从 0/10 回到 **≥7/10**，且 `invalid_call_count`/`policy_violation_count`
+  保持 0、`schema_valid_rate` 保持 1.0。**达不到即停止，不得转而扩展算法。**
+  主判据不是 `task_success` 总数、不是 `verifier_reward`、不是 loss。
 - 发布结论（2026-08-11，封存 120 条 holdout，LOG-20260811-03）：**NO-GO / baseline**，
   唯一失败门禁 `success_delta`（−0.0333 < +0.05）。base task_success 0.7833（94/120）、
   candidate 0.7500（90/120）；候选 policy_violation 16→0、invalid_call 41→0、
@@ -96,8 +98,23 @@ git diff --check
   **holdout 已被观测一次**，其结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择；
   再次判定需另行决定是否消耗第二次。
 - 已知结论：dev（LOG-20260807-09）与 holdout 一致——候选把格式/安全类失败清零，
-  但需 ≥2 次工具调用的场景回退。失败机制已定位（训练数据 66.7% 只含 1 次工具调用），
-  属 R4 输入。两次评测中 `verifier_reward` 均与主判据反向，勿以奖励值代替最终状态判据。
+  但需 ≥2 次工具调用的场景回退。两次评测中 `verifier_reward` 均与主判据反向，
+  勿以奖励值代替最终状态判据。
+- 失败根因的**精确口径**（LOG-20260811-06，只用 train/dev 得出）：66.7% 单次调用已复算成立
+  但偏粗。(a) 动作长度与场景类别完全共变，"只重平衡长度不动类别"不存在；
+  (b) 训练集中「输出自然语言」与「回合结束」100% 共变，多步类别贡献 0 文本字符；
+  (c) 真正的竞争在「get_order 已返回 + 用户以核实/检查口吻要求退款」族内，比例
+  **120:40 = 3:1** 偏向写文本；(d) dev 候选 **17/17 失败是同一行为——正确判定可退后向用户
+  请求确认并停止**，不是能力丢失。模板/parser、工具 schema、verifier 三层均无缺陷。
+- **改进方案的形状约束**：`parser.py` 把「文本+工具调用同时出现」判为
+  `mixed_tool_call_content` 即非法调用，因此 assistant 工具调用消息必须保持 `content` 为空，
+  任何"先声明再执行"的数据方案都会把 invalid_call 从 0 打回去。
+- **配对可比性的连带代价**（LOG-20260811-06）：`code_commit`/`uv_lock_sha256`/
+  `system_prompt_sha256` 均在 `SEALED_PAIRING_FIELDS` 内，因此**任何 R4 改进提交后，
+  已有 sealed holdout base 证据不再可配对**——R4 之后的任何一次 release 判定 = 封存
+  holdout 的第二次**完整**观测（base + candidate 两侧）。不得为规避这点放宽
+  `require_comparable_sealed_runs`。dev 的 `PAIRING_FIELDS` 不含 `code_commit`，
+  故改数据/代码不需要重跑 base dev；但它含 `system_prompt_sha256`。
 - 服务（LOG-20260811-04）：按 NO-GO 回滚加载纯 base（`adapter_loaded=false`、
   `policy_id` 无 adapter 后缀），允许/拒绝/异常恢复三条流程均成功且轨迹可见，
   并发上限返回 503。演示成功不等于能力证明——同批次另一条 `refund_eligible` 仍失败。
@@ -109,4 +126,7 @@ git diff --check
 - 资源约束：gpu-5090 的数据一律落 `/mnt/aidata`，不得写系统盘（LOG-20260811-02）。
   远端 `/tmp` 会被重启清空，不可用于承载跨故障的运行日志。
 - 当前基线：624 tests passed，Ruff/mypy/uv lock 全部通过。
-- 不自动推进 R3 剩余目标、模型下载或 GPU 运行；下一任务先等待用户确认。
+- 冻结契约提醒：`formal_tasks.py` 的 `assert_exact_quotas` 把 train/dev/holdout 每类别
+  40/10/20 写成硬契约。新增任务需重新冻结数据集并改变 `dataset_version` 与 manifest 哈希，
+  已有全部评测证据的可比性随之作废——这不是"多花点 API 钱"的事。
+- 不自动推进 GPU 运行、模型下载、teacher API 采集或第二次 holdout 观测；每条外部命令单独请示。

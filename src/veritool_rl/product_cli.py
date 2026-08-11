@@ -562,6 +562,7 @@ _TRAIN_EXPORT_KEYS = {
     "dataset_version",
     "teacher_attempt_id",
     "attempt_id",
+    "sft_oversample",
 }
 
 
@@ -576,6 +577,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
     dataset_version = _dataset_version(config)
     teacher_attempt_id = _config_str(config, "teacher_attempt_id")
     attempt_id = _attempt_id(config)
+    sft_oversample = _sft_oversample(config)
 
     bundle = load_bundle(bundle_dir)
     dataset = load_verified_formal_dataset(public_dir)
@@ -610,6 +612,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         teacher_config,
         scenario_by_task_id,
         args.seed,
+        sft_oversample=sft_oversample,
     )
 
     create_output_dir(args.output_dir)
@@ -622,6 +625,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         selections=selections,
         train_rows=train_rows,
         sft_rows=sft_rows,
+        sft_oversample=sft_oversample,
     )
 
 
@@ -1137,6 +1141,25 @@ def _config_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{key} 必须是 mapping")
     return value
+
+
+def _sft_oversample(config: dict[str, Any]) -> dict[str, int]:
+    """读取按场景的 sft 重复采样因子；键必须存在，空 mapping 表示不重采样。
+
+    该键是**必填**的：给它一个默认值会让"忘了写"和"故意不重采样"产出同一份数据，
+    事后无法从配置文件本身分辨这一轮实验是否按预期设置过。取值的语义校验
+    （未知场景名、非正因子）由 `export_formal_train` 统一负责，这里只做形状检查，
+    避免同一条规则出现两份实现。
+    """
+    value = _config_mapping(config, "sft_oversample")
+    factors: dict[str, int] = {}
+    for scenario, factor in value.items():
+        if not isinstance(scenario, str):
+            raise ValueError("sft_oversample 的键必须是场景名字符串")
+        if isinstance(factor, bool) or not isinstance(factor, int):
+            raise ValueError(f"sft_oversample 的重复因子必须是整数: {scenario}={factor!r}")
+        factors[scenario] = factor
+    return factors
 
 
 def _positive_int(config: dict[str, Any], key: str) -> int:

@@ -197,6 +197,7 @@ def _train_export_config(**overrides: Any) -> dict[str, Any]:
         "dataset_version": DATASET_VERSION,
         "teacher_attempt_id": "teacher-attempt-001",
         "attempt_id": "train-export-001",
+        "sft_oversample": {},
     }
     values.update(overrides)
     return values
