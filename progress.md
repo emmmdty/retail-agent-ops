@@ -426,3 +426,19 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-11 | `serve --pipeline formal_serve`（GPU 0） | baseline 回滚部署，adapter_loaded=false |
 | 2026-08-11 | 允许 / 拒绝 / 异常恢复 三条 episode | 三条 `success=true`、`violations=[]`，轨迹完整 |
 | 2026-08-11 | 并发两请求 | 200 + 503（并发上限生效） |
+
+## 2026-08-11 — R3 交付文档收口与 R4 启动准备
+
+- 产出四份交付文档：`docs/MODEL_CARD.md`（候选模型卡，含 dev/holdout 双表与六项限制）、
+  `docs/SYSTEM_CARD.md`（系统卡，含治理机制、资源画像与八项限度）、
+  `docs/DEMO.md`（5 分钟讲解 + CPU/GPU 两条演示路径 + 三个必讲失败案例 + 深挖问答）、
+  `docs/RESUME_EVIDENCE.md`（数字出处对照、七类禁写表述、两个 bullet 方案）。
+- 产出 R4 执行提示词 `docs/handoffs/2026-08-11-r4-execution-prompt.md`：
+  不预批任何 GPU/API/第二次 holdout 观测，列出五项用户决策门。
+- **阶段状态未改**：`docs/EXECUTION_PLAN.md` 的 R3 仍为「当前」，按 R2 先例
+  （LOG-20260807-03）由用户确认后才更新。
+- 待用户裁决：简历 bullet 选方案 A（系统与证据）还是方案 B（模型与归因）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | 文档收口后全量门禁 | 624 passed；Ruff / mypy 65 源文件 / lock / diff 全绿 |

@@ -83,8 +83,11 @@ git diff --check
 - 当前阶段：R3「单卡适配与服务 v1」进行中。Task 1（首次真实 Qwen3-4B QLoRA-SFT）、
   Task 2（候选 dev 配对评测）、Task 3（发布闭环代码）与 Task 4（封存 holdout 执行、
   发布判定、真实模型服务演示）已完成。formal 轨道四个接口均已在真实模型上跑通。
-  **R3 尚未收口**：验收目标 4/5 达成，未达成项是「面试可演示交付」，依赖尚未产出的
-  模型卡、系统卡、演示流程文档与第一版简历证据（见 LOG-20260811-04）。
+  **R3 交付物已齐备，等待用户验收确认**：模型卡 `docs/MODEL_CARD.md`、系统卡
+  `docs/SYSTEM_CARD.md`、演示流程 `docs/DEMO.md`、简历证据 `docs/RESUME_EVIDENCE.md`
+  已产出（LOG-20260811-05）。按 R2 先例（LOG-20260807-03），阶段状态由用户确认后才改，
+  agent 不得自行把 `docs/EXECUTION_PLAN.md` 的 R3 标为已完成。
+  R4 执行提示词已就绪：`docs/handoffs/2026-08-11-r4-execution-prompt.md`。
 - 发布结论（2026-08-11，封存 120 条 holdout，LOG-20260811-03）：**NO-GO / baseline**，
   唯一失败门禁 `success_delta`（−0.0333 < +0.05）。base task_success 0.7833（94/120）、
   candidate 0.7500（90/120）；候选 policy_violation 16→0、invalid_call 41→0、

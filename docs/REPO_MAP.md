@@ -27,7 +27,7 @@
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
-| `docs/` | 活动 | 治理文档；`docs/archive/` 为已完成阶段的过程文档 |
+| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE`）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
 | `tools/bfcl_eval/` | legacy | BFCL 官方 evaluator 的独立 uv 环境 |
 
 ## 3. `src/veritool_rl/` 分层
