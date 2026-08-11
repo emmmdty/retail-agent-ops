@@ -2166,3 +2166,204 @@ p95 6068 vs 5211 为输入，断言五项门禁里恰好 `success_delta` 失败�
 `git diff --check` 全绿；三份真实证据 `run_id` 复算与 LOG-20260809-01 记录一致
 （`07671235…`/`d57654e9…`/`29648b8c…`），R1 两份 qualification release 报告仍可加载。
 未运行 GPU/商业 API/holdout，未提交，未创建远程仓库。
+
+### LOG-20260811-01：封存 holdout 首次执行——base 与 candidate 背靠背，理由与不可逆边界
+
+- 日期：2026-08-11
+- 阶段/任务：R3 / Task 3 收口（从「代码完成」进入「实际执行」）
+- 状态：进行中（本条记录决定与前置事实，运行结果另条追加）
+- 关联：LOG-20260810-01、LOG-20260810-02、LOG-20260810-03、LOG-20260807-09
+
+**不可逆事实**：正式 120 条封存 holdout 自 R2 冻结以来从未执行；本次是**第一次**。
+一旦运行并读到聚合数字，该集合对本项目的完全盲性即结束。此后它仍是硬隔离边界
+（结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择），但"从未被观测"
+这一属性无法恢复。
+
+**决定变更：从「先只跑 base」改为「base + candidate 背靠背连续跑」。** LOG-20260810-03
+记录的原决定是本轮只跑 base（base 是固定参照，不涉及候选选择，不产生选择性泄漏）。
+本次执行前的只读盘点提供了原决定作出时不掌握的两项事实，用户据此改变决定：
+
+1. **延迟门禁的可比性是有时效的**。gpu-5090 为多人共用，运行前 GPU 0 已被他人 3 个进程
+   占用 14892/32607 MiB、利用率 100%。发布门禁第五项是 `candidate p95 ≤ 1.25 × base p95`；
+   若两份 sealed 证据跑在不同时段的不同负载下，该比值度量的是机器负载差异而非模型差异。
+   背靠背连续执行是唯一能让这一项保持可解释的安排。
+2. **只跑 base 拿不到任何发布结论**。R3 验收目标「候选满足门禁才标 GO，否则诚实标 NO-GO」
+   与「服务完成允许/拒绝/异常恢复流程」都需要 candidate 侧 sealed 证据；只有 base 时
+   `decide_formal_release` 无输入，R3 无法收口。
+
+被接受的代价：在 dev 上已知回退的候选（LOG-20260807-09：task_success 48/60→43/60）上
+用掉一次 holdout 观测。**这不是缺陷而是 holdout 的用途**——发布门禁需要一次诚实的判定，
+包括诚实的 NO-GO。R4 改进后的候选若要再次判定，需另行决定是否再用一次。
+
+**前置条件与其解除**（四项，均为执行前实测发现，非文档转述）：
+
+1. **脏工作树会硬阻塞 sealed 运行**。`_current_code_commit`（`product_cli.py:1189`）以
+   `git status --porcelain` 非空即拒绝。因此 Task 3 的全部改动先提交为 `90c9038`
+   （12 modified + 7 新增，含 4 份新 config、`formal_release.py` 与两份新测试）。
+2. **远端落后两个提交**：gpu-5090 停在 `0c6f552`，缺 `c466b64`（仓库收敛：目录分层 +
+   分发名 `veritool-rl` → `retail-agent-ops`）。经增量 bundle ff-only 同步到 `90c9038`
+   后**必须重建环境**——`uv sync` 实测卸载 `veritool-rl==0.0.1` 并装入
+   `retail-agent-ops==0.0.1`，仅靠 git 同步会留下指向旧分发名的 editable 安装。
+3. **封存 holdout 私有数据首次离开本机**。远端此前只有 `dev.jsonl` 与派生产物，无
+   `holdout.jsonl`。已同步至同一相对路径，双端 SHA-256 逐字节一致
+   （`c5ef5063baf411767405d6d7b2befde078cbf3c4c87f3216a71797d4f24ac215`，334582 字节），
+   并实测仍被远端 `.gitignore:51:/data/` 覆盖。**这意味着封存 holdout 内容现存于一台
+   多人共用服务器上**，属于新增的数据暴露面，记录在此以便 R5 公开交付前复核。
+4. 远端缺 R1 qualification build 产物，而 `serve` 的 `--input_dir` 需要它（演示任务集，
+   非 holdout）。补跑安排在评测结束之后，避免评测期间给同机增加 CPU 负载而扰动延迟测量。
+
+**执行安排**：物理 GPU 0（RTX 5090），工作目录 `/mnt/aidata/tongjiakai/retail-agent-ops`，
+`TORCH_DISABLE_NATIVE_JIT=1`（沿用 R2/R3 已验证的 Triton JIT 规避），seed 0（由冻结
+receipt 决定，非 0 会被 CLI 拒绝），两条流水线串行。产物：私有
+`<input_dir>/sealed-eval/qwen3-4b-holdout-{base,candidate}-001/`（完整轨迹与逐任务证据）；
+公开 `reports/retail_ops/v1/r3/holdout-{base,candidate}-001/sealed-report.json`
+（allowlist 聚合，无 task/family 标识、prompt、真值或失败样例）。运行前后各记 GPU 快照。
+
+**尚未发生**：任何 sealed 结果、任何 formal GO/NO-GO 结论、任何真实模型服务部署。
+本条只记录决定与前置事实；运行结果与发布判定另条追加。
+
+### LOG-20260811-02：首次 holdout 运行被 gpu-5090 重启中断——零产出，盲性未消耗；新增系统盘约束
+
+- 日期：2026-08-11
+- 阶段/任务：R3 / Task 3 收口（封存 holdout 执行）
+- 状态：已恢复（已按同一授权范围重启运行，结果另条追加）
+- 关联：LOG-20260811-01
+
+**事件**：LOG-20260811-01 记录的运行于 11:13:45 启动，gpu-5090 在 **12:10 整机重启**，
+运行被杀。重启同时导致 cpolar 隧道换端口
+（`1.tcp.cpolar.cn:23617` → `29.tcp.cpolar.top:10537`，用 `~/.local/bin/cpolar-ssh-update`
+恢复）与 `/tmp/holdout-run.log` 被清空，因此故障期间一度无法判断评测是否存活。
+
+**核心判定：holdout 的盲性未被消耗。** 逐项核实：公开输出目录
+`reports/retail_ops/v1/r3/holdout-base-001/` 存在但**完全为空**（只有 `.` 与 `..`，
+由 `create_output_dir` 在 11:16 创建后即中断）；私有 `sealed-eval/` 目录**不存在**；
+没有任何 `sealed-report.json`。**没有一个数字被产出，因此没有一个数字被观测**——
+LOG-20260811-01 所述"从未被观测"这一属性在本次中断后仍然成立，重跑是干净的，
+不构成一次已用掉的 holdout 观测。这个判定是本条最重要的内容：若误判为"已消耗"，
+会平白损失该集合的一次盲性；若误判为"部分产出可用"，则会把半截运行当证据。
+
+**清理方式**：残留空目录用 `rmdir` 删除而非 `rm -rf`——`rmdir` 对非空目录会失败，
+这一性质本身就是"绝不误删已产出证据"的保证。删除前另已确认输入未受重启影响：
+`holdout.jsonl` SHA-256 仍为 `c5ef5063…`（334582 字节）、adapter 7 个文件、
+模型 13 个文件均在。仓库 HEAD 仍为 `90c9038`，工作树干净。
+
+**运行环境的变化及其影响**：重启后 GPU 0 由 14892 MiB/100% 利用率变为
+7196 MiB/0%（他人仅 1 个进程）。这不损害 LOG-20260811-01 的可比性论证——该论证要求的是
+**base 与 candidate 之间**负载一致，而两条运行仍是同一脚本内背靠背串行；两次运行整体
+处在比首次尝试更空闲的环境，只影响绝对延迟量级，不影响门禁使用的比值。绝对量级会如实
+写入 sealed 报告的硬件 provenance。
+
+**新增资源约束（用户指令）**：远端数据不得写入系统盘。核实结果：真实产物本就全部落在
+`/mnt/aidata`（1.8T 可用）——私有 sealed 证据、公开报告、模型与 adapter 均在仓库内，
+而仓库位于该盘；写到系统盘（`/` 321G 可用）的只有本次为防重启丢失而放置的
+`holdout-run.log`（125 B）与 `run_holdout.sh`（1051 B），合计约 1.2 KB。约定：运行结束后
+把日志移入 `reports/retail_ops/v1/r3/`（已被 `.gitignore` 的 `/reports/retail_ops/` 覆盖，
+既在数据盘又不会让远端工作树变脏而阻塞 `_current_code_commit`）。**此后远端一切新增文件
+默认落 `/mnt/aidata`。**
+
+**留给后续的运行纪律**：远端 `/tmp` 不可用于承载跨故障的运行日志（重启即清空）。
+本次重启运行已改用重启安全位置，且轮询改为**短连接重试**模式——长驻 ssh 会随隧道抖动
+整体失败，而评测进程本身由 `setsid` 脱离会话、不受 ssh 断开影响，监控不应比被监控者更脆弱。
+
+**重启后的运行**：12:25:38 启动，命令、配置、seed、产物路径与 LOG-20260811-01 完全相同，
+属同一授权范围内的重试，非新决定。
+
+### LOG-20260811-03：封存 holdout 执行完成与首个 formal 发布决策——NO-GO，回滚 baseline
+
+- 日期：2026-08-11
+- 阶段/任务：R3 / Task 3 收口（sealed holdout 运行 + `decide_formal_release`）
+- 状态：解决（发布判定已产出；`serve` 演示尚未执行）
+- 关联：LOG-20260811-01、LOG-20260811-02、LOG-20260807-09、LOG-20260810-03
+
+**运行事实**（gpu-5090 物理 GPU 0，RTX 5090，GPU UUID `GPU-07af326b-…`）：
+base 12:25:38→12:45:47（步骤 20m9s，评测本体 `wall_time_seconds=286.98`）；
+candidate 12:45:47→12:55:07（步骤 9m19s，评测本体 `544.21`）。两条背靠背，
+`code_commit` 与 `uv_lock_sha256` 逐字段相同，peak memory 2.95 GB / 2.95 GB。
+
+**一处自我推测的纠正**：中途见到 base 步骤耗时是 candidate 的两倍，曾推测为他人负载抢占
+GPU。sealed 报告的 `wall_time_seconds` 推翻了这个推测——**评测本体 base 287s、candidate
+544s，candidate 确实更慢**（与 dev 上 4176 vs 2562 ms 的方向一致）。base 步骤那 20 分钟里
+约 15 分钟是冷启动：首次读入 7.6 GB 权重并对 13 个文件逐一 SHA-256 校验；candidate 时页缓存
+已热。教训：步骤 wall time 不是评测延迟，provenance 里的 `wall_time_seconds` 才是。
+
+**证据核验（独立重算，非文本比对）**：两份报告 `report_id` 自哈希通过
+（base `b538a6c4…`、candidate `a8cfcf38…`）；4 个私有产物 SHA-256 各自重算一致；
+回传的公开副本与远端私有原件逐字段相等。holdout artifact SHA-256 两侧同为 `c5ef5063…`。
+
+**发布判定：NO-GO / deployment=baseline，唯一失败门禁 `success_delta`。**
+观测 −0.0333（base 0.7833=94/120 → candidate 0.7500=90/120），阈值 +0.05。
+其余四项均通过：`policy_violation_delta` −16、`invalid_call_count` 0、
+`p95_latency_ratio` 1.0870（≤1.25）、`evidence_complete` true。
+
+**holdout 证实了 dev 的结论，并且更极端**。格式与安全类在封存集上同样彻底清零：
+invalid_call 41→0、policy_violation 16→0、schema_valid_rate 0.7819→1.0000，
+base 的 16 次违规全部是 `refund_without_lookup`（未查询即退款），候选一次都没有。
+代价仍集中在多步执行：候选失败类型 **100% 是 `premature_final_response`（30 个）**，
+其中 `refund_eligible` **20/20 全数失败**（dev 上为 10 条中 0 条成功），`refund_recovery`
+20 条中失败 9 条。base 的失败则分散在 policy_violation 16 / verifier_failure 7 /
+parser_format 3。LOG-20260807-09 定位的机制（训练数据 66.7% 只含 1 次工具调用 →
+"调一次就写总结"）在封存集上重现，不是 dev 的偶然。
+
+**统计口径**：两侧 CI95 大幅重叠（base [0.708, 0.850]、candidate [0.675, 0.825]），
+仅凭 −3.3pp **不能**断言整体显著回退。但 `refund_eligible` 20/20 全失败是结构性崩溃而非
+噪声，与格式类 41→0、16→0 的确凿改善同样应当照实陈述。**门禁不需要显著性**——它要求的是
++5pp 的实测提升，候选没有做到，因此 NO-GO 成立且无需附加解释。
+
+**`verifier_reward` 再次与主判据背离**：0.5646 → 0.7500 上升，而 task_success 下降。
+与 dev 上同向。这是 SPEC/CLAUDE.md 坚持"主判据是最终状态与政策 verifier、不是奖励值"的
+第二个实例，本次发生在发布证据上，故记入。
+
+**延迟门禁的已知限度**：gpu-5090 多人共用，运行期间他人占用在 12574→11854→10768 MiB、
+利用率 56%→0%→100% 之间变动。p95 比值 1.0870 距阈值 1.25 有余量，负载噪声不足以翻转该项
+结论；但该项在共享机器上的精度限度应在系统卡中写明，不得表述为精确测量。
+
+**holdout 状态变更**：本次是该封存集合的**第一次实际观测**（LOG-20260811-02 中断那次为零
+产出、未消耗）。此后其结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择；R4 改进
+后的候选若要再次判定，需另行决定是否再消耗一次。
+
+**尚未完成**：`serve` 按本决策的 baseline 回滚部署与允许/拒绝/异常恢复三条演示流程未执行，
+因此 R3 验收目标仍未全部达成，阶段状态不改。
+
+### LOG-20260811-04：serve 按 NO-GO 回滚部署并完成三条演示流程——R3 验收目标 4/5 达成
+
+- 日期：2026-08-11
+- 阶段/任务：R3 / Task 3 收口（`serve` 真实模型部署与演示）
+- 状态：解决（服务已验证并关闭）
+- 关联：LOG-20260811-03、LOG-20260810-03
+
+**部署事实**：gpu-5090 物理 GPU 0，加载冻结 Qwen3-4B base，`127.0.0.1:8000`，
+运行期间峰值与评测同量级。`service.json` 与 `/health` 一致声明
+`release_decision=NO-GO`、`deployment=baseline`、**`adapter_loaded=false`**、
+`failed_gate_ids=["success_delta"]`，`policy_id` 为
+`qwen:Qwen/Qwen3-4B@8cd0101f…`——**没有 adapter 后缀**，与候选证据里的
+`…+adapter:…#34544fac3ec9` 形成对照。SPEC §4「未过门禁的模型不得被服务入口加载」
+在真实部署上得到验证，而不只是单元测试里的断言。
+
+**三条演示流程全部成功，且轨迹可见**（qualification fixture，非 holdout）：
+1. 允许 `refund_eligible`：`get_order`（返回 `refund_status=none`、`current_day=20`、
+   `refund_deadline=30`）→ `refund_order(reason=wrong_item)` → `refunded`。
+2. 拒绝 `refund_denied_ownership`：`get_order` 返回 `error_code=not_found` →
+   **停止，未尝试退款**，`violations=[]`。正确拒绝与政策违规的区分在服务层可观测。
+3. 异常恢复 `refund_recovery`：`get_order` → `refund_order` 遇 `transient_error`
+   → **重试** `refund_order` → `refunded`。
+
+**并发上限在真实服务上验证**：并发两个 episode 请求，先到者 200、后到者
+**503「服务已达并发上限，请稍后重试」**。此前只有单元测试覆盖（`_MAX_CONCURRENT_EPISODES`
+经突变验证），现在有真实 HTTP 证据。选择 503 而非排队的理由见 LOG-20260810-03。
+
+**一个诚实的负面观察**：并发测试中作为陪衬发出的另一条 `refund_eligible`
+（`6ff4f0d4…`）**失败了**——`success=false`、`termination=final_response`。
+base 在 qualification fixture 上同样会"说完就停"，只是频率低于候选。演示流程挑选的三条
+成功案例不代表 base 全对，holdout 上 base 的 `refund_eligible` 也有失败。记录于此，
+避免后续把演示当成能力证明。
+
+**R3 验收目标状态（4/5）**：GPU 命令均经确认并记录物理 GPU/时长/产物 ✓；正式运行目录
+不可覆盖、配置与产物完整 ✓；候选未满足门禁因而诚实标 NO-GO ✓；服务完成允许/拒绝/
+异常恢复三条流程并展示工具轨迹 ✓。**未达成的第五项**：「前 6 周交付可在面试中演示且
+不依赖论文叙事」，其依赖的执行目标「模型卡、系统卡、演示流程与第一版简历证据」尚未产出。
+**R3 阶段状态因此保持「当前」，不标已完成。**
+
+**运行卫生**：服务已关闭、8000 端口释放、远端工作树干净；按 LOG-20260811-02 的新约束，
+系统盘上的 `holdout-run.log`/`run_holdout.sh` 已移入数据盘
+`reports/retail_ops/v1/r3/`（仍被 `.gitignore:72:/reports/retail_ops/` 覆盖），
+`/home/tongjiakai` 下无残留。

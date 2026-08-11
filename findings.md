@@ -580,3 +580,51 @@
 - **两个注入缝的分工**：`backend_factory` 让本地 CPU 用 fake 后端装配真实服务代码路径，
   `app_runner` 让测试不必真的 `uvicorn.run` 阻塞。二者合起来使 SPEC §9 的全部约束都能在
   没有 GPU 的机器上回归。
+
+## R3 封存 holdout 结果与首个 formal 发布决策（2026-08-11）
+
+- **dev 的预测被封存集证实，且更极端**。候选在 holdout 上把格式/安全类同样清零
+  （invalid_call 41→0、policy_violation 16→0、schema_valid_rate 0.7819→1.0000），
+  但 `refund_eligible` **20/20 全数失败**（dev 上是 10 条中 0 条成功），
+  `refund_recovery` 失败 9/20。候选失败类型 **100% 是 `premature_final_response`**，
+  违规与非法调用各 0 条——它从不违规、从不乱调工具，只是"说完就停"。
+  LOG-20260807-09 定位的机制（训练数据 66.7% 仅 1 次工具调用）不是 dev 的偶然。
+- **base 的失败画像完全不同**：16 次 policy_violation 全部是 `refund_without_lookup`
+  （未查询即退款），另有 verifier_failure 7、parser_format 3。两个模型是在不同维度上失败，
+  这正是"格式/安全"与"多步执行"两类能力可以彼此独立的证据。
+- **门禁不需要统计显著性，这一点值得写进面试叙述**。两侧 CI95 大幅重叠
+  （base [0.708, 0.850] / candidate [0.675, 0.825]），单看 −3.3pp 不能断言整体显著回退；
+  但发布门禁要求的是实测 +5pp，候选没有做到，NO-GO 因此成立且无需附加解释。
+  把"显著性"与"发布标准"混为一谈是常见错误——后者是产品决策阈值，不是统计检验。
+- **`verifier_reward` 第二次与主判据背离**：0.5646 → 0.7500 上升而 task_success 下降。
+  第一次发生在 dev（LOG-20260807-09），这次发生在**发布证据**上。复合奖励里的格式/政策
+  分量足以掩盖任务失败，这是坚持"主判据是最终状态与政策 verifier"的实证而非教条。
+- **步骤 wall time ≠ 评测延迟**。base 步骤耗时 20m9s、candidate 9m19s，方向与 dev 相反，
+  一度被误推测为他人负载抢占；sealed 报告的 `wall_time_seconds`（286.98 vs 544.21）
+  推翻了该推测——差额几乎全部是 base 的冷启动：首读 7.6 GB 权重 + 13 个文件逐一 SHA-256
+  校验，candidate 时页缓存已热。**provenance 里的字段才是可用于比较的量**。
+- **共享 GPU 对延迟门禁的精度限度**：运行期间他人占用在 12574→11854→10768 MiB、
+  利用率 56%→0%→100% 之间变动。p95 比值 1.0870 距阈值 1.25 有余量，噪声不足以翻转结论，
+  但系统卡中不得把该数表述为精确测量。
+- **中断诊断的可复用判据**：判断一次被杀的运行是否"消耗了 holdout"，看的不是它跑了多久，
+  而是**有没有数字落盘并被读取**。本次中断留下的是一个空输出目录、不存在的 `sealed-eval/`，
+  因此盲性完好。用 `rmdir` 而非 `rm -rf` 清理残骸——对非空目录失败这一性质，本身就是
+  "绝不误删已产出证据"的保证。
+
+## R3 serve 演示：回滚是可观测的，演示不等于能力证明（2026-08-11）
+
+- **回滚在响应层可验证，而不只是配置声明**。`/health` 与每条 episode 响应都带
+  `deployment=baseline` 和不含 adapter 后缀的 `policy_id`
+  （`qwen:Qwen/Qwen3-4B@8cd0101f…`），与候选证据里的 `…+adapter:…#34544fac3ec9` 直接对照。
+  加上 `create_formal_app` 会核对工厂真正返回后端声明的 `adapter_path`，
+  "未过门禁的模型不会被加载"从文档承诺变成了三处独立可查的事实。
+- **正确拒绝与政策违规的区分在服务层同样成立**：`refund_denied_ownership` 那条
+  `get_order` 拿到 `not_found` 后直接停止、`violations=[]`、`success=true`。
+  这正是 R1 设计里刻意分开的两种语义在真实模型上的体现。
+- **演示成功不能当能力证明**。并发测试里作为陪衬发出的另一条 `refund_eligible` 失败于
+  `termination=final_response`——base 也会"说完就停"，只是频率低于候选。
+  面试叙述里应当同时给出 holdout 的 94/120 与这条负例，而不是只展示三条挑好的成功轨迹。
+- **`pkill -f` 会匹配到自己**：用 `pkill -f 'retail-agent-ops serve'` 停服务时，
+  该模式也匹配承载它的 ssh 命令行，shell 被自己杀掉、输出丢失，一度无法确认服务是否停止。
+  改用 `pgrep -f 'retail.agent.ops ser[v]e'` 取 PID 再 `kill`（方括号让模式不自匹配），
+  并以端口占用作为独立复核。远程停服务时这个坑值得记住。

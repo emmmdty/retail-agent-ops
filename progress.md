@@ -369,3 +369,60 @@ train/dev/holdout、调用模型或进入训练。
   R1 两份 qualification release 报告仍可加载。
 - **未进入**：任何 holdout 实际运行、任何 GPU/商业 API 调用、任何 formal 发布结论、
   任何真实模型服务部署。
+
+## 2026-08-11 — R3 封存 holdout 执行与首个 formal 发布决策
+
+- 前置四项全部解除：Task 3 代码提交 `90c9038`（脏工作树会被 `_current_code_commit` 拒绝）；
+  gpu-5090 由 `0c6f552` ff-only 同步到 `90c9038` 并重建环境（`veritool-rl` →
+  `retail-agent-ops` 分发名变更，仅同步 git 会留下失效的 editable 安装）；封存
+  `holdout.jsonl` 首次同步至远端（双端 SHA-256 `c5ef5063…` 一致，仍被 `.gitignore` 覆盖）；
+  用户批准 base + candidate 背靠背连跑（改变 08-10「先只跑 base」的决定，理由见 LOG-20260811-01）。
+- 首次启动（11:13:45）被 gpu-5090 于 12:10 整机重启中断，**零产出**：输出目录为空、
+  `sealed-eval/` 不存在，holdout 盲性未消耗；残骸用 `rmdir`（非 `rm -rf`）清除后重跑。
+- 正式运行（物理 GPU 0，RTX 5090）：base 12:25:38→12:45:47（评测本体 286.98s），
+  candidate 12:45:47→12:55:07（评测本体 544.21s），peak memory 均约 2.95 GB。
+- base：task_success 0.7833（94/120）、policy_violation 16（全为 `refund_without_lookup`）、
+  invalid_call 41、schema_valid_rate 0.7819、p95 5255.0 ms、verifier_reward 0.5646。
+- candidate：task_success 0.7500（90/120）、policy_violation 0、invalid_call 0、
+  schema_valid_rate 1.0000、p95 5711.9 ms、verifier_reward 0.7500；失败 **100% 为
+  `premature_final_response`**，其中 `refund_eligible` 20/20 全数失败、`refund_recovery` 失败 9/20。
+- 证据核验：两份 `report_id` 自哈希通过、4 个私有产物 SHA-256 独立重算一致、
+  回传公开副本与远端私有原件逐字段相等。
+- 发布判定 **NO-GO / deployment=baseline**，唯一失败门禁 `success_delta`（−0.0333 < +0.05）；
+  其余四项通过（policy_violation_delta −16、invalid_call 0、p95 比值 1.0870、evidence_complete）。
+- 未进入：`serve` 的 baseline 回滚部署与允许/拒绝/异常恢复三条演示流程；R3 阶段状态未改。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | 本地全量门禁（HEAD 前）`.venv/bin/pytest -q` / Ruff / mypy / lock / diff | 624 passed；65 源文件；105 packages；全绿 |
+| 2026-08-11 | 三份既有真实证据 `run_id` 复算 + R1 两份 release 报告加载 | `07671235…`/`d57654e9…`/`29648b8c…` 一致；GO/candidate 与 NO-GO/baseline 可加载 |
+| 2026-08-11 | gpu-5090 `uv sync --extra dev --extra train --frozen` | 卸载 `veritool-rl==0.0.1`，装入 `retail-agent-ops==0.0.1`；import smoke 通过 |
+| 2026-08-11 | holdout base（GPU 0，20m9s / 本体 286.98s） | 120/120；task_success 0.7833；p95 5255.0 ms |
+| 2026-08-11 | holdout candidate（GPU 0，9m19s / 本体 544.21s） | 120/120；task_success 0.7500；p95 5711.9 ms |
+| 2026-08-11 | sealed 证据回传与独立核验 | `report_id` 自哈希 + 4 私有产物哈希 + 公开=私有，全部一致 |
+| 2026-08-11 | `release --pipeline formal_release` | NO-GO / baseline；仅 `success_delta` 失败 |
+
+## 2026-08-11 — R3 serve：按 NO-GO 回滚部署与三条演示流程
+
+- gpu-5090 物理 GPU 0 加载冻结 Qwen3-4B base，`127.0.0.1:8000`；`service.json` 与 `/health`
+  一致声明 `NO-GO` / `deployment=baseline` / `adapter_loaded=false` /
+  `failed_gate_ids=["success_delta"]`，`policy_id` 无 adapter 后缀（对照候选证据的
+  `…+adapter:…#34544fac3ec9`）。
+- 三条流程全部成功且轨迹可见：允许（`get_order` → `refund_order` → refunded）、
+  拒绝（`get_order` 返回 `not_found` → 停止且未尝试退款、`violations=[]`）、
+  异常恢复（`refund_order` 遇 `transient_error` → 重试 → refunded）。
+- 并发上限真实验证：并发两请求，先到 200、后到 **503**「服务已达并发上限」。
+- 诚实记录：并发测试中作为陪衬的另一条 `refund_eligible` 失败
+  （`termination=final_response`）——base 在 qualification 上也会"说完就停"，
+  演示挑选的成功案例不代表全对。
+- 收尾：服务已关闭、8000 端口释放、远端工作树干净；系统盘日志/脚本已移入数据盘
+  `reports/retail_ops/v1/r3/`（仍被 `.gitignore` 覆盖），`/home/tongjiakai` 无残留。
+- **R3 验收目标 4/5 达成**；未达成项是「面试可演示交付」，依赖尚未产出的模型卡、系统卡、
+  演示流程与第一版简历证据。R3 阶段状态保持「当前」。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | 远端 R1 qualification `build`（CPU） | 12 条任务 + manifest |
+| 2026-08-11 | `serve --pipeline formal_serve`（GPU 0） | baseline 回滚部署，adapter_loaded=false |
+| 2026-08-11 | 允许 / 拒绝 / 异常恢复 三条 episode | 三条 `success=true`、`violations=[]`，轨迹完整 |
+| 2026-08-11 | 并发两请求 | 200 + 503（并发上限生效） |
