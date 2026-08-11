@@ -95,9 +95,20 @@ R4 Task 1：对多步家族做重复采样，产出 `train-export-002`，并把 
       teacher 质量门复算一致（238/240 = 99.17%，`refund_denied_window` 0.95）。
 - [x] E：治理测试把 R4 新配置纳入既有扫描（secret/绝对路径/私有根/BFCL/holdout/模型 pin），
       并断言新导出与 `reports/retail_ops/v1/r4/` 仍被 `.gitignore` 覆盖。经突变验证。
-- [ ] F（**待用户批准**）：提交 → 同步 gpu-5090 → GPU 训练（约 224 s）→ dev 候选评测
-      （约 251 s）→ 与既有 `qwen3-4b-dev-base-001` 配对比较。
-- 验收结果：**636 passed**（624 → 636，+12）、Ruff、mypy 65 源文件、`uv lock --check`、
+- [x] F：提交（`4942e0c`/`3e9e5fa`/`c4f2bdc`）→ 同步 gpu-5090 → GPU 训练 `sft-002`
+      （466.4 s / 75 steps / 峰值 5.54 GB，`EXIT=0`）→ dev 候选评测 `candidate-002`
+      （299.3 s，`EXIT=0`）→ `compare_dev_runs` 配对契约通过（base 未重跑）。
+- **结果：判负（LOG-20260811-09）。** `refund_eligible` **0/10**，门槛 ≥7/10 未达成。
+      逐场景 R3→R4：四个单步类保持全对、`refund_recovery` 3/10→**5/10**、
+      `refund_eligible` 0/10→**0/10**；合计 43/60→45/60，仍低于 base 48/60
+      （`task_success` delta −0.0500）。格式/安全三项全部保住（0 / 0 / 1.0）。
+      **按预设停止条件停止**，不改训练目标、不改 system prompt、不扩展算法。
+      未消耗封存 holdout 的第二次观测。
+- 被证伪的假设：决策点比例 3:1→1:1 使 `refund_eligible` 变化**精确为 0**，
+      因此"条件动作比例是主要成因"在该量级上不成立。残余嫌疑转向**请求措辞**
+      （`refund_recovery` 祈使句 +2 而 `refund_eligible` 核实/检查框定 +0）——这是观察，
+      **未据此启动任何改动**，是否花第二轮验证由用户决定。
+- 验收结果：**638 passed**（624 → 638，+14）、Ruff、mypy 65 源文件、`uv lock --check`、
   `git diff --check` 全绿。
 - 授权状态：GPU **否**（训练与评测各需单独确认）、API **否**、数据下载 **否**、
   holdout 执行 **否**、公开发布 **否**。

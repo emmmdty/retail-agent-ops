@@ -485,3 +485,21 @@ train/dev/holdout、调用模型或进入训练。
 |---|---|---|
 | 2026-08-11 | `build --config …r4_train_export_rebalanced.yaml`（本地 CPU） | 240→400 行 sft；provenance 与 001 逐字节相同；质量门 238/240 复算一致 |
 | 2026-08-11 | R4 Task 1 CPU 收口全量门禁 | **636 passed**（624→636）；Ruff / mypy 65 源文件 / lock / diff 全绿 |
+
+## 2026-08-11 — R4 Task 1 GPU 执行与判负
+
+- 训练 `sft-002`（gpu-5090 物理 GPU 0）：466.4 s / 75 steps / 峰值 5.54 GB，`EXIT=0`，
+  adapter 重载校验通过；`train_loss` 0.3722→0.2198。
+- dev 候选评测 `candidate-002`：299.3 s，`EXIT=0`；`compare_dev_runs` 配对契约通过，
+  base 沿用既有 `qwen3-4b-dev-base-001`（未重跑）。
+- **判负**：`refund_eligible` **0/10**（门槛 ≥7/10）。逐场景 R3→R4：四个单步类保持全对、
+  `refund_recovery` 3/10→5/10、`refund_eligible` 0/10→0/10；合计 43/60→45/60，
+  仍低于 base 48/60。格式/安全三项全部保住（0 / 0 / 1.0）。
+- 按预设停止条件停止，不转而改训练目标或提示词。未消耗 holdout 第二次观测。
+- 结论与被证伪的假设见 `findings.md` 同日小节与 LOG-20260811-09。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-11 | `build --config …r4_sft_rebalanced.yaml`（gpu-5090 GPU 0） | 466.4 s，75 steps，峰值 5.54 GB，EXIT=0 |
+| 2026-08-11 | `evaluate --config …r4_qwen3_4b_candidate.yaml`（同卡） | 299.3 s，EXIT=0，task_success 0.7500（45/60） |
+| 2026-08-11 | `compare_dev_runs`（本地 CPU） | 配对契约通过；task_success delta −0.0500 |

@@ -85,11 +85,18 @@ git diff --check
   交付文档见 `docs/MODEL_CARD.md`、`docs/SYSTEM_CARD.md`、`docs/DEMO.md`、
   `docs/RESUME_EVIDENCE.md`。R4 执行提示词：`docs/handoffs/2026-08-11-r4-execution-prompt.md`
   （注意：该提示词第五节对方案一的成本估计已被 LOG-20260811-06 推翻，以后者为准）。
-- R4 第一轮已裁定（LOG-20260811-07）：方案 = **对多步家族重复采样**（不新增任务、
-  不改冻结配额、不调 teacher API）；预设收益门槛 = **机制导向**——dev 上
-  `refund_eligible` 从 0/10 回到 **≥7/10**，且 `invalid_call_count`/`policy_violation_count`
-  保持 0、`schema_valid_rate` 保持 1.0。**达不到即停止，不得转而扩展算法。**
-  主判据不是 `task_success` 总数、不是 `verifier_reward`、不是 loss。
+- **R4 第一轮已执行完毕并判负（LOG-20260811-09）**。方案是对多步家族重复采样
+  （`train-export-002`，两类各 ×3，sft 240→400 行），候选 `sft-002` / `candidate-002`。
+  结果：`refund_eligible` **0/10**（门槛 ≥7/10）未达成；`refund_recovery` 3/10→**5/10**；
+  合计 43/60→45/60，仍低于 base 48/60。格式/安全三项保住（0 / 0 / 1.0）。
+  **已按预设停止条件停止**——不改训练目标、不改 system prompt、不扩展算法。
+- **被证伪的假设**：把决策点比例从 3:1 拉到 1:1，`refund_eligible` 变化**精确为 0**。
+  "条件动作比例是该行为的主要成因"在该量级上不成立。残余嫌疑转向**请求措辞**：
+  同样 ×3，祈使句家族 `refund_recovery` +2，而两个变体都以核实/检查开头的
+  `refund_eligible` +0。**这是观察不是结论，未据此启动任何改动**；是否开第二轮由用户决定。
+- `verifier_reward` 已**三次**与主判据反向（R3 dev、封存 holdout、R4 dev）；
+  本轮 `train_loss` 更低（0.3722→0.2198）而目标行为未改善。可优化的代理量全在改善、
+  真实任务没有——这是本项目坚持"主判据是最终状态与政策 verifier"的实测依据。
 - 发布结论（2026-08-11，封存 120 条 holdout，LOG-20260811-03）：**NO-GO / baseline**，
   唯一失败门禁 `success_delta`（−0.0333 < +0.05）。base task_success 0.7833（94/120）、
   candidate 0.7500（90/120）；候选 policy_violation 16→0、invalid_call 41→0、

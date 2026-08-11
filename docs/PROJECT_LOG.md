@@ -2551,3 +2551,69 @@ TORCH_DISABLE_NATIVE_JIT=1`，seed 0，config `retail_ops_v1_r4_sft_rebalanced.y
 失败 taxonomy，不含延迟门禁。若后续 dev 评测的延迟数被引用，须按共享 GPU 口径标注。
 
 **尚未发生**：任何训练结果、任何 dev 候选评测、任何配对比较结论、任何 holdout 访问。
+
+### LOG-20260811-09：R4 第一轮判负——重平衡使 refund_recovery +2，但 refund_eligible 纹丝不动 0/10
+
+- 日期：2026-08-11
+- 阶段/任务：R4 / Task 1（重平衡训练 + dev 配对评测）
+- 状态：解决（**未达预设门槛，本轮判负并停止**）
+- 关联：LOG-20260811-08（运行启动）、LOG-20260811-07（门槛裁定）、LOG-20260811-06（根因）
+
+**运行事实**（gpu-5090 物理 GPU 0，RTX 5090，`GPU-07af326b-…`）：
+训练 20:58:50→21:07:23（`train_runtime` 466.4 s，75 steps，峰值 5.54 GB，`EXIT=0`，
+adapter 重载校验 `loaded: true`）；dev 候选评测 21:10:17→21:15:28
+（`wall_time_seconds` 299.3 s，峰值 2.95 GB，`EXIT=0`）。
+候选 `policy_id` = `qwen:Qwen/Qwen3-4B@8cd0101f…+adapter:reports/retail_ops/v1/r4/sft-002#cefbd181ae7f`。
+`compare_dev_runs` 的配对契约**通过**，delta 可归因于 adapter：base
+`d57654e9…`（既有 `qwen3-4b-dev-base-001`，未重跑）对候选 `8a994286…`。
+
+**判定：未达预设门槛（LOG-20260811-07）。**
+
+| 门槛项 | 要求 | 实测 | 结果 |
+|---|---|---|---|
+| `refund_eligible` | ≥7/10 | **0/10** | **未通过** |
+| `invalid_call_count` | 0 | 0 | 通过 |
+| `policy_violation_count` | 0 | 0 | 通过 |
+| `schema_valid_rate` | 1.0 | 1.0 | 通过 |
+
+逐场景（R3 候选 → R4 候选）：`lookup_status` 10/10→10/10、三个 `refund_denied_*` 各
+10/10→10/10、`refund_recovery` **3/10→5/10**、`refund_eligible` **0/10→0/10**。
+合计 43/60→45/60（0.7167→0.7500），仍低于 base 的 48/60（0.800），`task_success`
+delta 为 **−0.0500**。15 条失败**全部** `termination=final_response`、`violations=[]`，
+末句依旧是"请问您需要我为您办理退款吗？"这类请求确认。
+
+**这个负结果证伪了什么（本条最有价值的部分）**：本轮把「get_order 已返回 + 用户以核实/
+检查口吻要求退款」这一族内的训练比例从 **3:1 拉到 1:1**（`refund_eligible` 40→120 行），
+`refund_eligible` 的通过数变化是**精确的 0**。因此
+**"决策点上的条件动作比例是该行为的主要成因"这一假设，在 1:1 这个量级上不成立**。
+不是"改善不显著"，是完全没动——把样本数翻三倍这件事，对这一类的作用为零。
+
+**同一处理下两个多步家族的分化，是本轮唯一的正向信息**：两类都 ×3，
+`refund_recovery` +2 而 `refund_eligible` +0。两者的区别不在样本数（都是 40→120），
+而在 `_user_request`（`formal_tasks.py:516`）的措辞：`refund_recovery` 是无"核实"字样的
+祈使句（"请为订单 X 按 Y 办理退款；临时失败时重试一次"），`refund_eligible` 的两个变体
+**都**以核实/检查开头（"请核实订单 X 并按 Y 办理退款" / "订单 X 需要因 Y 退款，请先检查
+后处理"）。据此，残余决定因素更像是**请求措辞把任务框定成"先核实再回报"**，而不是数据量。
+**这是观察，不是已验证结论，本条不据此启动任何改动**——是否花掉第二轮验证它由用户决定。
+
+**`verifier_reward` 第三次与主判据背离**：0.5792→0.7500 上升而 `task_success` 下降。
+前两次分别发生在 R3 dev（LOG-20260807-09）与封存 holdout（LOG-20260811-03）。
+三次同向，足以把"奖励值不能代替最终状态判据"从原则变成本项目的实测规律。
+
+**格式/安全侧完整保住**：`invalid_call` 21→0、`policy_violation` 8→0、
+`schema_valid_rate` 0.7812→1.0000，与 R3 候选持平。这验证了"重复采样而不降采 denied 三类"
+这个取舍是对的——比例照样被改变，而已获得的收益一件没丢。
+
+**训练侧的旁证**：`train_loss` 0.3722→**0.2198**、`eval_mean_token_accuracy`
+0.9436→0.9468。**损失更低而目标行为没有改善**，这与 R3 记录的"loss/奖励不是判据"是同一件事的
+第二种表现形式。`average_tool_calls` 1.10→1.17、`average_turns` 2.05→2.08、
+`average_output_tokens` 149→156——模型确实"多调了一点、话也更多了一点"，但增量全部落在
+`refund_recovery`。
+
+**延迟数的口径限制**：本次评测期间 GPU 0 被他人占用、利用率 96–98%，
+`average_latency_ms` 4176→4979、`p95` 5211→5689 的变化**不得**表述为模型差异；
+本轮判据不含延迟门禁，此处只作记录。同理训练 466 s 而非按 R3 线性外推的 224 s。
+
+**停止**：按 LOG-20260811-07 的预设停止条件，本轮判负即停止，**不转而改训练目标、
+不改 system prompt、不扩展算法**。是否开第二轮、验证哪个假设，是下一个用户决策门。
+未消耗封存 holdout 的第二次观测。
