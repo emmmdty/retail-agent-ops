@@ -432,6 +432,7 @@ def test_four_stable_interfaces_have_config_and_module_homes() -> None:
 _R4_CONFIG_NAMES = (
     "retail_ops/build/retail_ops_v1_r4_train_export_rebalanced.yaml",
     "retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml",
 )
 
 

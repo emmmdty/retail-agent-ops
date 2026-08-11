@@ -24,6 +24,8 @@ _R2_EXPORT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r2_train_expor
 _R3_SFT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r3_sft.yaml"
 _R4_EXPORT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r4_train_export_rebalanced.yaml"
 _R4_SFT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml"
+_R3_CANDIDATE_CONFIG = CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml"
+_R4_CANDIDATE_CONFIG = CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -94,3 +96,32 @@ def test_r4_sft_config_changes_exactly_one_variable() -> None:
         assert r4[section] == r3[section], section
     changed = {key for key in r3["data"] if r3["data"][key] != r4["data"][key]}
     assert changed == {"train_relpath"}
+
+
+def test_r4_candidate_config_differs_from_r3_only_by_adapter() -> None:
+    """dev 配对要能把 delta 归因到"训练数据换了"，候选评测两侧就必须只差 adapter。
+
+    model / generation / dataset_version / dev_manifest_path 任一不同，delta 都会混入
+    与本轮实验无关的变量；而 base 侧沿用既有 qwen3-4b-dev-base-001，不重跑。
+    """
+    r3 = _load(_R3_CANDIDATE_CONFIG)
+    r4 = _load(_R4_CANDIDATE_CONFIG)
+
+    assert set(r3) == set(r4)
+    assert {key for key in r3 if r3[key] != r4[key]} == {"attempt_id", "adapter"}
+    assert r4["attempt_id"] == "qwen3-4b-dev-candidate-002"
+    assert r4["adapter"]["run_dir"] == "reports/retail_ops/v1/r4/sft-002"
+
+
+def test_r4_candidate_config_pins_every_adapter_file() -> None:
+    """adapter 的每个文件都必须有 64 位 SHA-256：评测在产物落盘前逐文件核对，
+    少 pin 一个文件就等于允许那一个文件被替换。"""
+    adapter = _load(_R4_CANDIDATE_CONFIG)["adapter"]["file_sha256"]
+
+    assert set(adapter) == set(_load(_R3_CANDIDATE_CONFIG)["adapter"]["file_sha256"])
+    for name, digest in adapter.items():
+        assert len(digest) == 64, name
+        assert all(char in "0123456789abcdef" for char in digest), name
+    # 权重必须确实是新的一份，不能指回 R3 的 adapter。
+    r3_weights = _load(_R3_CANDIDATE_CONFIG)["adapter"]["file_sha256"]["adapter_model.safetensors"]
+    assert adapter["adapter_model.safetensors"] != r3_weights
