@@ -103,7 +103,28 @@ git diff --check
 - **被证伪的假设**：把决策点比例从 3:1 拉到 1:1，`refund_eligible` 变化**精确为 0**。
   "条件动作比例是该行为的主要成因"在该量级上不成立。残余嫌疑转向**请求措辞**：
   同样 ×3，祈使句家族 `refund_recovery` +2，而两个变体都以核实/检查开头的
-  `refund_eligible` +0。**这是观察不是结论，未据此启动任何改动**；是否开第二轮由用户决定。
+  `refund_eligible` +0。**这是观察不是结论，未据此启动任何改动**。
+- **R4 第二轮已启动**（用户批准设计
+  `docs/superpowers/specs/2026-08-13-r4-round2-ablation-design.md`，执行提示词
+  `docs/handoffs/2026-08-13-r4-round2-execution-prompt.md`）。本轮是**诊断性消融，
+  不是发布候选生产**：三候选并列（不叠加）各只改一个变量，共同参照点 `sft-002`——
+  A 改 `lora.target_modules`（加 MLP 三投影）、B 改训练数据（`train-export-003`，
+  多步样本追加终局回复）、C 改 `runner.SYSTEM_PROMPT`。达标门槛与第一轮相同不下调；
+  诊断读数是任一候选 `refund_eligible` ≥3/10 即"该层有信号"，三个均 0/10 则三类
+  解释全部排除。**每个结论必须标注 n = 10 的统计限度**，3/10 与 5/10 的差异不足以排序。
+- **执行顺序 A → B → C 是强制的**：`SYSTEM_PROMPT` 被 `base_evaluation.py:381` 与
+  `sealed_evaluation.py:217` 哈希，且 `system_prompt_sha256` 在 dev 的 `PAIRING_FIELDS`
+  内。C 一旦提交，A/B 就无法在旧 prompt 下评测且配对基线 `qwen3-4b-dev-base-001` 失效；
+  又因 `_current_code_commit` 拒绝脏工作树，**C 的改动必须等 A/B 的 GPU 跑完才能进
+  工作树**。C 另需重跑 base dev，其读数不可与 A/B 的 delta 直接相比，跨候选只能比
+  `refund_eligible` 的绝对通过数。
+- **被推翻的实现假设（2026-08-13）**：改 `runner.SYSTEM_PROMPT` 后重新导出**不会**换掉
+  训练集的 system 消息。`trajectory_to_sft_example`（`core/generators.py:34`）读的是
+  `trajectory.metadata["system_prompt"]`，而 teacher 证据是已持久化的轨迹（240 份全是
+  旧值，来源 teacher 238 / internal_reference 2），且 `_require_evidence_binds_record`
+  不比较该字段——会**静默**产出变量没生效的导出。因此导出侧新增两个**必填**配置键：
+  `sft_terminal_response`（场景列表）与 `sft_system_prompt_sha256`（声明**期望哈希**
+  而非布尔，使"常量忘了改"成为硬错误）。
 - `verifier_reward` 已**三次**与主判据反向（R3 dev、封存 holdout、R4 dev）；
   本轮 `train_loss` 更低（0.3722→0.2198）而目标行为未改善。可优化的代理量全在改善、
   真实任务没有——这是本项目坚持"主判据是最终状态与政策 verifier"的实测依据。
@@ -142,7 +163,7 @@ git diff --check
   两份 sealed 证据已于 2026-08-11 产出（`report_id` 是全字段自哈希），**再改即作废**。
 - 资源约束：gpu-5090 的数据一律落 `/mnt/aidata`，不得写系统盘（LOG-20260811-02）。
   远端 `/tmp` 会被重启清空，不可用于承载跨故障的运行日志。
-- 当前基线：624 tests passed，Ruff/mypy/uv lock 全部通过。
+- 当前基线：665 tests passed，Ruff/mypy/uv lock 全部通过。
 - 冻结契约提醒：`formal_tasks.py` 的 `assert_exact_quotas` 把 train/dev/holdout 每类别
   40/10/20 写成硬契约。新增任务需重新冻结数据集并改变 `dataset_version` 与 manifest 哈希，
   已有全部评测证据的可比性随之作废——这不是"多花点 API 钱"的事。
