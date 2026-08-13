@@ -31,7 +31,7 @@
 3. 行为变更先写失败测试，再实现最小闭环。
 4. 每两次重要查看/检索后，把发现写入 `findings.md`。
 5. 完成一个阶段后更新 `progress.md` 和 `docs/EXECUTION_PLAN.md` 状态。
-6. 触发长期决策、实验结果、失败或 go/no-go 时，追加 `docs/PROJECT_LOG.md`，历史不得改写。
+6. 只有**改变方法论选型或工程实践**的事件（方案选型及其被证伪、正式 GPU/长任务运行、go/no-go、契约冻结、约束变化）才追加 `docs/PROJECT_LOG.md`；代码 bug、测试、重构、配置微调不写。门槛见 CLAUDE.md 第 7 节，历史不得改写。
 7. 最终至少运行 `.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/mypy` 和 `git diff --check`。
 
 ## 当前状态

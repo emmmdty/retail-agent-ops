@@ -62,7 +62,7 @@ UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --project tool
 1. 更新 `progress.md` 的命令、结果和文件清单。
 2. 把跨会话有效的发现写入 `findings.md`。
 3. 达到阶段门时更新 `docs/EXECUTION_PLAN.md`，不得提前标完成。
-4. 重大决定、失败、GPU 运行或结论追加 `docs/PROJECT_LOG.md`。
+4. 只有改变方法论选型或工程实践的事件才追加 `docs/PROJECT_LOG.md`（门槛见 CLAUDE.md 第 7 节）；代码 bug、测试与重构不写。
 5. 运行测试、Ruff、mypy、配置解析和 `git diff --check`。
 6. 最终报告实际完成项、未完成项、风险和下一入口，不用计划目标冒充结果。
 

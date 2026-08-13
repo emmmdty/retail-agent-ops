@@ -31,7 +31,7 @@ RetailAgentOps 是面向零售订单、退款和客服操作的单卡工具 Agen
 - [`docs/REPO_MAP.md`](./docs/REPO_MAP.md)：目录职责、四接口分层和路径对照。
 - [`docs/LEGACY_INVENTORY.md`](./docs/LEGACY_INVENTORY.md)：原仓库、历史成果和未迁入生成物。
 - [`task_plan.md`](./task_plan.md)、[`findings.md`](./findings.md)、[`progress.md`](./progress.md)：当前任务工作记忆。
-- [`docs/PROJECT_LOG.md`](./docs/PROJECT_LOG.md)：append-only 的长期执行与决策记录。
+- [`docs/PROJECT_LOG.md`](./docs/PROJECT_LOG.md)：append-only 的长期档案，只记录改变方法论选型或工程实践的事件。
 
 ## 本地验证
 
