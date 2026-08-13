@@ -763,3 +763,68 @@ LOG-20260807-06 已实测 TRL 1.8 自动换用带 `{% generation %}` 的训练�
 - **纪律执行**：预设门槛是改动前写进 `task_plan.md` 与 LOG-20260811-07 的，
   达不到即停止。这里没有事后调整门槛、没有改判据、没有转而扩展算法。
   一个诚实的负结果加一个被证伪的假设，是本轮的全部产出。
+
+## R4 第二轮开工核查：候选 C 的实现假设与代码事实冲突（2026-08-13）
+
+设计 spec §4.3 与执行提示词第 3 节都假定「改 `runner.SYSTEM_PROMPT` 后重新导出
+`train-export-004`，system 消息就会换成新 prompt」。**实测这个假设不成立。**
+
+- `trajectory_to_sft_example`（`core/generators.py:34`）的 system 消息取自
+  `trajectory.metadata["system_prompt"]`，而 `metadata` 是 `run_episode`
+  （`core/agent/runner.py:141`）在**采集当时**写入轨迹的。
+- teacher 证据是**已持久化的轨迹 JSON**：240 份
+  `teacher-collection/teacher-full-001/*.json` 的
+  `trajectory.metadata.system_prompt` 全部是旧 prompt（sha256 前缀 `d919602e25f2`）。
+- `selection.json` 显示导出来源是 **teacher 238 / internal_reference 2**。
+  只有 `internal_reference` 那 2 条走 `_build_reference_trajectory` → 实时
+  `run_episode`，会拿到新 prompt。
+
+因此改常量后重新导出，**238/240 条样本的 system 消息逐字节不变**。
+`_require_evidence_binds_record` 比较的是 `task_fingerprint` / `trajectory.task` /
+`dataset_version` / `bundle_sha256` / `manifest_sha256`，**都不含 system_prompt**，
+所以这不会硬失败——会**静默**产出一份 99.2% 仍是旧 prompt 的 `train-export-004`，
+产物看起来完全正常，而 C 的变量根本没生效。这是本轮最危险的失败模式。
+
+**不受影响的部分**：dev 评测两侧都在运行时调 `run_episode`，读的是当前常量，
+所以「新 prompt 下的 base（零训练）」这条读数——spec §4.3 标为本轮最有价值的单条
+结论——完全成立，不依赖导出侧如何处理。受影响的只有 C 的 candidate 侧训练数据。
+
+## R4 第二轮 Stage 1 的实现取舍（2026-08-13）
+
+- **两个新变换键都做成必填，且 `sft_system_prompt_sha256` 声明的是期望哈希而不是布尔。**
+  布尔值下「配置写了 `true` 但常量忘了改」会产出一份与未改写逐字节相同的训练集且
+  不报错——正是本轮开工时被推翻的那个假设的同一个形状。让配置声明期望哈希，
+  `export_formal_train` 拿它与当前 `runner.SYSTEM_PROMPT` 的实际哈希比对，
+  不符即硬失败，把静默失效变成硬错误。
+- **终局回复是独立的 assistant 消息，不与 tool_call 同处一条。** `parser.py` 把
+  「文本 + 工具调用同时出现」判为 `mixed_tool_call_content`，拼进去会把已取得的
+  `invalid_call = 0` 打回去。实测导出后 400 条样本里工具调用消息 `content` 非空的
+  违反者为 **0**。
+- **决策点未被稀释，这是可执行断言而不是推理。** 终局回复加在 `refund_order` 之后，
+  决策点是 `get_order` 返回之后。实测 `train-export-002` 与 `003` 的决策点形状分布
+  **都是 text 160 : tool_call 240，完全一致**。
+- **`_last_successful_refund` 反向遍历取最后一次成功的退款返回。** 突变验证：改成
+  正向遍历（取 `refund_recovery` 首次 `transient_error` 那次）后，
+  `test_export_terminal_response_uses_the_last_successful_refund` 立即失败。
+  其中「末尾那次失败则回退」的分支在当前冻结数据下**不可达**（只接受成功轨迹，
+  且 REFUND 类 verifier 要求 `_refund_applied`），已用一条直接测私有变换的用例覆盖，
+  不让它停留在"写了但从未执行过"的状态。
+- **治理扫描列表改为「漏登记就红」。** `_R4_CONFIG_NAMES` 是手工维护的，而全部治理
+  断言的价值取决于它是否完整——漏登记一份配置，那份配置就完全不受 secret / 绝对路径 /
+  私有根 / BFCL / holdout 检查约束且没有任何信号。新增
+  `test_every_r4_config_is_enrolled_in_the_governance_scan` 双向比对磁盘与列表，
+  两个方向各经突变验证。
+- **`train-export-003` 实测**：`train.jsonl`/`selection.json` 与 001 **逐字节相同**
+  （`29f02425…`/`f60744f7…`）；400 行、场景计数 40/40/40/40/120/120 与 002 相同；
+  末尾 role 分布由 002 的 `assistant 160 / tool 240` 变为 **`assistant 400`**——
+  多步路径全部获得自然终点，这正是候选 B 要造的变化；多步 240 条各仅追加一条消息、
+  单步 160 条逐字段不变。**这是输入分布的变化，不是能力证明。**
+
+### 执行顺序的硬约束（Stage 划分的全部理由）
+
+`SYSTEM_PROMPT` 被 `base_evaluation.py:381` 与 `sealed_evaluation.py:217` 哈希，且
+`system_prompt_sha256` 在 dev 的 `PAIRING_FIELDS` 内。一旦提交 C 的常量改动，
+A/B 就再也无法在旧 prompt 下评测，其配对基线 `qwen3-4b-dev-base-001` 同时失效。
+又因 `_current_code_commit` 拒绝脏工作树，C 的改动连"放在工作树里不提交"都不行。
+**因此 C 的全部改动（含它的两份配置）必须等 A/B 的 GPU 跑完才能进工作树**，
+Stage 1 只交付 C 所需的导出侧能力，不交付 C 的配置。

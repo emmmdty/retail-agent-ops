@@ -503,3 +503,29 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-11 | `build --config …r4_sft_rebalanced.yaml`（gpu-5090 GPU 0） | 466.4 s，75 steps，峰值 5.54 GB，EXIT=0 |
 | 2026-08-11 | `evaluate --config …r4_qwen3_4b_candidate.yaml`（同卡） | 299.3 s，EXIT=0，task_success 0.7500（45/60） |
 | 2026-08-11 | `compare_dev_runs`（本地 CPU） | 配对契约通过；task_success delta −0.0500 |
+
+## 2026-08-13 — R4 第二轮 Stage 1（三候选消融的 CPU 侧，A/B 就绪）
+
+- 开工核查推翻设计 spec §4.3 的一条实现假设：`trajectory_to_sft_example` 的 system 消息
+  取自 `trajectory.metadata["system_prompt"]`，而 teacher 证据是已持久化的轨迹
+  （240 份全是旧 prompt，来源 teacher 238 / internal_reference 2）。改
+  `runner.SYSTEM_PROMPT` 后重新导出，238/240 条逐字节不变且**不会报错**。
+  已请示用户，裁定：**在导出侧改写 system 消息**。
+- 实现（TDD，三处安全关键断言经突变验证）：`export_formal_train` /
+  `write_formal_train_export` 新增 `sft_terminal_response` 与 `sft_system_prompt_sha256`
+  两项纯局部变换；`train_export` 配置契约两键均**必填**；后者声明期望哈希而非布尔，
+  使"常量忘了改"成为硬错误。
+- 新增配置：候选 A（`retail_ops_v1_r4_round2_a_sft_lora_full.yaml`，唯一改
+  `lora.target_modules`）、候选 B 导出与训练两份（`train-export-003`）。
+  三条单变量纪律断言各自逐字段比对参照点 `retail_ops_v1_r4_sft_rebalanced.yaml`。
+- 治理测试新增「漏登记就红」的双向比对，两个方向各经突变验证。
+- **候选 C 的配置与常量改动刻意不在本阶段**：`SYSTEM_PROMPT` 一旦提交，A/B 就无法在
+  旧 prompt 下评测且配对基线失效；`_current_code_commit` 又拒绝脏工作树，所以 C 必须
+  等 A/B 的 GPU 跑完。
+- 候选评测 config 一律**推迟**到训练之后——`adapter.file_sha256` 是运行产物。
+- **未执行**任何 GPU 训练或评测。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-13 | `build --config …r4_round2_b_train_export.yaml`（本地 CPU，0.56 s） | `train-export-003`：provenance 与 001 逐字节相同；400 行；末尾 role 由 `assistant 160/tool 240` 变为 `assistant 400`；决策点形状仍 160:240；工具调用消息 content 非空违反者 0 |
+| 2026-08-13 | Stage 1 收口全量门禁 | **665 passed**（638→665）；Ruff / mypy 65 源文件 / lock / diff 全绿 |
