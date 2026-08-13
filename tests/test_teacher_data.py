@@ -900,3 +900,494 @@ def test_write_formal_train_export_records_oversample_manifest(tmp_path: Path) -
     assert manifest["factors"] == {"lookup_status": 2}
     assert manifest["train_row_count"] == 1
     assert manifest["sft_row_count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# R4 第二轮候选 B：多步样本末尾追加独立的 assistant 终局回复
+# ---------------------------------------------------------------------------
+
+
+def _multi_step_fixture(
+    scenario: TaskScenario,
+) -> tuple[list[FormalTaskRecord], list[TeacherAttemptEvidence], dict[str, str]]:
+    """取该场景全部 train 记录，evidence 不带轨迹 → 走 Oracle internal_reference。
+
+    Oracle 会真实跑完 get_order + refund_order，因此产出的消息序列与正式导出
+    同形状（`refund_recovery` 同样会出现首次 transient_error 后重试）。
+    """
+    records = _real_train_records([scenario])[:4]
+    evidences = [_evidence(record.task.task_id, accepted=True) for record in records]
+    scenarios = {record.task.task_id: record.task.scenario.value for record in records}
+    return records, evidences, scenarios
+
+
+def _export_sft(
+    scenario: TaskScenario, **kwargs: Any
+) -> list[dict[str, Any]]:
+    records, evidences, scenarios = _multi_step_fixture(scenario)
+    _, _, _, sft_rows = export_formal_train(
+        records, evidences, _env_factory, _config(), scenarios, seed=0, **kwargs
+    )
+    return sft_rows
+
+
+def test_export_terminal_response_appends_independent_assistant_message() -> None:
+    """终局回复必须是**独立的** assistant 消息，不能拼进工具调用消息的 content。
+
+    `core/agent/parser.py` 把「文本 + 工具调用同时出现」判为 mixed_tool_call_content
+    即非法调用。把终局文本塞进工具调用消息会把 R3/R4 已取得的 invalid_call = 0
+    直接打回去——用一个已解决的失败换一个新的。
+    """
+    rows = _export_sft(
+        TaskScenario.REFUND_ELIGIBLE,
+        sft_terminal_response=["refund_eligible"],
+    )
+
+    for row in rows:
+        messages = row["messages"]
+        # 未启用时该场景以 tool 消息结尾；启用后末尾必须是一条纯文本 assistant。
+        last = messages[-1]
+        assert last["role"] == "assistant"
+        assert "tool_calls" not in last
+        assert last["content"]
+        assert messages[-2]["role"] == "tool"
+        # 工具调用消息的 content 仍然全部为空。
+        for message in messages:
+            if message.get("tool_calls"):
+                assert message["content"] == ""
+
+
+def test_export_terminal_response_fields_come_from_the_tool_return() -> None:
+    """模板三个字段只能来自样本自身的消息序列，不得引入工具从未返回的信息。
+
+    `refund_order` 的 observation 只有 {order_id, refund_status}；模板里出现金额、
+    到账时间或工单号，就是在教模型编造字段——用一个新的幻觉问题换掉当前问题。
+    """
+    rows = _export_sft(
+        TaskScenario.REFUND_ELIGIBLE,
+        sft_terminal_response=["refund_eligible"],
+    )
+
+    for row in rows:
+        messages = row["messages"]
+        call = next(
+            message
+            for message in reversed(messages)
+            if message.get("tool_calls")
+            and message["tool_calls"][0]["function"]["name"] == "refund_order"
+        )
+        reason = json.loads(call["tool_calls"][0]["function"]["arguments"])["reason"]
+        observation = json.loads(messages[-2]["content"])["content"]
+
+        assert messages[-1]["content"] == (
+            f"已为订单 {observation['order_id']} 按 {reason} 办理退款，"
+            f"当前退款状态为 {observation['refund_status']}。"
+        )
+
+
+def test_export_terminal_response_uses_the_last_successful_refund() -> None:
+    """`refund_recovery` 有两次 refund_order（首次 transient_error）。
+
+    终局回复必须挂在**最后一次成功的**那次之后；用首次失败的返回值会产出
+    "已办理退款，当前退款状态为 None" 这种自相矛盾的监督信号。
+    """
+    rows = _export_sft(
+        TaskScenario.REFUND_RECOVERY,
+        sft_terminal_response=["refund_recovery"],
+    )
+
+    for row in rows:
+        messages = row["messages"]
+        refund_returns = [
+            json.loads(message["content"])
+            for index, message in enumerate(messages)
+            if message["role"] == "tool"
+            and index > 0
+            and (messages[index - 1].get("tool_calls") or [{}])[0]
+            .get("function", {})
+            .get("name")
+            == "refund_order"
+        ]
+        # fixture 前提：确实存在一次失败 + 一次成功。
+        assert len(refund_returns) == 2
+        assert refund_returns[0]["ok"] is False
+        assert refund_returns[1]["ok"] is True
+        assert "refunded" in messages[-1]["content"]
+        assert "None" not in messages[-1]["content"]
+
+
+def test_export_terminal_response_default_is_identity() -> None:
+    """不传与传空列表都必须等价于原样导出。"""
+    without = _export_sft(TaskScenario.REFUND_ELIGIBLE)
+    empty = _export_sft(TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=[])
+
+    assert without == empty
+    assert all(row["messages"][-1]["role"] == "tool" for row in without)
+
+
+def test_export_terminal_response_rejects_unknown_scenario() -> None:
+    """写错场景名必须硬失败：静默无效会产出与未启用逐字节相同的产物，
+    却让整轮结论挂在一个没发生的改动上。"""
+    records, evidences, scenarios = _multi_step_fixture(TaskScenario.REFUND_ELIGIBLE)
+
+    with pytest.raises(ValueError, match="未知场景"):
+        export_formal_train(
+            records,
+            evidences,
+            _env_factory,
+            _config(),
+            scenarios,
+            seed=0,
+            sft_terminal_response=["refund_eligible_typo"],
+        )
+
+
+def test_export_terminal_response_rejects_scenario_without_successful_refund() -> None:
+    """对没有成功 refund_order 的场景启用终局回复，必须硬失败而不是静默跳过。
+
+    `lookup_status` 之类的单步场景根本没有退款返回值可填。静默跳过会让配置
+    声称的改动与实际产物不一致，且事后无法从产物分辨。
+    """
+    records, evidences, scenarios = _multi_step_fixture(TaskScenario.LOOKUP_STATUS)
+
+    with pytest.raises(ValueError, match="refund_order"):
+        export_formal_train(
+            records,
+            evidences,
+            _env_factory,
+            _config(),
+            scenarios,
+            seed=0,
+            sft_terminal_response=["lookup_status"],
+        )
+
+
+def test_export_terminal_response_preserves_the_decision_point_shape() -> None:
+    """终局回复不得稀释决策点。
+
+    决策点是「`get_order` 已返回之后紧接的那个 assistant 消息的形状」，而终局回复
+    加在 `refund_order` **之后**。两个位置不同，因此该形状必须一个字节不变。
+    这是设计里的核心论证，必须由断言证明，不能靠推理。
+    """
+
+    def decision_shape(rows: list[dict[str, Any]]) -> list[str]:
+        shapes = []
+        for row in rows:
+            messages = row["messages"]
+            index = next(i for i, m in enumerate(messages) if m["role"] == "tool")
+            following = messages[index + 1] if index + 1 < len(messages) else None
+            if following is None:
+                shapes.append("NONE")
+            else:
+                shapes.append("tool_call" if following.get("tool_calls") else "text")
+        return shapes
+
+    before = _export_sft(TaskScenario.REFUND_ELIGIBLE)
+    after = _export_sft(
+        TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"]
+    )
+
+    assert decision_shape(before) == decision_shape(after)
+    assert set(decision_shape(after)) == {"tool_call"}
+
+
+def test_export_terminal_response_touches_nothing_but_the_appended_message() -> None:
+    """除末尾新增的一条消息外，样本必须逐字段不变——B 是纯局部变换。"""
+    before = _export_sft(TaskScenario.REFUND_ELIGIBLE)
+    after = _export_sft(
+        TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"]
+    )
+
+    assert len(before) == len(after)
+    for old, new in zip(before, after, strict=True):
+        assert new["messages"][:-1] == old["messages"]
+        assert len(new["messages"]) == len(old["messages"]) + 1
+        assert {k: v for k, v in new.items() if k != "messages"} == {
+            k: v for k, v in old.items() if k != "messages"
+        }
+
+
+# ---------------------------------------------------------------------------
+# R4 第二轮候选 C：把 sft 的 system 消息改写为当前 runner.SYSTEM_PROMPT
+# ---------------------------------------------------------------------------
+
+_STALE_PROMPT = "过期的系统提示词，代表 teacher 采集当时的常量值。"
+
+
+def _evidence_with_stale_prompt(
+    record: FormalTaskRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> TeacherAttemptEvidence:
+    """造一条 teacher 证据，其 trajectory.metadata.system_prompt 是**旧** prompt。
+
+    这正是仓库里 240 份真实证据的形状：metadata 在采集当时写入并持久化，改
+    `runner.SYSTEM_PROMPT` 不会追溯改写它们。
+    """
+    from veritool_rl.core.agent import runner as runner_module
+    from veritool_rl.core.agent.policy import OraclePolicy
+
+    monkeypatch.setattr(runner_module, "SYSTEM_PROMPT", _STALE_PROMPT)
+    trajectory = runner_module.run_episode(
+        record.task, _env_factory, OraclePolicy(record.task), seed=0
+    )
+    monkeypatch.undo()
+    assert trajectory.metadata["system_prompt"] == _STALE_PROMPT
+
+    return TeacherAttemptEvidence(
+        task_id=record.task.task_id,
+        task_fingerprint=record.task_fingerprint,
+        dataset_version=_DATASET_VERSION,
+        seed=0,
+        bundle_sha256=_BUNDLE.bundle_sha256,
+        manifest_sha256=_DUMMY_SHA,
+        route_sha256=_DUMMY_SHA,
+        config_sha256=_DUMMY_SHA,
+        outcome=TeacherAttemptOutcome.SUCCESS,
+        accepted=True,
+        episode_index=0,
+        request_attempts=1,
+        usage_prompt_tokens=1,
+        usage_completion_tokens=1,
+        trajectory=trajectory,
+    )
+
+
+def _stale_prompt_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[FormalTaskRecord], list[TeacherAttemptEvidence], dict[str, str]]:
+    records = _real_train_records([TaskScenario.REFUND_ELIGIBLE])[:2]
+    evidences = [_evidence_with_stale_prompt(record, monkeypatch) for record in records]
+    scenarios = {record.task.task_id: record.task.scenario.value for record in records}
+    return records, evidences, scenarios
+
+
+def _current_prompt_sha256() -> str:
+    import hashlib
+
+    from veritool_rl.core.agent.runner import SYSTEM_PROMPT
+
+    return hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+
+
+def test_export_system_prompt_rewrite_replaces_the_persisted_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """teacher 证据里的 system prompt 是持久化的旧值；启用改写后必须变成当前常量。
+
+    不改写的话，改 `runner.SYSTEM_PROMPT` 后重新导出会产出一份 99.2% 仍是旧 prompt
+    的训练集，而没有任何一层会报错——候选 C 的变量根本没生效。
+    """
+    from veritool_rl.core.agent.runner import SYSTEM_PROMPT
+
+    records, evidences, scenarios = _stale_prompt_fixture(monkeypatch)
+
+    _, _, _, rows = export_formal_train(
+        records,
+        evidences,
+        _env_factory,
+        _config(),
+        scenarios,
+        seed=0,
+        sft_system_prompt_sha256=_current_prompt_sha256(),
+    )
+
+    assert rows
+    assert {row["messages"][0]["content"] for row in rows} == {SYSTEM_PROMPT}
+
+
+def test_export_system_prompt_rewrite_requires_the_declared_sha256(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """配置声明的哈希与当前常量不符必须硬失败。
+
+    这是这个键为什么不是布尔值的全部理由：布尔值下"配置写了 true 但常量忘了改"
+    会产出与未改写逐字节相同的文件而不报错，正是本轮开工时被推翻的那个假设的
+    同一个形状。声明期望哈希把这种静默失效变成硬错误。
+    """
+    records, evidences, scenarios = _stale_prompt_fixture(monkeypatch)
+
+    with pytest.raises(ValueError, match="sft_system_prompt_sha256"):
+        export_formal_train(
+            records,
+            evidences,
+            _env_factory,
+            _config(),
+            scenarios,
+            seed=0,
+            sft_system_prompt_sha256="f" * 64,
+        )
+
+
+def test_export_system_prompt_rewrite_default_keeps_the_persisted_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不传 = 沿用轨迹 metadata 里的 prompt，即现有行为，不得悄悄改写。"""
+    records, evidences, scenarios = _stale_prompt_fixture(monkeypatch)
+
+    _, _, _, rows = export_formal_train(
+        records, evidences, _env_factory, _config(), scenarios, seed=0
+    )
+
+    assert {row["messages"][0]["content"] for row in rows} == {_STALE_PROMPT}
+
+
+def test_export_system_prompt_rewrite_touches_only_the_system_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C 的唯一变量是 system 消息：其余消息与所有其他字段必须逐字段不变。"""
+    records, evidences, scenarios = _stale_prompt_fixture(monkeypatch)
+
+    _, _, _, before = export_formal_train(
+        records, evidences, _env_factory, _config(), scenarios, seed=0
+    )
+    _, _, _, after = export_formal_train(
+        records,
+        evidences,
+        _env_factory,
+        _config(),
+        scenarios,
+        seed=0,
+        sft_system_prompt_sha256=_current_prompt_sha256(),
+    )
+
+    for old, new in zip(before, after, strict=True):
+        assert new["messages"][1:] == old["messages"][1:]
+        assert new["messages"][0]["role"] == old["messages"][0]["role"] == "system"
+        assert {k: v for k, v in new.items() if k != "messages"} == {
+            k: v for k, v in old.items() if k != "messages"
+        }
+
+
+def test_write_formal_train_export_records_terminal_and_prompt_manifests(
+    tmp_path: Path,
+) -> None:
+    """两项新变换都必须随产物落盘并纳入 private_artifact_sha256。
+
+    只看 `sft.jsonl` 无法区分"这批数据有终局回复/改过 prompt"与"没有"，而这两者
+    对结论的含义完全不同。手改 manifest 即被哈希发现。
+    """
+    private_root, public_root = _train_export_roots(tmp_path)
+    record = _train_record(TaskScenario.REFUND_ELIGIBLE)
+    report = compute_teacher_quality_report(
+        [_evidence(record.task.task_id, accepted=True)],
+        {record.task.task_id: record.task.scenario.value},
+    )
+
+    hashes = write_formal_train_export(
+        private_root=private_root,
+        public_root=public_root,
+        attempt_id=_ATTEMPT_ID,
+        dataset_version=_DATASET_VERSION,
+        report=report,
+        selections=[TrainExportSelection(task_id=record.task.task_id, source="teacher")],
+        train_rows=[{"task_id": record.task.task_id}],
+        sft_rows=[{"task_id": record.task.task_id, "scenario": "refund_eligible"}],
+        sft_terminal_response=["refund_eligible"],
+        sft_system_prompt_sha256=_current_prompt_sha256(),
+    )
+
+    assert "sft_terminal_template.json" in hashes
+    assert "sft_system_prompt.json" in hashes
+
+    export_dir = private_root / "train-export" / _ATTEMPT_ID
+    terminal = json.loads((export_dir / "sft_terminal_template.json").read_text("utf-8"))
+    assert terminal["scenarios"] == ["refund_eligible"]
+    assert "{order_id}" in terminal["template"]
+    assert terminal["affected_sft_rows"] == 1
+
+    prompt = json.loads((export_dir / "sft_system_prompt.json").read_text("utf-8"))
+    assert prompt["rewritten"] is True
+    assert prompt["sha256"] == _current_prompt_sha256()
+    assert prompt["affected_sft_rows"] == 1
+
+
+def test_write_formal_train_export_manifests_record_the_unused_state(
+    tmp_path: Path,
+) -> None:
+    """未启用状态也要写出：产物的自描述不能靠"文件不存在"来表达。"""
+    private_root, public_root = _train_export_roots(tmp_path)
+    record = _train_record(TaskScenario.LOOKUP_STATUS)
+    report = compute_teacher_quality_report(
+        [_evidence(record.task.task_id, accepted=True)],
+        {record.task.task_id: record.task.scenario.value},
+    )
+
+    write_formal_train_export(
+        private_root=private_root,
+        public_root=public_root,
+        attempt_id=_ATTEMPT_ID,
+        dataset_version=_DATASET_VERSION,
+        report=report,
+        selections=[TrainExportSelection(task_id=record.task.task_id, source="teacher")],
+        train_rows=[{"task_id": record.task.task_id}],
+        sft_rows=[{"task_id": record.task.task_id, "scenario": "lookup_status"}],
+    )
+
+    export_dir = private_root / "train-export" / _ATTEMPT_ID
+    terminal = json.loads((export_dir / "sft_terminal_template.json").read_text("utf-8"))
+    assert terminal["scenarios"] == []
+    assert terminal["affected_sft_rows"] == 0
+
+    prompt = json.loads((export_dir / "sft_system_prompt.json").read_text("utf-8"))
+    assert prompt["rewritten"] is False
+    assert prompt["sha256"] is None
+    assert prompt["affected_sft_rows"] == 0
+
+
+def test_append_terminal_response_skips_a_trailing_failed_refund() -> None:
+    """防御性契约：末尾那次 refund_order 失败时，必须回退到前一次成功的。
+
+    这个形状在当前冻结数据里不可达——`trajectory_to_sft_example` 只接受成功轨迹，
+    而 REFUND 类的 verifier 要求 `_refund_applied`，所以最后一次退款必然成功。
+    直接测私有变换是为了不让这条分支停留在"写了但从未执行过"的状态：一旦将来
+    新增场景让它可达，模板会拿到 refund_status=None 并产出自相矛盾的监督信号。
+    """
+    from veritool_rl.retail_ops.build.teacher_data import _append_terminal_response
+
+    def refund_call(reason: str) -> dict[str, Any]:
+        return {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "refund_order",
+                        "arguments": json.dumps({"order_id": "O-1", "reason": reason}),
+                    },
+                }
+            ],
+        }
+
+    example = {
+        "task_id": "t1",
+        "scenario": "refund_recovery",
+        "messages": [
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "u"},
+            refund_call("damaged"),
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": json.dumps(
+                    {"ok": True, "content": {"order_id": "O-1", "refund_status": "refunded"}}
+                ),
+            },
+            refund_call("damaged"),
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": json.dumps(
+                    {"ok": False, "content": None, "error_code": "transient_error"}
+                ),
+            },
+        ],
+        "tools": [],
+    }
+
+    result = _append_terminal_response(example)
+
+    assert result["messages"][-1]["content"] == (
+        "已为订单 O-1 按 damaged 办理退款，当前退款状态为 refunded。"
+    )

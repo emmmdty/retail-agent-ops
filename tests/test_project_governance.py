@@ -484,3 +484,89 @@ def test_r4_rebalanced_export_output_stays_ignored() -> None:
             check=False,
         )
         assert ignored.returncode == 0, ignored_path
+
+
+# ---------------------------------------------------------------------------
+# R4 第二轮：三候选并列消融的新配置
+# ---------------------------------------------------------------------------
+
+_R4_ROUND2_CONFIG_NAMES = (
+    "retail_ops/build/retail_ops_v1_r4_round2_a_sft_lora_full.yaml",
+    "retail_ops/build/retail_ops_v1_r4_round2_b_train_export.yaml",
+    "retail_ops/build/retail_ops_v1_r4_round2_b_sft.yaml",
+)
+
+
+def test_every_r4_config_is_enrolled_in_the_governance_scan() -> None:
+    """R4 的每一份 config 都必须出现在扫描列表里。
+
+    `_R4_CONFIG_NAMES` 是手工维护的，而治理断言的全部价值取决于它是否完整——
+    漏登记一份配置，那份配置就完全不受 secret / 绝对路径 / 私有根 / BFCL / holdout
+    检查约束，且没有任何信号。这条测试把"下一个人记得加"换成"忘了加就红"。
+    """
+    enrolled = set(_R4_CONFIG_NAMES) | set(_R4_ROUND2_CONFIG_NAMES)
+    on_disk = {
+        f"retail_ops/{path.relative_to(ROOT / 'configs/retail_ops')}"
+        for path in (ROOT / "configs/retail_ops").rglob("*.yaml")
+        if "_r4_" in path.name
+    }
+
+    assert on_disk - enrolled == set(), "有 R4 config 未纳入治理扫描"
+    assert enrolled - on_disk == set(), "扫描列表引用了不存在的 R4 config"
+
+
+def test_r4_round2_configs_hold_the_same_governance_line() -> None:
+    """第二轮三份新 config 落在与 R2/R3/R4 第一轮完全相同的治理口径下。"""
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R4_ROUND2_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        lowered = text.lower()
+        assert "bfcl" not in lowered, name
+        assert "holdout" not in lowered, name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
+
+        if parsed.get("pipeline") == "sft":
+            model = parsed["model"]
+            assert len(model["revision"]) >= 7, name
+            assert model["file_sha256"], name
+            for digest in model["file_sha256"].values():
+                assert len(digest) == 64, name
+
+
+def test_r4_round2_export_outputs_stay_ignored() -> None:
+    """第二轮两份新导出与训练产物必须仍被既有 `.gitignore` 覆盖。
+
+    终局回复把工具返回的 order_id 写进了训练文本，system 改写会把 prompt 写进去，
+    两者都只属于私有训练数据——训练数据永远不进 Git。
+    """
+    for ignored_path in (
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "train-export-003/sft.jsonl",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "train-export-004/sft.jsonl",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "train-export-003/sft_terminal_template.json",
+        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
+        "train-export-004/sft_system_prompt.json",
+        "reports/retail_ops/v1/r4/train-export-003/quality.json",
+        "reports/retail_ops/v1/r4/sft-003/adapter/adapter_model.safetensors",
+        "reports/retail_ops/v1/r4/sft-004/adapter/adapter_model.safetensors",
+        "reports/retail_ops/v1/r4/sft-005/adapter/adapter_model.safetensors",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", ignored_path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert ignored.returncode == 0, ignored_path

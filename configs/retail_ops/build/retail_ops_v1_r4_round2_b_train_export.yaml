@@ -1,0 +1,35 @@
+# R4 第二轮候选 B 的导出：与第一轮 train-export-002 的唯一差别是为两个多步家族
+# 追加终局回复。冻结数据集（retail_ops_v1_r2_20260722，240/60/120）与 teacher 采集
+# 证据（teacher-full-001）完全复用，不新增任务、不重新冻结、不调 teacher API。
+#
+# 终局回复模板（硬编码在 teacher_data.SFT_TERMINAL_RESPONSE_TEMPLATE）：
+#   已为订单 {order_id} 按 {reason} 办理退款，当前退款状态为 {refund_status}。
+# 三个字段全部从样本自身的消息序列取——{order_id} 与 {refund_status} 来自最后一次
+# 成功的 refund_order 的 tool 返回值，{reason} 来自该次 tool_call 的 arguments。
+# 因此这是 sft.jsonl 的纯局部变换：不读任务记录、不碰 target_state / expected_calls，
+# 不引入任何外部信息，也就不产生新的 provenance 问题。
+#
+# 刻意**不**加入金额、到账时间、工单号——实测 refund_order 的 observation 只有
+# {order_id, refund_status}，编造工具从未返回的字段等于用一个新的幻觉问题换掉当前问题。
+#
+# 终局回复是**独立的 assistant 消息**，不与 tool_call 同处一条：parser.py 把
+# 「文本 + 工具调用同时出现」判为 mixed_tool_call_content 即非法调用，拼进去会把
+# R3/R4 已取得的 invalid_call = 0 打回去。assistant 工具调用消息的 content 仍为空。
+#
+# 决策点不受影响：终局回复加在 refund_order 之后，而决策点是 get_order 返回之后，
+# 两个位置不同，形状分布仍是 160 : 240。这由测试断言，不靠推理。
+#
+# sft_oversample 与第一轮逐字段相同：B 的变量是"多步路径有没有闭环"，不是样本数。
+# attempt_id 是新目录：001 是 R3 输入、002 是 R4 第一轮输入，都不得覆盖。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-003
+sft_oversample:
+  refund_eligible: 3
+  refund_recovery: 3
+sft_terminal_response: [refund_eligible, refund_recovery]
+# 本候选不改 system prompt：C 才是那个变量，且 C 必须在 A/B 评测完成后才能提交。
+sft_system_prompt_sha256: null

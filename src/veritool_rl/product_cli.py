@@ -563,6 +563,8 @@ _TRAIN_EXPORT_KEYS = {
     "teacher_attempt_id",
     "attempt_id",
     "sft_oversample",
+    "sft_terminal_response",
+    "sft_system_prompt_sha256",
 }
 
 
@@ -578,6 +580,8 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
     teacher_attempt_id = _config_str(config, "teacher_attempt_id")
     attempt_id = _attempt_id(config)
     sft_oversample = _sft_oversample(config)
+    sft_terminal_response = _sft_terminal_response(config)
+    sft_system_prompt_sha256 = _sft_system_prompt_sha256(config)
 
     bundle = load_bundle(bundle_dir)
     dataset = load_verified_formal_dataset(public_dir)
@@ -613,6 +617,8 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         scenario_by_task_id,
         args.seed,
         sft_oversample=sft_oversample,
+        sft_terminal_response=sft_terminal_response,
+        sft_system_prompt_sha256=sft_system_prompt_sha256,
     )
 
     create_output_dir(args.output_dir)
@@ -626,6 +632,8 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         train_rows=train_rows,
         sft_rows=sft_rows,
         sft_oversample=sft_oversample,
+        sft_terminal_response=sft_terminal_response,
+        sft_system_prompt_sha256=sft_system_prompt_sha256,
     )
 
 
@@ -1160,6 +1168,42 @@ def _sft_oversample(config: dict[str, Any]) -> dict[str, int]:
             raise ValueError(f"sft_oversample 的重复因子必须是整数: {scenario}={factor!r}")
         factors[scenario] = factor
     return factors
+
+
+def _sft_terminal_response(config: dict[str, Any]) -> list[str]:
+    """读取要追加终局回复的场景名列表；键必须存在，空列表表示不追加。
+
+    与 `sft_oversample` 同一条理由：有默认值时"忘了写"和"故意不启用"产出同一份
+    数据。场景名是否有效由 `export_formal_train` 统一校验，这里只做形状检查。
+    """
+    value = config.get("sft_terminal_response")
+    if not isinstance(value, list):
+        raise ValueError("sft_terminal_response 必须是场景名列表（不启用时写空列表）")
+    scenarios: list[str] = []
+    for scenario in value:
+        if not isinstance(scenario, str):
+            raise ValueError(f"sft_terminal_response 的元素必须是场景名字符串: {scenario!r}")
+        scenarios.append(scenario)
+    return scenarios
+
+
+def _sft_system_prompt_sha256(config: dict[str, Any]) -> str | None:
+    """读取 system 改写声明：64 位 hex 表示改写，`null` 表示沿用轨迹里的 prompt。
+
+    这个键刻意不是布尔值。teacher 证据的 `trajectory.metadata["system_prompt"]` 是
+    采集当时持久化的，改 `runner.SYSTEM_PROMPT` 不会追溯改写它。布尔值下
+    "配置写了 true 但常量忘了改" 会产出一份与未改写逐字节相同的训练集且不报错——
+    实验变量没生效而产物看起来完全正常。声明期望哈希，让这种静默失效变成硬错误
+    （实际比对在 `export_formal_train` 里做，那里能读到当前常量）。
+    """
+    value = config.get("sft_system_prompt_sha256")
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) != 64:
+        raise ValueError("sft_system_prompt_sha256 必须是 64 位 SHA-256 十六进制串或 null")
+    if any(char not in "0123456789abcdef" for char in value):
+        raise ValueError("sft_system_prompt_sha256 必须是小写十六进制")
+    return value
 
 
 def _positive_int(config: dict[str, Any], key: str) -> int:

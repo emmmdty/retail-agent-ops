@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import ConfigDict, Field
 
 from veritool_rl.core.agent.policy import OraclePolicy, PolicyOutput
-from veritool_rl.core.agent.runner import run_episode
+from veritool_rl.core.agent.runner import SYSTEM_PROMPT, run_episode
 from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, write_jsonl
 from veritool_rl.core.envs.base import ToolEnv, ToolSchema
 from veritool_rl.core.generators import trajectory_to_sft_example
@@ -538,6 +538,121 @@ def _resolve_sft_oversample(
     return resolved
 
 
+SFT_TERMINAL_RESPONSE_TEMPLATE = (
+    "已为订单 {order_id} 按 {reason} 办理退款，当前退款状态为 {refund_status}。"
+)
+
+
+def _resolve_terminal_response(
+    sft_terminal_response: Sequence[str] | None,
+) -> tuple[str, ...]:
+    """校验要追加终局回复的场景名，未知场景名一律硬失败。
+
+    与 `_resolve_sft_oversample` 同一个理由：静默忽略写错的场景名会产出与未启用
+    逐字节相同的产物，而实验记录声称数据闭环已经生效。这里刻意**不**检查场景是否
+    出现在本次导出里——终局回复的可行性取决于该样本有没有成功的 refund_order，
+    那个更强的检查在 `_append_terminal_response` 里逐样本执行。
+    """
+    if not sft_terminal_response:
+        return ()
+    known = {scenario.value for scenario in TaskScenario}
+    resolved: list[str] = []
+    for scenario in sft_terminal_response:
+        if scenario not in known:
+            msg = f"sft_terminal_response 指定了未知场景: {scenario}"
+            raise ValueError(msg)
+        if scenario in resolved:
+            msg = f"sft_terminal_response 重复指定了同一场景: {scenario}"
+            raise ValueError(msg)
+        resolved.append(scenario)
+    return tuple(resolved)
+
+
+def _last_successful_refund(messages: Sequence[Mapping[str, Any]]) -> tuple[str, str, str]:
+    """从消息序列里取最后一次**成功**的 refund_order 的三个字段。
+
+    `refund_recovery` 有两次 refund_order（首次 transient_error），用首次失败的返回值
+    会产出"已办理退款，当前退款状态为 None"这种自相矛盾的监督信号。三个字段全部来自
+    样本自身，不读任务记录，因此这个变换不引入任何外部信息，也不产生新的 provenance 问题。
+    """
+    for index in range(len(messages) - 1, 0, -1):
+        message = messages[index]
+        if message.get("role") != "tool":
+            continue
+        previous = messages[index - 1]
+        calls = previous.get("tool_calls") or []
+        if not calls or calls[0].get("function", {}).get("name") != "refund_order":
+            continue
+        observation = json.loads(str(message.get("content")))
+        if not observation.get("ok"):
+            continue
+        content = observation.get("content") or {}
+        arguments = json.loads(calls[0]["function"]["arguments"])
+        order_id = content.get("order_id")
+        refund_status = content.get("refund_status")
+        reason = arguments.get("reason")
+        if order_id is None or refund_status is None or reason is None:
+            break
+        return str(order_id), str(reason), str(refund_status)
+    msg = (
+        "sft_terminal_response 启用的场景里没有成功的 refund_order 返回值，"
+        "无法在不编造字段的前提下生成终局回复"
+    )
+    raise ValueError(msg)
+
+
+def _append_terminal_response(sft_example: dict[str, Any]) -> dict[str, Any]:
+    """在样本末尾追加一条**独立的** assistant 终局回复。
+
+    独立消息是硬要求：`core/agent/parser.py` 把「文本 + 工具调用同时出现」判为
+    `mixed_tool_call_content` 即非法调用，把文本拼进工具调用消息会把已取得的
+    invalid_call = 0 打回去。终局回复加在 refund_order **之后**，而决策点是
+    get_order 返回**之后**，两个位置不同，因此决策点的形状分布不受影响。
+    """
+    messages = list(sft_example["messages"])
+    order_id, reason, refund_status = _last_successful_refund(messages)
+    messages.append(
+        {
+            "role": "assistant",
+            "content": SFT_TERMINAL_RESPONSE_TEMPLATE.format(
+                order_id=order_id, reason=reason, refund_status=refund_status
+            ),
+        }
+    )
+    return {**sft_example, "messages": messages}
+
+
+def _resolve_system_prompt_rewrite(sft_system_prompt_sha256: str | None) -> str | None:
+    """确认声明的哈希与当前 `runner.SYSTEM_PROMPT` 一致，返回要写入的 prompt。
+
+    这个键刻意不是布尔值。teacher 证据的 `trajectory.metadata["system_prompt"]` 是
+    采集当时持久化的，改 `runner.SYSTEM_PROMPT` 不会追溯改写它；而
+    `_require_evidence_binds_record` 不比较 system_prompt。因此布尔值下
+    "配置写了 true 但常量忘了改" 会产出一份与未改写逐字节相同的训练集且不报错——
+    实验变量没生效而产物看起来完全正常。让配置声明期望哈希，把这种静默失效变成硬错误。
+    """
+    if sft_system_prompt_sha256 is None:
+        return None
+    actual = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+    if sft_system_prompt_sha256 != actual:
+        msg = (
+            "sft_system_prompt_sha256 与当前 runner.SYSTEM_PROMPT 的哈希不一致: "
+            f"declared={sft_system_prompt_sha256}, actual={actual}"
+        )
+        raise ValueError(msg)
+    return SYSTEM_PROMPT
+
+
+def _rewrite_system_prompt(sft_example: dict[str, Any], prompt: str) -> dict[str, Any]:
+    """只替换首条 system 消息的 content，其余消息与字段一律不动。"""
+    messages = list(sft_example["messages"])
+    if not messages or messages[0].get("role") != "system":
+        msg = f"sft 样本首条消息不是 system，无法改写: {sft_example.get('task_id')}"
+        raise ValueError(msg)
+    messages[0] = {**messages[0], "content": prompt}
+    return {**sft_example, "messages": messages}
+
+
 def export_formal_train(
     records: Sequence[FormalTaskRecord],
     evidences: Sequence[TeacherAttemptEvidence],
@@ -546,6 +661,8 @@ def export_formal_train(
     scenario_by_task_id: dict[str, str],
     seed: int,
     sft_oversample: Mapping[str, int] | None = None,
+    sft_terminal_response: Sequence[str] | None = None,
+    sft_system_prompt_sha256: str | None = None,
 ) -> ExportResult:
     """质量门通过后，为每条任务选一条轨迹并独立 replay 全部导出集合。
 
@@ -561,8 +678,15 @@ def export_formal_train(
     不影响 `train_rows`/`selections`：那两份是 provenance，声称"本次导出覆盖了哪些
     冻结任务"，让重复采样漏进去会使产物声称的任务数超过冻结契约。重复而不是
     加权，是为了让改动完全落在数据产物里、训练代码一行不改，变量单一且可哈希追溯。
+
+    `sft_terminal_response` 与 `sft_system_prompt_sha256` 是 R4 第二轮的两个消融变量，
+    同样只作用于 `sft.jsonl`，且都是**纯局部变换**——只读样本自身的消息序列与当前
+    `runner.SYSTEM_PROMPT`，不读任务记录、不碰 `target_state`/`expected_calls`。
+    三者互相独立，可单独启用；本轮的纪律是每个候选只启用一个。
     """
     resolved_oversample = _resolve_sft_oversample(sft_oversample, scenario_by_task_id)
+    resolved_terminal = _resolve_terminal_response(sft_terminal_response)
+    rewrite_prompt = _resolve_system_prompt_rewrite(sft_system_prompt_sha256)
     report = compute_teacher_quality_report(evidences, scenario_by_task_id)
     if not report.passes_gate:
         raise TeacherQualityGateError(
@@ -607,8 +731,13 @@ def export_formal_train(
                 "trajectory": trajectory.model_dump(mode="json"),
             }
         )
-        repeat = resolved_oversample.get(scenario_by_task_id[task_id], 1)
+        scenario = scenario_by_task_id[task_id]
+        repeat = resolved_oversample.get(scenario, 1)
         sft_example = trajectory_to_sft_example(trajectory)
+        if scenario in resolved_terminal:
+            sft_example = _append_terminal_response(sft_example)
+        if rewrite_prompt is not None:
+            sft_example = _rewrite_system_prompt(sft_example, rewrite_prompt)
         sft_rows.extend(sft_example for _ in range(repeat))
 
     if len(train_rows) != len(records):
@@ -698,6 +827,8 @@ def write_formal_train_export(
     train_rows: Sequence[dict[str, Any]],
     sft_rows: Sequence[dict[str, Any]],
     sft_oversample: Mapping[str, int] | None = None,
+    sft_terminal_response: Sequence[str] | None = None,
+    sft_system_prompt_sha256: str | None = None,
 ) -> dict[str, str]:
     """把完整训练数据写到 private ignored root，公开 root 只留聚合质量报告。
 
@@ -731,11 +862,33 @@ def write_formal_train_export(
                 "sft_row_count": len(sft_rows),
             },
         )
+        terminal_scenarios = sorted(sft_terminal_response or ())
+        write_json(
+            staging / "sft_terminal_template.json",
+            {
+                "template": SFT_TERMINAL_RESPONSE_TEMPLATE,
+                "scenarios": terminal_scenarios,
+                "affected_sft_rows": sum(
+                    1 for row in sft_rows if row.get("scenario") in terminal_scenarios
+                ),
+            },
+        )
+        write_json(
+            staging / "sft_system_prompt.json",
+            {
+                "rewritten": sft_system_prompt_sha256 is not None,
+                "sha256": sft_system_prompt_sha256,
+                "prompt": SYSTEM_PROMPT if sft_system_prompt_sha256 is not None else None,
+                "affected_sft_rows": len(sft_rows) if sft_system_prompt_sha256 is not None else 0,
+            },
+        )
         artifact_hashes = {
             "train.jsonl": sha256_file(staging / "train.jsonl"),
             "sft.jsonl": sha256_file(staging / "sft.jsonl"),
             "selection.json": sha256_file(staging / "selection.json"),
             "sft_oversample.json": sha256_file(staging / "sft_oversample.json"),
+            "sft_terminal_template.json": sha256_file(staging / "sft_terminal_template.json"),
+            "sft_system_prompt.json": sha256_file(staging / "sft_system_prompt.json"),
         }
         _publish_staging_dir(staging, private_target)
         private_published = True

@@ -198,6 +198,8 @@ def _train_export_config(**overrides: Any) -> dict[str, Any]:
         "teacher_attempt_id": "teacher-attempt-001",
         "attempt_id": "train-export-001",
         "sft_oversample": {},
+        "sft_terminal_response": [],
+        "sft_system_prompt_sha256": None,
     }
     values.update(overrides)
     return values

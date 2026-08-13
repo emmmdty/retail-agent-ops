@@ -24,3 +24,8 @@ attempt_id: train-export-002
 sft_oversample:
   refund_eligible: 3
   refund_recovery: 3
+
+# R4 第二轮新增的两个必填变换键：本配置是这两项变换之前的基线，显式声明未启用。
+# 空列表 / null 与"忘了写"必须可区分，因此两个键都没有默认值。
+sft_terminal_response: []
+sft_system_prompt_sha256: null

@@ -244,6 +244,8 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         "teacher_attempt_id": "e2e-teacher-001",
         "attempt_id": "e2e-export-001",
         "sft_oversample": {},
+        "sft_terminal_response": [],
+        "sft_system_prompt_sha256": None,
     }
     export_args = parser.parse_args(
         [
@@ -290,6 +292,8 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         **export_config,
         "attempt_id": "e2e-export-002",
         "sft_oversample": {"refund_eligible": 3, "refund_recovery": 3},
+        "sft_terminal_response": [],
+        "sft_system_prompt_sha256": None,
     }
     rebalanced_args = parser.parse_args(
         [
