@@ -104,6 +104,18 @@ git diff --check
   "条件动作比例是该行为的主要成因"在该量级上不成立。残余嫌疑转向**请求措辞**：
   同样 ×3，祈使句家族 `refund_recovery` +2，而两个变体都以核实/检查开头的
   `refund_eligible` +0。**这是观察不是结论，未据此启动任何改动**。
+- **R4 第二轮已收官（2026-08-14，LOG-20260814-01/02）**：三候选跑完，**只有 A 达标**。
+  `refund_eligible`（每格 n = 10）：base 旧 prompt 5/10、**base 新 prompt 9/10（零训练）**、
+  R3 与 R4-1 均 0/10、B 4/10、C 5/10、**A 10/10**（合计 60/60，base 48/60）。
+  **两条结论**：(1) attention-only LoRA 的 SFT 对该类别是**净负作用**，横跨两个 prompt、
+  四次训练方向一致（−4 到 −5）；加 `gate/up/down_proj` 后同一份数据从负作用变正作用——
+  **容量决定训练效果的符号，不是大小**。(2) **纯 prompt 干预零训练即得 9/10**，
+  A 的 10/10 只多 1 条，n=10 下**不足以支撑"训练优于 prompt"**。
+  但 `refund_recovery` 反向（prompt 完全无效 5/10→5/10、训练 5/10→10/10），
+  故"prompt 就够了"**只对 `refund_eligible` 成立**，不得推广成"SFT 无用"。
+  **未测且不得推断**：A+新 prompt、A+B、三者叠加（并列消融，无叠加观测）。
+  全部为 **dev** 且 dev 已用于选择；**未消耗 holdout 第二次观测**。
+  当前 `SYSTEM_PROMPT` sha256 `8ae813c4284246b9…`（旧 `d919602e25f2c87c…`）。
 - **R4 第二轮已启动**（用户批准设计
   `docs/superpowers/specs/2026-08-13-r4-round2-ablation-design.md`，执行提示词
   `docs/handoffs/2026-08-13-r4-round2-execution-prompt.md`）。本轮是**诊断性消融，
@@ -163,7 +175,7 @@ git diff --check
   两份 sealed 证据已于 2026-08-11 产出（`report_id` 是全字段自哈希），**再改即作废**。
 - 资源约束：gpu-5090 的数据一律落 `/mnt/aidata`，不得写系统盘（LOG-20260811-02）。
   远端 `/tmp` 会被重启清空，不可用于承载跨故障的运行日志。
-- 当前基线：665 tests passed，Ruff/mypy/uv lock 全部通过。
+- 当前基线：678 tests passed，Ruff/mypy/uv lock 全部通过。
 - 冻结契约提醒：`formal_tasks.py` 的 `assert_exact_quotas` 把 train/dev/holdout 每类别
   40/10/20 写成硬契约。新增任务需重新冻结数据集并改变 `dataset_version` 与 manifest 哈希，
   已有全部评测证据的可比性随之作废——这不是"多花点 API 钱"的事。
