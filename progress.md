@@ -550,3 +550,24 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-14 | A dev 评测 `candidate-003` | 268.5 s，EXIT=0，配对契约通过，**60/60** |
 | 2026-08-14 | B 训练 `sft-004` | 212.2 s，峰值 5.563 GB，train_loss 0.2246 |
 | 2026-08-14 | B dev 评测 `candidate-004` | EXIT=0，配对契约通过，**54/60** |
+
+## 2026-08-14 — R4 第二轮 Stage 3/4（候选 C、base 重跑、三候选收官）
+
+- Stage 3（CPU）：改 `runner.SYSTEM_PROMPT`（新 sha256 `8ae813c4284246b9…`）、
+  导出 `train-export-004`、C 的三份配置（train_export / sft / base 重跑）。
+  核验：`sft.jsonl` 与 002 除 system 消息外逐样本相同；`train.jsonl` 有且仅有 2 行不同，
+  是两条 `internal_reference` 样本（Oracle 实时重放，必然带新 prompt），已逐字段确认
+  其轨迹除 `metadata.system_prompt` 外完全相同。
+- Stage 4（GPU）：`base-002` 零训练 → `sft-005` 训练 → `candidate-005` 评测，全部 EXIT=0，
+  配对契约通过（C 对 `base-002`，不对 `base-001`）。
+- **三候选收官**：A 60/60（`refund_eligible` 10/10，**唯一达标**）、B 54/60（4/10）、
+  C 55/60（5/10）。新 prompt 零训练 base 54/60（**9/10**）。
+- 结论见 `findings.md` 同日小节与 **LOG-20260814-02**。按 spec 停止条件停止。
+- 未消耗 holdout 第二次观测。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-14 | C 导出 `train-export-004`（本地 CPU） | 400 行，system 全部为新 prompt，决策点 160:240 不变 |
+| 2026-08-14 | `base-002` 新 prompt 零训练评测 | EXIT=0，**54/60**，refund_eligible **9/10**，invalid_call 0，schema 1.0 |
+| 2026-08-14 | C 训练 `sft-005` | 197.9 s，峰值 5.553 GB，train_loss 0.2191 |
+| 2026-08-14 | C dev 评测 `candidate-005` | EXIT=0，**55/60**，refund_eligible 5/10（**低于自身 base 的 9/10**） |
