@@ -529,3 +529,24 @@ train/dev/holdout、调用模型或进入训练。
 |---|---|---|
 | 2026-08-13 | `build --config …r4_round2_b_train_export.yaml`（本地 CPU，0.56 s） | `train-export-003`：provenance 与 001 逐字节相同；400 行；末尾 role 由 `assistant 160/tool 240` 变为 `assistant 400`；决策点形状仍 160:240；工具调用消息 content 非空违反者 0 |
 | 2026-08-13 | Stage 1 收口全量门禁 | **665 passed**（638→665）；Ruff / mypy 65 源文件 / lock / diff 全绿 |
+
+## 2026-08-14 — R4 第二轮 Stage 2（候选 A、B 的 GPU 执行与 dev 配对）
+
+- 远端连通性插曲：gpu-5090 一度不可达（cpolar 隧道 Connection refused），曾按用户指示
+  评估 gpu-4090 并完成建目录/装环境/传数据/启动模型下载；随后 5090 恢复，改回 5090 执行。
+  4090 上留下 `/data/TJK/internship-projects/retail-agent-ops`（环境已装、模型下载中断于
+  7.6 GB），**待用户决定是否清理**。
+- 已核实 dev 的 `PAIRING_FIELDS` 不含任何硬件字段，故跨机配对在契约上允许；
+  回到 5090 后 base 与候选同机，该问题自动消失。
+- **候选 A 达标**：`refund_eligible` 10/10、合计 **60/60**、格式安全三项 0/0/1.0。
+- **候选 B 未达标但有信号**：`refund_eligible` 4/10（≥3/10 诊断阈值）、合计 54/60、
+  `refund_recovery` 5/10→10/10、三项同样保住。
+- 结论与统计限度见 `findings.md` 同日小节与 **LOG-20260814-01**。
+- 候选 C 未执行；未消耗 holdout 第二次观测。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-14 | A 训练 `sft-003`（GPU 0，空闲） | 222.6 s / 75 steps，峰值 5.638 GB，train_loss 0.1800，adapter 重载通过 |
+| 2026-08-14 | A dev 评测 `candidate-003` | 268.5 s，EXIT=0，配对契约通过，**60/60** |
+| 2026-08-14 | B 训练 `sft-004` | 212.2 s，峰值 5.563 GB，train_loss 0.2246 |
+| 2026-08-14 | B dev 评测 `candidate-004` | EXIT=0，配对契约通过，**54/60** |
