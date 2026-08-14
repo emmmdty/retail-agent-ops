@@ -1,0 +1,44 @@
+# R4 第二轮候选 B（数据闭环）的 dev 候选评测：Qwen3-4B + sft-004 adapter，
+# 在同一 60 条正式 dev 任务上评测。
+#
+# 与第一轮候选配置的**唯一**差别是 attempt_id 与 adapter。sft-004 的训练数据是
+# train-export-003——在 refund_eligible / refund_recovery 样本末尾追加了一条独立的
+# assistant 终局回复，使 tool_call 路径获得自然终点；决策点形状仍是 160 : 240。
+#
+# 配对对照仍是既有的 qwen3-4b-dev-base-001，不重跑 base。
+pipeline: formal_dev_candidate
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
+models_root: models
+attempt_id: qwen3-4b-dev-candidate-004
+model:
+  repo: Qwen/Qwen3-4B
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  local_dir: Qwen3-4B-pinned
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+adapter:
+  run_dir: reports/retail_ops/v1/r4/sft-004
+  file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "de26967086595a0fda5d9a02edd67e333301284547150519a9a80d2ed4156f41"
+    adapter_model.safetensors: "61d59293109d3cf7d03f712296841f19b7ff13e672ae1a31b60a21de21bcfc46"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "e43bb5db9dafa62a599c9b7584681bc3556bedf4281ea8913e914038ad4fddba"
+generation:
+  max_new_tokens: 256
