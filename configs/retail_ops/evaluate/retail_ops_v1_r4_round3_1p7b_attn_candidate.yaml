@@ -1,0 +1,44 @@
+# R4 第三轮跨规模验证：Qwen3-1.7B + attention-only 四投影 adapter 的 dev 候选评测（对应 4B 侧的 sft-005）。
+#
+# 与 configs/retail_ops/evaluate/retail_ops_v1_r4_round3_1p7b_base.yaml 除 pipeline、
+# attempt_id 与 adapter 外逐字段相同——同一份已哈希校验的 1.7B 基座、同一 dev manifest、
+# 同一 seed / 步数 / 生成参数。配对对照是 qwen3-1.7b-dev-base-002（新 prompt 零训练）。
+#
+# 训练数据是 train-export-004（新 prompt），与 4B 四臂完全一致；本臂的唯一变量是
+# lora.target_modules。跨规模比较只能用 refund_eligible 的绝对通过数与"训练相对
+# 同规模零训练 base 的符号"，不能把 1.7B 与 4B 的 delta 直接相减。
+pipeline: formal_dev_candidate
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
+models_root: models
+attempt_id: qwen3-1.7b-dev-candidate-attn-001
+model:
+  repo: Qwen/Qwen3-1.7B
+  revision: "980712f58bdf09497308d37d0e30b535064cde04"
+  local_dir: Qwen3-1.7B-pinned
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "257e52c419dac2258852643f18af6c974f21f8c6c1b6f371b6cca6201cf29091"
+    config.json: "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00002.safetensors: "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5"
+    model-00002-of-00002.safetensors: "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9"
+    model.safetensors.index.json: "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+adapter:
+  run_dir: reports/retail_ops/v1/r4/sft-1p7b-attn
+  file_sha256:
+    README.md: "1264dacd7de225f3889ee95b355352854875be3c2fe18a891a6d7f3d2f07d9ea"
+    adapter_config.json: "d790cc3424ceb41cbeaefd630c57992abc2bba15d2112dc699973b2cd5661be5"
+    adapter_model.safetensors: "6973cd6e03b8f12c4e94c8bc34f681fcd1988ba0384bfa6d147227ee6849b0a1"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "e6651a69c115f4db8aeddb34ebb76461423e59418f5b271478cbbd0bce33e0a0"
+generation:
+  max_new_tokens: 256

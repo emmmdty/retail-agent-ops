@@ -120,3 +120,54 @@ def test_1p7b_training_configs_pin_the_1p7b_model_not_the_4b() -> None:
         assert model["revision"] != four_b["revision"], path.name
         assert model["file_sha256"] != four_b["file_sha256"], path.name
         assert model["load_in_4bit"] is True, path.name
+
+
+_17B_BASE_EVAL = EVAL / "retail_ops_v1_r4_round3_1p7b_base.yaml"
+_17B_ATTN_EVAL = EVAL / "retail_ops_v1_r4_round3_1p7b_attn_candidate.yaml"
+_17B_FULL_EVAL = EVAL / "retail_ops_v1_r4_round3_1p7b_full_candidate.yaml"
+
+
+@pytest.mark.parametrize(
+    ("path", "attempt_id", "run_dir"),
+    [
+        (
+            _17B_ATTN_EVAL,
+            "qwen3-1.7b-dev-candidate-attn-001",
+            "reports/retail_ops/v1/r4/sft-1p7b-attn",
+        ),
+        (
+            _17B_FULL_EVAL,
+            "qwen3-1.7b-dev-candidate-full-001",
+            "reports/retail_ops/v1/r4/sft-1p7b-full",
+        ),
+    ],
+)
+def test_1p7b_candidate_differs_from_its_base_only_by_adapter(
+    path: Path, attempt_id: str, run_dir: str
+) -> None:
+    """1.7B 候选与其配对 base 只能差 pipeline / attempt_id / adapter。
+
+    模型 pin 或生成参数任一不同，"训练相对零训练的符号"就不再可归因——
+    而那个符号是这次跨规模验证唯一要读的量。
+    """
+    base = _load(_17B_BASE_EVAL)
+    cand = _load(path)
+
+    assert set(cand) - set(base) == {"adapter"}
+    assert cand["pipeline"] == "formal_dev_candidate"
+    assert cand["attempt_id"] == attempt_id
+    assert cand["adapter"]["run_dir"] == run_dir
+    for key in base:
+        if key in ("pipeline", "attempt_id"):
+            continue
+        assert base[key] == cand[key], key
+
+
+def test_1p7b_candidates_pin_distinct_adapters() -> None:
+    """两臂的 adapter 权重必须不同，否则两个读数是同一次训练的复读。"""
+    attn = _load(_17B_ATTN_EVAL)["adapter"]["file_sha256"]
+    full = _load(_17B_FULL_EVAL)["adapter"]["file_sha256"]
+
+    assert attn["adapter_model.safetensors"] != full["adapter_model.safetensors"]
+    for name, digest in {**attn, **full}.items():
+        assert len(digest) == 64, name
