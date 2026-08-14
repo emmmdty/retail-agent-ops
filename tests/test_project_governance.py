@@ -502,6 +502,9 @@ _R4_ROUND2_CONFIG_NAMES = (
     "retail_ops/evaluate/retail_ops_v1_r4_round2_c_candidate.yaml",
     "retail_ops/build/retail_ops_v1_r4_round3_capacity_prompt_sft.yaml",
     "retail_ops/evaluate/retail_ops_v1_r4_round3_capacity_prompt_candidate.yaml",
+    "retail_ops/build/retail_ops_v1_r4_round3_1p7b_attn_sft.yaml",
+    "retail_ops/build/retail_ops_v1_r4_round3_1p7b_full_sft.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r4_round3_1p7b_base.yaml",
 )
 
 
