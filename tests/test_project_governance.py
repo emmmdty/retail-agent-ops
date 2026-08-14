@@ -494,6 +494,7 @@ _R4_ROUND2_CONFIG_NAMES = (
     "retail_ops/build/retail_ops_v1_r4_round2_a_sft_lora_full.yaml",
     "retail_ops/build/retail_ops_v1_r4_round2_b_train_export.yaml",
     "retail_ops/build/retail_ops_v1_r4_round2_b_sft.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r4_round2_a_candidate.yaml",
 )
 
 

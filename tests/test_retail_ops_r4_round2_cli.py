@@ -169,3 +169,89 @@ def test_round2_candidates_use_distinct_fresh_output_dirs() -> None:
         _load(path)["data"]["train_relpath"] for path in (_A_SFT_CONFIG, _B_SFT_CONFIG)
     }
     assert len(train_relpaths) == 2
+
+
+# ---------------------------------------------------------------------------
+# 候选 dev 评测配置：训练之后才写（adapter.file_sha256 是运行产物）
+# ---------------------------------------------------------------------------
+
+_ROUND1_CANDIDATE_CONFIG = (
+    CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml"
+)
+_EVALUATE_DIR = CONFIG_ROOT / "retail_ops/evaluate"
+
+#: 候选字母 -> (attempt_id, 训练产物目录)。配置本身按训练顺序逐个产出，
+#: 因此断言只作用于**已存在**的那些；未登记的候选由下面一条测试抓出来。
+_ROUND2_CANDIDATE_SPECS = {
+    "a": ("qwen3-4b-dev-candidate-003", "reports/retail_ops/v1/r4/sft-003"),
+    "b": ("qwen3-4b-dev-candidate-004", "reports/retail_ops/v1/r4/sft-004"),
+    "c": ("qwen3-4b-dev-candidate-005", "reports/retail_ops/v1/r4/sft-005"),
+}
+
+
+def _existing_round2_candidates() -> list[tuple[str, Path]]:
+    found = []
+    for letter in _ROUND2_CANDIDATE_SPECS:
+        path = _EVALUATE_DIR / f"retail_ops_v1_r4_round2_{letter}_candidate.yaml"
+        if path.exists():
+            found.append((letter, path))
+    return found
+
+
+def test_every_round2_candidate_config_on_disk_is_registered() -> None:
+    """磁盘上的每份第二轮候选评测配置都必须在 `_ROUND2_CANDIDATE_SPECS` 里。
+
+    下面的断言只作用于已登记且已存在的配置。没有这一条，新增一份未登记的配置
+    就会完全逃过 adapter pin 与单变量检查，且没有任何信号——与治理扫描同一个理由。
+    """
+    on_disk = {
+        path.name.removeprefix("retail_ops_v1_r4_round2_").removesuffix("_candidate.yaml")
+        for path in _EVALUATE_DIR.glob("retail_ops_v1_r4_round2_*_candidate.yaml")
+    }
+    assert on_disk - set(_ROUND2_CANDIDATE_SPECS) == set(), "有未登记的第二轮候选评测配置"
+
+
+@pytest.mark.parametrize(("letter", "path"), _existing_round2_candidates())
+def test_round2_candidate_config_differs_from_round1_only_by_adapter(
+    letter: str, path: Path
+) -> None:
+    """候选评测两侧只能差 adapter，否则 dev delta 会混入与消融无关的变量。
+
+    model / generation / dataset_version / dev_manifest_path 任一不同，delta 就不再
+    归因于这一轮改的那个变量；A/B 的 base 侧沿用既有 qwen3-4b-dev-base-001，不重跑。
+    """
+    attempt_id, run_dir = _ROUND2_CANDIDATE_SPECS[letter]
+    round1 = _load(_ROUND1_CANDIDATE_CONFIG)
+    candidate = _load(path)
+
+    assert set(round1) == set(candidate)
+    assert {key for key in round1 if round1[key] != candidate[key]} == {"attempt_id", "adapter"}
+    assert candidate["attempt_id"] == attempt_id
+    assert candidate["adapter"]["run_dir"] == run_dir
+
+
+@pytest.mark.parametrize(("letter", "path"), _existing_round2_candidates())
+def test_round2_candidate_config_pins_every_adapter_file(letter: str, path: Path) -> None:
+    """adapter 的每个文件都要有 64 位 SHA-256：评测在产物落盘前逐文件核对，
+    少 pin 一个文件就等于允许那一个文件被替换。"""
+    round1_files = _load(_ROUND1_CANDIDATE_CONFIG)["adapter"]["file_sha256"]
+    adapter = _load(path)["adapter"]["file_sha256"]
+
+    assert set(adapter) == set(round1_files)
+    for name, digest in adapter.items():
+        assert len(digest) == 64, name
+        assert all(char in "0123456789abcdef" for char in digest), name
+
+
+def test_round2_candidate_adapters_are_all_distinct() -> None:
+    """已产出的 adapter 权重必须互不相同，也不得指回第一轮。
+
+    指回同一份权重会让两个候选产出完全相同的读数，而配置看起来完全正常——
+    这种错误在报告里表现为"两个候选表现一致"，极易被误读成有意义的结论。
+    """
+    paths = [_ROUND1_CANDIDATE_CONFIG, *(path for _, path in _existing_round2_candidates())]
+    weights = {
+        path.name: _load(path)["adapter"]["file_sha256"]["adapter_model.safetensors"]
+        for path in paths
+    }
+    assert len(set(weights.values())) == len(weights), weights
