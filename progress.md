@@ -571,3 +571,17 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-14 | `base-002` 新 prompt 零训练评测 | EXIT=0，**54/60**，refund_eligible **9/10**，invalid_call 0，schema 1.0 |
 | 2026-08-14 | C 训练 `sft-005` | 197.9 s，峰值 5.553 GB，train_loss 0.2191 |
 | 2026-08-14 | C dev 评测 `candidate-005` | EXIT=0，**55/60**，refund_eligible 5/10（**低于自身 base 的 9/10**） |
+
+## 2026-08-14 — R4 第三轮实验 1（容量 × 指令框定叠加）
+
+- 动机：第二轮遗留的方法论缺口——A 的 +0.200 对照的是旧 prompt 的 base，
+  而新 prompt 零训练 base 已 54/60，delta 里训练与 prompt 的贡献无法分离。
+- 做法：A 的 lora 段 + C 的 data 段，配对 `base-002`，**两侧同 prompt**。
+- 结果：**60/60**，delta **+0.100**，`policy_violation` 5→0、`recovery_success` 0.5→1.0。
+- 结论见 `findings.md` 同日小节与 **LOG-20260814-03**。
+- 未消耗 holdout 第二次观测。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-14 | 叠加训练 `sft-006` | 293.7 s（GPU 被占 81%），峰值 5.647 GB，train_loss 0.1795 |
+| 2026-08-14 | 叠加 dev 评测 `candidate-006` | EXIT=0，**60/60**，对 base-002 delta **+0.100** |
