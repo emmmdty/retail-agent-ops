@@ -57,3 +57,33 @@ def test_round3_uses_the_new_prompt_export_and_full_linear_lora() -> None:
     # r/alpha/dropout 与前两轮全部候选相同，容量的唯一自由度仍是覆盖范围。
     assert config["lora"]["r"] == 16
     assert config["lora"]["alpha"] == 32
+
+
+_ROUND1_CANDIDATE = CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml"
+_AC_CANDIDATE = (
+    CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r4_round3_capacity_prompt_candidate.yaml"
+)
+
+
+def test_round3_candidate_differs_from_round1_only_by_adapter() -> None:
+    """候选评测两侧只能差 adapter，delta 才能归因到这次的叠加。"""
+    round1 = _load(_ROUND1_CANDIDATE)
+    candidate = _load(_AC_CANDIDATE)
+
+    assert set(round1) == set(candidate)
+    assert {key for key in round1 if round1[key] != candidate[key]} == {"attempt_id", "adapter"}
+    assert candidate["attempt_id"] == "qwen3-4b-dev-candidate-006"
+    assert candidate["adapter"]["run_dir"] == "reports/retail_ops/v1/r4/sft-006"
+
+
+def test_round3_candidate_adapter_is_a_fresh_set_of_weights() -> None:
+    """权重必须是新的一份：指回 A 或 C 的 adapter 会让叠加读数变成复读。"""
+    weights = _load(_AC_CANDIDATE)["adapter"]["file_sha256"]["adapter_model.safetensors"]
+    others = {
+        _load(path)["adapter"]["file_sha256"]["adapter_model.safetensors"]
+        for path in CONFIG_ROOT.glob("retail_ops/evaluate/retail_ops_v1_r4_round2_*_candidate.yaml")
+    }
+    others.add(_load(_ROUND1_CANDIDATE)["adapter"]["file_sha256"]["adapter_model.safetensors"])
+
+    assert len(weights) == 64
+    assert weights not in others
