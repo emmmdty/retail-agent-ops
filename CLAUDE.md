@@ -104,19 +104,31 @@ git diff --check
   "条件动作比例是该行为的主要成因"在该量级上不成立。残余嫌疑转向**请求措辞**：
   同样 ×3，祈使句家族 `refund_recovery` +2，而两个变体都以核实/检查开头的
   `refund_eligible` +0。**这是观察不是结论，未据此启动任何改动**。
-- **R4 第二轮已收官（2026-08-14，LOG-20260814-01/02）**：三候选跑完，**只有 A 达标**。
-  `refund_eligible`（每格 n = 10）：base 旧 prompt 5/10、**base 新 prompt 9/10（零训练）**、
-  R3 与 R4-1 均 0/10、B 4/10、C 5/10、**A 10/10**（合计 60/60，base 48/60）。
-  **两条结论**：(1) attention-only LoRA 的 SFT 对该类别是**净负作用**，横跨两个 prompt、
-  四次训练方向一致（−4 到 −5）；加 `gate/up/down_proj` 后同一份数据从负作用变正作用——
-  **容量决定训练效果的符号，不是大小**。(2) **纯 prompt 干预零训练即得 9/10**，
-  A 的 10/10 只多 1 条，n=10 下**不足以支撑"训练优于 prompt"**。
-  但 `refund_recovery` 反向（prompt 完全无效 5/10→5/10、训练 5/10→10/10），
-  故"prompt 就够了"**只对 `refund_eligible` 成立**，不得推广成"SFT 无用"。
-  **未测且不得推断**：A+新 prompt、A+B、三者叠加（并列消融，无叠加观测）。
-  全部为 **dev** 且 dev 已用于选择；**未消耗 holdout 第二次观测**。
-  当前 `SYSTEM_PROMPT` sha256 `8ae813c4284246b9…`（旧 `d919602e25f2c87c…`）。
-- **R4 第二轮已启动**（用户批准设计
+- **R4 三轮已跑完（LOG-20260814-01/02/03/05）。当前有效结论如下，每条都带规模条件**：
+  - **LoRA 容量必须与模型规模匹配，不存在"越大越好"**。dev 60 条、同一份新 prompt 数据、
+    同一组超参下：4B 零训练 54/60、attention-only 55/60、全 linear **60/60**；
+    1.7B 零训练 44/60、attention-only **58/60**、全 linear 45/60。**1.7B 上方向相反**——
+    全 linear 的 15 条失败**全部**是"该拒绝却没拒绝"（`refund_denied_ownership` 10/10
+    全灭、`policy_violation` 0→5、`average_tool_calls` 1.27→2.08），是**学过头**而非没学会。
+    容量不足学不会条件决策，容量过剩被训练数据的类别偏向带跑。
+  - **连带约束：数据配比与 LoRA 容量耦合，不能当作两个独立旋钮。** `train-export-004`
+    沿用第一轮 ×3 oversample，使"执行:拒绝" = 240:120 = 2:1；该偏向在 4B 无害、
+    在 1.7B + 过剩容量下致命。今后调 oversample 必须连同 `target_modules` 一起评估。
+  - **提示词干预是模型规模依赖的**：新 prompt 使 4B 的 `refund_eligible` 5/10→9/10，
+    对 1.7B **完全无效**（0/10），而训练对 1.7B 极其有效（0/10→10/10）。
+    因此"prompt 与训练分工"的结论**只在 4B 成立**，不得跨规模引用。
+  - **已被自己实验证伪的一般化表述**：「容量决定训练效果的符号」（LOG-20260814-01/02
+    的原表述）被 LOG-20260814-05 推翻；历史条目未改写，以最新条目为准。
+  - 当前 `SYSTEM_PROMPT` sha256 `8ae813c4284246b9…`（旧 `d919602e25f2c87c…`）。
+  - 全部为 **dev** 读数，且 dev 已被用于候选选择，带选择偏差。
+- **封存 holdout 两次观测均已消耗，不再有"未观测"状态**（LOG-20260811-03、-04、
+  LOG-20260814-04）。任何新判定都是**第三次**，需用户单独决策。
+  第二次判定：base 103/120、候选 **120/120**（六类各 20/20）、`success_delta` **+0.1417**、
+  `policy_violation` 11→0、`invalid_call` 5→0，但 **`p95_latency_ratio` 1.8774 > 1.25**
+  被拒 → **NO-GO / baseline**。阈值一个字未改（`test_release_config_does_not_touch_the_gates`）。
+  延迟代价已归因：调用次数只增 14.6%，**单次调用耗时 1497→2971 ms（1.985×）**，
+  主因是全 linear LoRA 的前向开销，**不是**"多做了工具调用"。
+- **R4 第二轮已启动**（用户批准设计- **R4 第二轮已启动**（用户批准设计
   `docs/superpowers/specs/2026-08-13-r4-round2-ablation-design.md`，执行提示词
   `docs/handoffs/2026-08-13-r4-round2-execution-prompt.md`）。本轮是**诊断性消融，
   不是发布候选生产**：三候选并列（不叠加）各只改一个变量，共同参照点 `sft-002`——
@@ -145,8 +157,8 @@ git diff --check
   candidate 0.7500（90/120）；候选 policy_violation 16→0、invalid_call 41→0、
   schema_valid_rate 0.7819→1.0000、p95 比值 1.0870。候选失败 100% 为
   `premature_final_response`，`refund_eligible` 20/20 全数失败。
-  **holdout 已被观测一次**，其结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择；
-  再次判定需另行决定是否消耗第二次。
+  该结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择。
+  **注：这是第一次观测；第二次已于 2026-08-14 消耗（LOG-20260814-04）。**
 - 已知结论：dev（LOG-20260807-09）与 holdout 一致——候选把格式/安全类失败清零，
   但需 ≥2 次工具调用的场景回退。两次评测中 `verifier_reward` 均与主判据反向，
   勿以奖励值代替最终状态判据。
@@ -175,7 +187,7 @@ git diff --check
   两份 sealed 证据已于 2026-08-11 产出（`report_id` 是全字段自哈希），**再改即作废**。
 - 资源约束：gpu-5090 的数据一律落 `/mnt/aidata`，不得写系统盘（LOG-20260811-02）。
   远端 `/tmp` 会被重启清空，不可用于承载跨故障的运行日志。
-- 当前基线：678 tests passed，Ruff/mypy/uv lock 全部通过。
+- 当前基线：698 tests passed，Ruff/mypy/uv lock 全部通过。
 - 冻结契约提醒：`formal_tasks.py` 的 `assert_exact_quotas` 把 train/dev/holdout 每类别
   40/10/20 写成硬契约。新增任务需重新冻结数据集并改变 `dataset_version` 与 manifest 哈希，
   已有全部评测证据的可比性随之作废——这不是"多花点 API 钱"的事。

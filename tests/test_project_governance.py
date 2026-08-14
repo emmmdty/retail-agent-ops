@@ -145,12 +145,16 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
         "docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
     )
 
-    assert "当前阶段：`R3` 单卡适配与服务 v1" in agents
+    assert "当前阶段：`R4` 失败驱动优化" in agents
     assert "R2 已完成方案审批" in agents
     assert "正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认" in agents
-    # R3 的候选结论必须以 dev 口径陈述，不得被写成 release 判定
-    assert "不适合直接替换 base" in agents
-    assert "尚未进入：正式 120 条 holdout 评测、release GO/NO-GO、serve 部署" in agents
+    # 候选结论必须以 dev / holdout 口径分别陈述，不得被写成 release 判定
+    assert "不得把 dev 读数写成 release 判定" in agents
+    # 封存 holdout 的消耗状态是不可逆资源，必须在接管文档里显式可见
+    assert "封存 holdout 的两次观测均已消耗" in agents
+    # R4 的结论已被跨规模检验限缩，接管文档不得留下无条件的一般化表述
+    assert "LoRA 容量须与模型规模匹配" in agents
+    assert "提示词干预是规模依赖的" in agents
 
     for expected in (
         "R2 设计选择和 CPU 实施计划已经用户批准",

@@ -22,7 +22,7 @@
 | `domains/retail_ops/v1/` | 活动 | 领域 bundle：工具 schema、业务政策、发布策略（版本化输入） |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
-| `tests/` | 活动 | 624 项测试，含治理契约测试 |
+| `tests/` | 活动 | 698 项测试，含治理契约测试 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
@@ -63,7 +63,7 @@ src/veritool_rl/
 
 | 路径 | 消费命令 |
 |---|---|
-| `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 的 `sft_oversample` 是**必填**键：空 mapping 表示不重采样，省略会被命令契约拒绝——不给默认值是为了让"忘了写"与"故意不重采样"在配置层可分辨 |
+| `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
 | `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate） |
 | `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release） |
 | `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
@@ -86,10 +86,12 @@ src/veritool_rl/
 得到互相矛盾的结论。R1 的 `ReleaseReport` 契约已冻结（gate 集合与顺序被
 `validate_decision_consistency` 断言），formal 侧是并行类型而不是它的扩展。
 
-四接口在 formal 轨道上均已实际运行：2026-08-11 完成封存 120 条 holdout 的
-base/candidate 背靠背评测、首个 formal 发布判定（**NO-GO / baseline**）与按该判定
-回滚基座的服务演示（LOG-20260811-03、-04）。**封存 holdout 已被观测一次**；
-其结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择。
+四接口在 formal 轨道上均已实际运行，且完整走通**两次**：2026-08-11 完成第一次封存
+holdout 的 base/candidate 背靠背评测、首个 formal 发布判定（**NO-GO / baseline**）
+与按该判定回滚基座的服务演示（LOG-20260811-03、-04）；2026-08-14 完成第二次完整观测
+与第二次判定（同样 **NO-GO / baseline**，候选 120/120 但 `p95_latency_ratio`
+1.8774 > 1.25，LOG-20260814-04）。**封存 holdout 的两次观测均已消耗，不再有"未观测"
+状态**；结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择，任何新判定都是第三次。
 
 **配对可比性的连带约束**（R4 起必须知道）：`code_commit`、`uv_lock_sha256`、
 `system_prompt_sha256` 都在 `SEALED_PAIRING_FIELDS` 内，因此任何后续改动提交后，

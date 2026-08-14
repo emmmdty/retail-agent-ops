@@ -6,184 +6,69 @@
 
 ## Current Phase
 
-R4「失败驱动优化」**第二轮**（设计 `docs/superpowers/specs/2026-08-13-r4-round2-ablation-design.md`
-已由用户批准，执行提示词 `docs/handoffs/2026-08-13-r4-round2-execution-prompt.md`）。
-第一轮（数据比例重平衡）已判负并按预设停止条件停止（LOG-20260811-09）。
-本轮是**诊断性消融实验，不是发布候选生产**：成功标准是「分辨出瓶颈在哪一层」，
-不是「某个候选达标」。发布门禁一个字不改，封存 holdout 不动，不消耗第二次观测。
+R4「失败驱动优化」**三轮已跑完**，封存 holdout 两次观测均已消耗。当前处于
+**R4 收尾 / R5 待启动**之间：没有进行中的实验，下一步方向待用户决定。
 
 ## Current Task
 
-R4 第二轮：三候选并列消融（不叠加），各只改一个变量，共同参照点是 `sft-002` /
-`candidate-002`（第一轮，45/60，`refund_eligible` 0/10）。
+（无进行中的任务。以下是 R4 的收口状态，供接管者判断下一步。）
 
-| 候选 | 唯一变量 | 训练数据 | 训练产物 | 候选评测 |
-|---|---|---|---|---|
-| A | `lora.target_modules` 加 MLP 三投影 | `train-export-002`（复用） | `sft-003` | `candidate-003` |
-| B | sft 末尾追加终局回复 | 新 `train-export-003` | `sft-004` | `candidate-004` |
-| C | `runner.SYSTEM_PROMPT` | 新 `train-export-004` | `sft-005` | `candidate-005` + **base-002** |
+### 三轮实验的最终结论（每条都带规模条件，详见 LOG-20260814-01/02/03/04/05）
 
-**Stage 2 已完成（2026-08-14，LOG-20260814-01）**：A **达标**（`refund_eligible`
-10/10，合计 60/60，格式安全三项 0/0/1.0）；B **未达标但有信号**（4/10 ≥ 3/10 诊断阈值，
-合计 54/60，`refund_recovery` 5/10→10/10）。base 48/60、第一轮 45/60。
-结论：**LoRA 容量是前两轮一直没被质疑的真正瓶颈**；A 与第一轮共用逐字节相同的训练数据，
-唯一差别是 target_modules。A/B 是并列消融未叠加，**叠加效果本轮没测过，不得推断**。
-**Stage 3/4 已完成（2026-08-14，LOG-20260814-02）**：C 55/60（`refund_eligible` 5/10），
-新 prompt 零训练 base 54/60（**9/10**）。**三候选跑完，按 spec 停止条件停止。**
+**结论一：LoRA 容量必须与模型规模匹配，不存在"越大越好"。**
+dev 60 条、同一份 `train-export-004`、同一组超参：
 
-**本轮两条结论**：(1) attention-only LoRA 的 SFT 对 `refund_eligible` 是净负作用，
-横跨两个 prompt、四次训练方向一致（−4 到 −5）；加 MLP 三投影后同一份数据从负作用
-变正作用（5/10→10/10）——**容量决定训练效果的符号**。(2) 纯 prompt 干预零训练即得
-9/10，A 的 10/10 只多 1 条，**n=10 下不足以支撑"训练优于 prompt"**。
-但 `refund_recovery` 反向（prompt 完全无效、训练 5/10→10/10），
-故"prompt 就够了"**只对 `refund_eligible` 成立**。
-**未测：A+新 prompt、A+B、三者叠加——并列消融，不得推断。**
+| 模型 | 零训练 | attention-only | 全 linear |
+|---|---|---|---|
+| Qwen3-4B | 54/60（elig 9/10） | 55/60（elig 5/10） | **60/60** |
+| Qwen3-1.7B | 44/60（elig 0/10） | **58/60** | 45/60 |
 
-### 开工核查推翻的一条设计假设（2026-08-13，已请示并获裁定）
+1.7B 上方向相反：全 linear 的 15 条失败**全部**是"该拒绝却没拒绝"
+（`refund_denied_ownership` 10/10 全灭、`policy_violation` 0→5、
+`average_tool_calls` 1.27→2.08），是**学过头**而非没学会。
 
-spec §4.3 与提示词第 3 节假定「改 `runner.SYSTEM_PROMPT` 后重新导出，system 消息
-就会换成新 prompt」。**实测不成立**：`trajectory_to_sft_example`
-（`core/generators.py:34`）的 system 消息取自 `trajectory.metadata["system_prompt"]`，
-而 teacher 证据是已持久化的轨迹——240 份证据的该字段全是旧 prompt，
-`selection.json` 的来源是 teacher 238 / internal_reference 2。因此改常量后重新导出，
-**238/240 条样本逐字节不变**，且 `_require_evidence_binds_record` 不比较 system_prompt，
-**不会报错**——会静默产出一份变量没生效的 `train-export-004`。
+**结论二（连带约束）：数据配比与 LoRA 容量耦合，不能当作两个独立旋钮。**
+`train-export-004` 沿用第一轮 ×3 oversample 使"执行:拒绝"=240:120=2:1；
+该偏向在 4B 无害、在 1.7B + 过剩容量下致命。今后调 oversample 必须连同
+`target_modules` 一起评估。
 
-用户裁定：**在导出侧改写 system 消息**（本文件「新配置契约」第 2 条）。
-不受影响的是「新 prompt 下的 base（零训练）」这条读数——评测两侧都在运行时调
-`run_episode` 读当前常量，该读数完全成立，且它是本轮最有价值的单条结论。
+**结论三：提示词干预是模型规模依赖的。** 新 prompt 使 4B 的 `refund_eligible`
+5/10→9/10，对 1.7B **完全无效**（0/10），而训练对 1.7B 极其有效（0/10→10/10）。
 
-### 执行阶段划分（顺序是强制的，理由在下方失败模式 1）
+**被自己实验证伪的一般化表述**：「容量决定训练效果的符号」（第二轮原表述）
+已被第三轮跨规模验证推翻。历史 LOG 条目未改写，以最新条目为准。
 
-- **Stage 1（CPU，本任务）**：候选 A 的训练配置；导出侧两项新能力（终局回复追加 +
-  system 改写）与配置契约；B 的导出与训练配置；本地执行 B 导出产出 `train-export-003`。
-  **不改 `SYSTEM_PROMPT`，也不提交 C 的任何配置**——`sft_system_prompt_sha256` 要声明
-  新 prompt 的哈希，而新 prompt 在 Stage 3 才落定；现在写进配置只会提交一份必然
-  硬失败的配置。Stage 1 交付的是 C 所需的**能力**，不是 C 的配置。
-- **Stage 2（GPU，外部门）**：A 训练 → A dev 候选评测 → B 训练 → B dev 候选评测。
-  全部跑在旧 prompt 下，配对基线沿用既有 `qwen3-4b-dev-base-001`。
-- **Stage 3（CPU）**：改 `SYSTEM_PROMPT` 常量 → 本地执行 C 导出产出 `train-export-004`
-  → C 训练配置。这一阶段的 diff 刻意做到极小，变量单一。
-- **Stage 4（GPU，外部门）**：C 训练 → **C base dev 重跑**（`base-002`）→ C dev 候选评测。
+### 发布判定状态
 
-### 新配置契约（两个键，均**必填**，沿用第一轮 `sft_oversample` 的先例）
+两次判定均为 **NO-GO / baseline**，阈值一个字未改（有测试锁定）：
 
-1. `sft_terminal_response`：场景名列表，对这些场景在 sft 消息末尾追加一条**独立的**
-   assistant 终局回复。空列表表示不追加（现有行为）。模板硬编码在代码里（下方 B 段），
-   配置只声明启用哪些场景。
-2. `sft_system_prompt_sha256`：64 位 hex 或 `null`。`null` 表示沿用轨迹 metadata 里的
-   prompt（现有行为）；给出 hex 则把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，
-   **并核对其 sha256 精确等于该值，不符即硬失败**。之所以不是布尔值：布尔值下
-   「配置写了 true 但常量忘了改」会产出与未改写逐字节相同的文件而不报错，
-   正是上面那条被推翻的假设的同一个形状。配置声明期望哈希，让这种失效变成硬错误。
+| | 第一次（2026-08-11） | 第二次（2026-08-14） |
+|---|---|---|
+| base | 0.7833（94/120） | 0.8583（103/120） |
+| 候选 | 0.7500（90/120） | **1.0000（120/120）** |
+| 失败门禁 | `success_delta` −0.0333 | `p95_latency_ratio` **1.8774** > 1.25 |
 
-两个键都要补进既有 `retail_ops_v1_r2_train_export.yaml` 与
-`retail_ops_v1_r4_train_export_rebalanced.yaml`（显式空值 = 现有行为）。
+第二次的延迟代价已归因：调用次数只增 14.6%，**单次调用耗时 1497→2971 ms（1.985×）**，
+主因是全 linear LoRA 的前向开销，**不是**"多做了工具调用"。
 
-### 候选 B 的终局回复设计
+**封存 holdout 两次观测均已消耗**，任何新判定都是第三次，需用户单独决策。
 
-定稿模板（**只使用工具真实返回的字段**）：
+### 挡在 GO 前面的唯一问题
 
-```
-已为订单 {order_id} 按 {reason} 办理退款，当前退款状态为 {refund_status}。
-```
+延迟。三条未验证的可选路径：(a) 只加部分 MLP 投影或降 r，在效果与延迟间取中间点；
+(b) 把 adapter 合并进基座以消除 LoRA 前向开销后重测延迟（**不改变模型数值，最干净**）；
+(c) 与用户讨论 `p95_latency_ratio` 门禁是否应区分"更慢"与"做了更多工作"——
+属发布口径变更，需用户决策，且不得为通过判定而放宽。
 
-三个字段全部从样本自身的消息序列取，已实测确认形状：`{order_id}` 与
-`{refund_status}` 来自最后一次 `refund_order` 的 tool 返回 `content`，`{reason}` 来自
-该次 tool_call 的 `arguments.reason`。因此 B 是 `sft.jsonl` 的**纯局部变换**——
-不读任务记录、不碰 `target_state`/`expected_calls`、不引入外部信息。
-`refund_recovery` 有两次 `refund_order`（首次 `transient_error`），终局回复一律追加在
-**最后一次成功的**那次之后。
+### 未测且不得推断
 
-**不得加入金额、到账时间、工单号**——实测 `refund_order` 的 observation 只有
-`{order_id, refund_status}`，编造字段等于用一个新的幻觉问题换掉当前问题。
-
-### 输入
-
-- 冻结数据集 `retail_ops_v1_r2_20260722`（240/60/120，**不改**）与 teacher 证据
-  `teacher-collection/teacher-full-001/`（**不重采**，API 未授权）。
-- 现有导出 `train-export-001`/`002`（**不覆盖**）；第一轮训练配置
-  `configs/retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml` 是三候选的参照点。
-- 现有 dev base 证据 `qwen3-4b-dev-base-001`（0.800），A/B 直接配对，不重跑。
-
-### 输出
-
-- A：`retail_ops_v1_r4_round2_a_sft_lora_full.yaml`（唯一改 `lora.target_modules`）。
-- B：导出侧终局回复实现 + `retail_ops_v1_r4_round2_b_train_export.yaml`
-  （`attempt_id: train-export-003`）+ `retail_ops_v1_r4_round2_b_sft.yaml`
-  + 本地导出产物 `train-export-003`。
-- C：Stage 1 只交付导出侧 system 改写实现与契约；Stage 3 才有新 `SYSTEM_PROMPT`、
-  `retail_ops_v1_r4_round2_c_train_export.yaml`（`attempt_id: train-export-004`）、
-  `retail_ops_v1_r4_round2_c_sft.yaml` 与本地导出产物。
-- 产物自证：`sft_terminal_template.json` 与 `sft_system_prompt.json` 恒定写出
-  （含未启用状态）并纳入 `private_artifact_sha256`，与第一轮 `sft_oversample.json` 一致。
-- 三条单变量纪律断言，仿 `tests/test_retail_ops_r4_cli.py:84`，各候选一条。
-- **候选评测 config 一律推迟到训练之后**：`adapter.file_sha256` 是运行产物，
-  提前写就是无验证占位（第一轮同一裁定）。
-
-### 非目标
-
-不改 `assert_exact_quotas` 的 40/10/20 配额、不新增任务、不重新冻结数据集；
-不改 `SealedEvaluationReport`/`BaseRunEvidence`/`CandidateRunEvidence` 字段集合；
-不改发布门禁阈值、不放宽 `require_comparable_sealed_runs`；不动封存 holdout、
-不消耗第二次观测；不改 `parser.py` 的 `mixed_tool_call_content` 规则；
-不改 `runner.py` 的 `final_state == 1.0` 即 break；不覆盖 `r3/`/`r4/` 已有产物；
-不进入 DPO/GRPO/在线 RL；不启用 τ²-bench/appworld/ToolSandbox（R5 事项）；
-不因某个候选表现好而追加变体。
-
-### 失败模式
-
-1. **把 C 的 `SYSTEM_PROMPT` 改动与 A/B 一起提交。** 该常量被
-   `base_evaluation.py:381` 与 `sealed_evaluation.py:217` 哈希，且 `system_prompt_sha256`
-   在 dev 的 `PAIRING_FIELDS` 内。一旦提交，A/B 就再也无法在旧 prompt 下评测，
-   其配对基线 `qwen3-4b-dev-base-001` 同时失效。又因 `_current_code_commit` 拒绝脏
-   工作树，C 的改动连"放在工作树里不提交"都不行——**必须等 A/B 的 GPU 跑完**。
-2. `sft_system_prompt_sha256` 做成布尔值，导致"配置写了但常量没改"静默无效
-   （已在契约设计中排除）。
-3. 终局回复被拼进 assistant 工具调用消息的 `content`，触发 parser 的
-   `mixed_tool_call_content`，把已获得的 `invalid_call = 0` 打回去——终局回复必须是
-   **独立的 assistant 消息**，工具调用消息的 `content` 保持为空。
-4. 终局回复稀释决策点：它加在 `refund_order` 之后，而决策点是 `get_order` 返回之后，
-   两个位置不同，形状分布应仍为 160 : 240。**必须由测试断言，不能靠推理。**
-5. 终局回复模板含工具从未返回的字段（金额/到账时间/工单号），用新幻觉换旧问题。
-6. 重复采样或终局回复漏进 `train.jsonl`/`selection.json`，使 provenance 声称超过
-   240 条冻结任务。
-7. 候选 A 的 LoRA 容量增加同时打坏已获得的格式收益——三项必须逐项报告，
-   退化即如实记录，不因它是"推荐方案"而淡化。
-
-### 判定标准（与第一轮相同，**不得下调**）
-
-达标门槛：`refund_eligible` ≥ 7/10，且 `invalid_call_count` = 0、
-`policy_violation_count` = 0、`schema_valid_rate` = 1.0。
-
-诊断读数（不是门槛）：任一候选 `refund_eligible` ≥ 3/10 → 该层有信号；三个均 0/10 →
-容量、数据闭环、指令框定三类解释全部排除。**每个结论必须标注 n = 10 的统计限度**：
-单条样本变化即 10 个百分点，3/10 与 5/10 的差异不足以支撑排序结论。
-
-停止条件：三个候选跑完即停止，统一分析后再决定第三轮。
-
-### 验收
-
-`.venv/bin/pytest -q`（起始基线 **638**）、`.venv/bin/ruff check .`、`.venv/bin/mypy`、
-`env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`。
-
-每个候选另需证明：
-
-- **A**：训练配置除 `lora.target_modules` 外与 `retail_ops_v1_r4_sft_rebalanced.yaml`
-  逐字段相同。
-- **B**：`train-export-003` 的 `train.jsonl`/`selection.json` 与 `train-export-001`
-  **逐字节相同**（`29f02425…`/`f60744f7…`）；决策点形状分布仍为 **160 : 240**；
-  assistant 工具调用消息的 `content` 仍全部为空。
-- **C**：`train-export-004` 与 `002` 的唯一差异是 system 消息；base 与 candidate 两侧
-  `system_prompt_sha256` 相等且均不等于旧值（旧值 sha256 前缀 `d919602e25f2`）。
-
-安全关键的断言要做**突变验证**——把断言该抓的东西故意改坏，确认测试立即失败。
+A+B 叠加（终局回复 + 容量）、三者叠加、1.7B 上的 prompt×容量完整 2×2、
+以及本轮全部结论在其他领域/语言上的迁移。
 
 ### 授权状态
 
-GPU **否**、API **否**、数据下载 **否**、holdout 执行 **否**、公开发布 **否**。
-Stage 2 与 Stage 4 的每条外部命令单独报告（命令、工作目录、物理 GPU、预计时长、产物）
-并等待确认，不得连跑。
+GPU **否**、API **否**、数据下载 **否**、holdout 执行 **否**（第三次需单独决策）、
+公开发布 **否**。
 
 ## 历史任务：R3 Task 3（已完成，摘要见 progress.md）
 

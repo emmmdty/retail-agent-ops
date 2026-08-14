@@ -21,7 +21,7 @@
 | QLoRA 训练（attention-only） | 单卡 3 epoch / 75 steps，**212 s**，峰值 **5.55 GB**，adapter **23.6 MB** | `reports/…/r4/sft-004/metrics.json` |
 | QLoRA 训练（全 linear layer） | 同超参，**223 s**，峰值 **5.64 GB**，adapter **66 MB** | `reports/…/r4/sft-003/metrics.json` |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **688** tests passed；Ruff / mypy(65 源文件) / `uv lock --check` / `git diff --check` 全绿 | 每次收口均重跑 |
+| 工程基线 | **698** tests passed；Ruff / mypy(65 源文件) / `uv lock --check` / `git diff --check` 全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -155,11 +155,11 @@ LOG-20260814-01/02/03。
 
 > **RetailAgentOps｜零售工具 Agent 的单卡适配与发布流水线**（个人项目，Python/PyTorch/FastAPI）
 > - 设计并实现 `build / evaluate / release / serve` 四接口流水线，覆盖轨迹数据质检、
->   冻结任务评测、版本化发布门禁与单卡服务；**688** 项测试、Ruff/mypy/依赖锁全绿。
+>   冻结任务评测、版本化发布门禁与单卡服务；**698** 项测试、Ruff/mypy/依赖锁全绿。
 > - 建立**不可伪造的证据链**：运行报告以全字段自哈希为 ID、逐产物 SHA-256 绑定、
 >   配对比较前强制校验模型/生成参数/数据/commit 同条件，任一字段被改动即加载失败。
 > - 实现封存 holdout 的两段式授权与五维指纹隔离，公开产物为 allowlist 字段集并有
->   泄漏扫描测试；120 条 holdout 在整个开发期**仅被观测一次**，用于发布判定。
+>   泄漏扫描测试；120 条 holdout 在整个开发期**只被观测两次**，各用于一次发布判定。
 > - 用真实候选跑通**两次**发布判定，两次都输出 **NO-GO** 并驱动服务回滚到冻结基座
 >   （`adapter_loaded=false` 可在 `/health` 核对）：第一次是任务成功率未达 +5pp 门槛；
 >   第二次候选在 120 条封存任务上达 **120/120**、成功率 **+14.2pp**、政策违规与非法调用

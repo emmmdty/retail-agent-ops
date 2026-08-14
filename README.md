@@ -2,12 +2,15 @@
 
 RetailAgentOps 是面向零售订单、退款和客服操作的单卡工具 Agent 领域适配与发布流水线。它把工具 schema、业务政策和任务转换为可执行轨迹，完成数据质检、轻量后训练、状态级评测、GO/NO-GO 发布门禁和推理服务。
 
-> **状态**：`R1`–`R3` 已完成，当前是 `R4` 失败驱动优化。R3 走完了首次真实 Qwen3-4B
-> QLoRA-SFT → dev 配对评测 → 封存 120 条 holdout 评测 → GO/NO-GO 门禁 → 真实模型服务
-> 的完整链路，**发布结论是 `NO-GO`**：候选把非法调用 41→0、政策违规 16→0，但任务成功率
-> 0.7833→0.7500，唯一失败门禁是 `success_delta`。服务据此回滚加载纯基座并完成三条演示流程。
+> **状态**：`R1`–`R3` 已完成，`R4` 失败驱动优化三轮已跑完。完整链路（QLoRA-SFT → dev
+> 配对评测 → 封存 120 条 holdout 评测 → GO/NO-GO 门禁 → 真实模型服务）已在真实模型上
+> 走通**两次**，**两次发布结论都是 `NO-GO`**：第一次输在 `success_delta`
+> （0.7833→0.7500）；第二次候选在 120 条上做到 **120/120**、`success_delta` **+0.1417**、
+> 政策违规 11→0、非法调用 5→0，但 **`p95_latency_ratio` 1.88 > 1.25** 被拒——
+> 代价来自全 linear LoRA 的前向开销（单次调用 1497→2971 ms），不是多做了工具调用。
+> 两次都据此回滚加载纯基座。发布门禁阈值一个字未改，有测试锁定。
 > 详见 [`docs/MODEL_CARD.md`](./docs/MODEL_CARD.md) 与 [`docs/SYSTEM_CARD.md`](./docs/SYSTEM_CARD.md)。
-> 封存 holdout 已被观测一次，其结果不得反馈进开发。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA
+> **封存 holdout 的两次观测均已消耗**，结果不得反馈进开发。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA
 > 和可追溯评测基础，但旧研究路线已归档到 `legacy/`，不再是活动计划。
 > 分发名与 CLI 是 `retail-agent-ops`，Python 导入名仍是 `veritool_rl`（见
 > [`docs/REPO_MAP.md`](./docs/REPO_MAP.md) 的命名边界）。
