@@ -329,3 +329,19 @@ def test_round2_candidate_adapters_are_all_distinct() -> None:
         for path in paths
     }
     assert len(set(weights.values())) == len(weights), weights
+
+
+def test_round2_c_base_config_differs_from_the_original_base_only_by_attempt_id() -> None:
+    """C 的配对 base 必须与既有 base 评测除 attempt_id 外逐字段相同。
+
+    重跑 base 的唯一理由是 system prompt 变了；顺手改动模型 pin、dev manifest、seed
+    或生成参数中的任何一项，都会让"新 prompt 下的零训练读数"混入别的变量，
+    而那正是本轮最有价值的单条结论。
+    """
+    original = _load(CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml")
+    rerun = _load(CONFIG_ROOT / "retail_ops/evaluate/retail_ops_v1_r4_round2_c_base.yaml")
+
+    assert set(original) == set(rerun)
+    assert {key for key in original if original[key] != rerun[key]} == {"attempt_id"}
+    assert rerun["attempt_id"] == "qwen3-4b-dev-base-002"
+    assert "adapter" not in rerun
