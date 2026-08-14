@@ -2796,3 +2796,70 @@ base 已是 54/60。拿旧 prompt 的 base 去做 release 判定，契约合法�
 与候选 A 的 222.6 s 之差属占用差异，不是配置差异。
 
 **仍未测**：A + B（终局回复 + 容量）、三者叠加、以及本结论在其他模型规模上的复现。
+
+### LOG-20260814-04：第二次封存 holdout 观测——候选 120/120 满分，但被延迟门禁判 NO-GO
+
+- 日期：2026-08-14
+- 阶段/任务：R4 收官：封存 holdout 第二次**完整**观测（base + candidate）+ 发布判定
+- 状态：解决（**NO-GO / deployment=baseline**，唯一失败门禁 `p95_latency_ratio`）
+- 关联：LOG-20260814-03（候选选择依据）、LOG-20260811-03（第一次观测）、LOG-20260811-06（配对代价）
+- **不可逆资源已消耗**：封存 120 条 holdout 的**第二次完整观测已用掉**。此后再判定即第三次。
+
+**运行事实**（gpu-5090 GPU 0，两侧均在 GPU 相对空闲时执行）：
+`holdout-base-002`（新 prompt，零训练，`EXIT=0`，`report_id` `89fe01d8…`）；
+`holdout-candidate-002`（sft-006，`EXIT=0`，`report_id` `866d21e9…`）；
+`formal-release-002` 判定。产物已回传，双端 SHA-256 一致，两份报告本地重载 `report_id`
+自哈希复算通过。
+
+**两侧读数（120 条，每类 20）**：
+
+| 指标 | base-002（新 prompt 零训练） | candidate-002（sft-006） |
+|---|---|---|
+| task_success | **0.8583（103/120）** | **1.0000（120/120）** |
+| 逐场景 | eligible 16/20、recovery 10/20、其余 19–20/20 | **六类全部 20/20** |
+| policy_violation | 11 | **0** |
+| invalid_call | 5 | **0** |
+| schema_valid_rate | 0.9691 | **1.0000** |
+| p50 / p95 latency | 1855 / 3052 ms | 4747 / **5730** ms |
+
+**发布判定：NO-GO / deployment=baseline。** 逐门禁：
+
+| 门禁 | 观测 | 阈值 | 结果 |
+|---|---|---|---|
+| `success_delta` | **+0.1417** | ≥ +0.05 | PASS |
+| `policy_violation_delta` | −11 | ≤ 0 | PASS |
+| `invalid_call_count` | 0 | = 0 | PASS |
+| `p95_latency_ratio` | **1.8774** | ≤ 1.25 | **FAIL** |
+| `evidence_complete` | True | True | PASS |
+
+**本条改变后续做法的结论：延迟代价的来源是 LoRA 覆盖范围，不是"多做了工具调用"。**
+这是本次最容易被误判的一点，已用数据分离：`average_tool_calls` 比值仅 **1.146**、
+`average_turns` 1.061，而 `average_latency_ms` 比值 **2.276**。剔除调用次数差异后，
+**单次工具调用耗时 1497 → 2971 ms/call，比值 1.985**。`average_output_tokens`
+增长 1.429 倍不足以解释它。差额来自**全 linear layer LoRA 的推理开销**——7 个投影层
+每次前向都要多做一次低秩矩阵乘。旁证：第一次观测用 attention-only adapter（4 投影），
+`p95` 比值仅 **1.087**。
+
+**因此 R4 得到的是一个真实的效果 / 延迟权衡，而不是门禁不合理**：
+把 LoRA 从 attention 扩到全部 linear layer，换来 `task_success` +14.2pp（且 120/120
+满分、三项安全指标清零），代价是 p95 延迟接近翻倍。**发布门禁按设计工作，拒绝了一个
+任务指标完美但延迟超标的候选。** 阈值一个字未改（`test_release_config_does_not_touch_the_gates`
+断言 R4 release 配置与 R3 逐字段相同）。
+
+**新 prompt 的效应在 holdout 上复现**：base 由第一次观测的 94/120 提升到 **103/120**
+（dev 上是 48→54/60），且 `invalid_call` 41→5、`schema_valid_rate` 0.7819→0.9691。
+这同时**抬高了门禁的门槛**——候选需 ≥0.9083 才能过 `success_delta`，它以 1.0000 通过。
+
+**统计限度**：候选的 `task_success_ci95` 是 [1.0, 1.0]，那是 120/120 的退化区间，
+**不是**"在任何分布上都会满分"的证据。任务集是 2 工具 / 6 类 / 单一中文零售退款场景，
+每类 20 条。候选是在 dev 上从四个候选中选出的，dev 到 holdout 未回落这一点值得记录，
+但不构成对未见分布的保证。
+
+**延迟口径**：两侧均在 GPU 相对空闲时执行（自身进程占用 37%–39%），因此本次
+`p95` 比值反映真实的 adapter 推理开销，不是他人抢占造成的。这与第一次观测
+（base 在 GPU 被占用时执行、`p95` 5255 ms）**不可直接比较**。
+
+**后续可选方向（本条不启动任何一项）**：(a) 在效果与延迟之间取中间点——只加部分 MLP
+投影，或降 r 换取更低前向开销；(b) 合并 adapter 权重进基座以消除 LoRA 前向开销后重测延迟；
+(c) 与用户讨论 `p95_latency_ratio` 门禁是否应区分"更慢"与"做了更多工作"。
+**(c) 属发布口径变更，需用户决策，且不得为通过判定而放宽。**

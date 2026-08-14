@@ -585,3 +585,23 @@ train/dev/holdout、调用模型或进入训练。
 |---|---|---|
 | 2026-08-14 | 叠加训练 `sft-006` | 293.7 s（GPU 被占 81%），峰值 5.647 GB，train_loss 0.1795 |
 | 2026-08-14 | 叠加 dev 评测 `candidate-006` | EXIT=0，**60/60**，对 base-002 delta **+0.100** |
+
+## 2026-08-14 — 第二次封存 holdout 观测与第二次发布判定（R4 收官）
+
+- 插曲：首次尝试时 SSH 在握手阶段失败（cpolar 隧道端口变更），**未消耗任何观测**，
+  已逐项核实（`holdout-base-002` 目录、`sealed-eval` attempt、日志、marker 均不存在）。
+  隧道恢复后重跑。
+- 两侧均在同一 commit（`ae82917`）、同一新 prompt、GPU 相对空闲时执行：
+  `holdout-base-002`（103/120）→ `holdout-candidate-002`（**120/120**）→ `formal-release-002`。
+- **判定：NO-GO / baseline**，唯一失败门禁 `p95_latency_ratio` 1.8774 > 1.25；
+  `success_delta` **+0.1417** 通过。
+- 延迟归因已分离：单次调用耗时 1.985×，调用次数仅 1.146×——代价来自全 linear LoRA
+  的前向开销，不是多做调用。详见 `findings.md` 同日小节与 **LOG-20260814-04**。
+- 产物已回传，双端 SHA-256 一致，两份 sealed 报告本地重载 `report_id` 复算通过。
+- **封存 holdout 两次观测均已消耗。**
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-14 | `evaluate --config …r4_holdout_base.yaml` | EXIT=0，**103/120**，p95 3052 ms |
+| 2026-08-14 | `evaluate --config …r4_holdout_candidate.yaml` | EXIT=0，**120/120**，p95 5730 ms |
+| 2026-08-14 | `release --config …r4_formal_release.yaml` | **NO-GO**，4 PASS / 1 FAIL（p95 1.8774） |
