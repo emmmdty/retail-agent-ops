@@ -172,6 +172,80 @@ def test_round2_candidates_use_distinct_fresh_output_dirs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 候选 C：唯一变量是 runner.SYSTEM_PROMPT
+# ---------------------------------------------------------------------------
+
+_C_EXPORT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r4_round2_c_train_export.yaml"
+_C_SFT_CONFIG = CONFIG_ROOT / "retail_ops/build/retail_ops_v1_r4_round2_c_sft.yaml"
+
+
+def test_round2_c_export_declares_the_current_system_prompt_hash() -> None:
+    """C 导出声明的哈希必须精确等于当前 `runner.SYSTEM_PROMPT` 的哈希。
+
+    这一条把配置与常量绑死。少了它，"改了 prompt 但忘了更新配置"或反之都会让导出
+    在运行时硬失败（好），但只有在真的去跑导出时才发现；而更糟的情况是有人把配置
+    改成旧哈希以"修好"报错，那样 C 的变量就静默失效了。让测试直接比对。
+    """
+    import hashlib
+
+    from veritool_rl.core.agent.runner import SYSTEM_PROMPT
+
+    declared = _load(_C_EXPORT_CONFIG)["sft_system_prompt_sha256"]
+    actual = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+
+    assert declared == actual
+    # 必须确实变过：旧 prompt 的哈希不得再出现。
+    assert declared != "d919602e25f2c87c0d0961521a69c8ab2891e814a3180896aaaaaf5d5a3afe36"
+
+
+def test_round2_c_system_prompt_authorizes_autonomous_execution() -> None:
+    """C 改的是"显式授权自主完成"，不是改成祈使语气（依据 LOG-20260811-06）。
+
+    dev 上 17/17 的失败都是"正确判定可退之后仍向用户征询确认"，所以新增的这句
+    必须直接解除那个行为，且必须保留原有的两条约束（只用工具、退款前先查订单）。
+    """
+    from veritool_rl.core.agent.runner import SYSTEM_PROMPT
+
+    assert "只能使用提供的工具" in SYSTEM_PROMPT
+    assert "退款前必须查询订单" in SYSTEM_PROMPT
+    assert "transient_error" in SYSTEM_PROMPT
+    assert "不要再向用户征询确认" in SYSTEM_PROMPT
+
+
+def test_round2_c_export_changes_only_the_system_prompt() -> None:
+    """C 的导出除 system 改写外，与第一轮设置逐字段相同。
+
+    重采样因子必须一致、终局回复必须不启用——否则 C 的读数会混入 B 的变量。
+    """
+    config = _load(_C_EXPORT_CONFIG)
+    baseline = _load(_R4_EXPORT_CONFIG)
+
+    assert config["sft_oversample"] == baseline["sft_oversample"]
+    assert config["sft_terminal_response"] == []
+    assert config["dataset_version"] == baseline["dataset_version"]
+    assert config["teacher_attempt_id"] == baseline["teacher_attempt_id"]
+    assert config["attempt_id"] == "train-export-004"
+
+
+def test_round2_c_keeps_attention_only_lora() -> None:
+    """C 必须保留 attention-only 的四投影，**不叠加**候选 A 已证实有效的容量改动。
+
+    叠加会让读数无法归因：C 要测的是"指令框定"这一层能否单独起作用。
+    A 与 C 是并列消融。
+    """
+    baseline = _load(_BASELINE_SFT_CONFIG)
+    candidate = _load(_C_SFT_CONFIG)
+
+    assert candidate["lora"] == baseline["lora"]
+    assert candidate["lora"]["target_modules"] == ["q_proj", "k_proj", "v_proj", "o_proj"]
+    for section in ("model", "training"):
+        assert candidate[section] == baseline[section], section
+    changed = {key for key in baseline["data"] if baseline["data"][key] != candidate["data"][key]}
+    assert changed == {"train_relpath"}
+    assert candidate["data"]["train_relpath"] == "train-export/train-export-004/sft.jsonl"
+
+
+# ---------------------------------------------------------------------------
 # 候选 dev 评测配置：训练之后才写（adapter.file_sha256 是运行产物）
 # ---------------------------------------------------------------------------
 

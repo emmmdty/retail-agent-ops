@@ -1,0 +1,30 @@
+# R4 第二轮候选 C 的导出：与第一轮 train-export-002 的唯一差别是 system 消息被改写为
+# 当前的 runner.SYSTEM_PROMPT。冻结数据集与 teacher 采集证据完全复用，不新增任务、
+# 不重新冻结、不调 teacher API。
+#
+# 为什么需要在导出侧改写（本轮开工核查推翻的一条设计假设）：
+# trajectory_to_sft_example（core/generators.py）的 system 消息取自
+# trajectory.metadata["system_prompt"]，而 teacher 证据是**已持久化**的轨迹——
+# 240 份证据的该字段全部固定在采集当时的旧 prompt 上。改 runner.SYSTEM_PROMPT
+# 不会追溯改写它们，且 _require_evidence_binds_record 不比较该字段，因此不加改写地
+# 重新导出会**静默**产出一份 238/240 仍是旧 prompt 的训练集——变量根本没生效，
+# 而产物看起来完全正常。
+#
+# sft_system_prompt_sha256 声明的是**期望哈希**而不是布尔值：布尔值下"配置写了 true
+# 但常量忘了改"会产出与未改写逐字节相同的文件且不报错，正是上面那个失败的同一个形状。
+# 导出时用它与当前 runner.SYSTEM_PROMPT 的实际哈希比对，不符即硬失败。
+# 此处的值对应新 prompt（旧值为 d919602e25f2c87c0d0961521a69c8ab2891e814a3180896aaaaaf5d5a3afe36）。
+#
+# sft_oversample 与第一轮逐字段相同、终局回复不启用：C 的变量只有 system 消息一项。
+# attempt_id 是新目录：001/002/003 都不得覆盖。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-004
+sft_oversample:
+  refund_eligible: 3
+  refund_recovery: 3
+sft_terminal_response: []
+sft_system_prompt_sha256: "8ae813c4284246b9700470053ba90339a3f88439d9e57905d5db704ca63283dd"

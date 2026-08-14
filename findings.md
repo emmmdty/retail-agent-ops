@@ -857,3 +857,26 @@ Stage 1 只交付 C 所需的导出侧能力，不交付 C 的配置。
 （`metrics` 里只有 `recovery_success` 一个类别级指标）。逐场景数字来自私有产物
 `data/private/.../dev-candidate/<attempt>/trajectories.jsonl`。复算
 `candidate-002` 得 45/60，与 LOG-20260811-09 记录一致，可用于验证方法。
+
+## 候选 C 的导出：train.jsonl 会变，且这不是缺陷（2026-08-14）
+
+新 `SYSTEM_PROMPT` sha256 = `8ae813c4284246b9700470053ba90339a3f88439d9e57905d5db704ca63283dd`
+（旧值 `d919602e25f2c87c…`）。全文：
+
+> 你是订单工具助手。只能使用提供的工具处理请求；退款前必须查询订单，遇到
+> transient_error 时可以重试。确认符合退款政策后直接调用工具执行，不要再向用户征询确认。
+
+`train-export-004` 的核验：`sft.jsonl` 与 `002` **除 system 消息外逐样本相同**
+（其余消息 0 处不同、其他字段 0 处不同），system prompt 唯一且等于新常量（400/400），
+决策点形状仍 160 : 240，工具调用消息 `content` 违反者 0，`selection.json` 与 001 逐字节相同。
+
+**但 `train.jsonl` 与 001 不再逐字节相同——精确 2 行不同，全部是
+`internal_reference` 来源的那两条**（`73a84baf…`、`b9a13c39…`）。原因：这两条不走
+teacher 证据，而是 `_build_reference_trajectory` 用 Oracle **实时** `run_episode` 生成，
+因此其 `trajectory.metadata.system_prompt` 自然是新常量。已逐字段核对：
+两条轨迹除 `metadata.system_prompt` 外**完全相同**。
+
+因此「`train.jsonl` 与 001 逐字节相同」这条验收标准**只对不改 prompt 的导出成立**
+（001/002/003 都成立）。改 prompt 的导出必然有这 2 行差异，且差异本身是正确的——
+teacher 轨迹是历史事实应当保持原样，实时重放的轨迹应当反映当前常量。
+两者角色不同，产物层面的不一致是这个设计的正确结果，不是 bug。

@@ -20,9 +20,19 @@ from veritool_rl.core.trajectory import (
 
 EnvFactory = Callable[[TaskSpec], ToolEnv]
 
+#: R4 第二轮候选 C 的唯一变量：在原有两句后追加一句**显式授权自主完成**的指令。
+#: 要点不是改成祈使语气，而是解除"确认可退之后仍向用户征询"这个行为——dev 上
+#: 17/17 的失败都是这一支（LOG-20260811-06）。
+#:
+#: 这个常量被 `base_evaluation.py` 与 `sealed_evaluation.py` 哈希成
+#: `system_prompt_sha256`，而该字段同时在 dev 的 `PAIRING_FIELDS` 与
+#: `SEALED_PAIRING_FIELDS` 内。改动它会使**此前所有**评测证据不再与新运行配对，
+#: 因此每次改动都必须重跑对照 base，且必须发生在已有候选评测全部完成之后。
+#: 旧值 sha256 = d919602e25f2c87c0d0961521a69c8ab2891e814a3180896aaaaaf5d5a3afe36
 SYSTEM_PROMPT = (
     "你是订单工具助手。只能使用提供的工具处理请求；退款前必须查询订单，"
-    "遇到 transient_error 时可以重试。"
+    "遇到 transient_error 时可以重试。确认符合退款政策后直接调用工具执行，"
+    "不要再向用户征询确认。"
 )
 
 

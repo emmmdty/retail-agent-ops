@@ -1,0 +1,49 @@
+# R4 第二轮候选 C（指令框定）：唯一改动是训练数据换成 train-export-004——
+# 与 train-export-002 逐字节相同，只有 system 消息被改写为新的 runner.SYSTEM_PROMPT。
+# model / lora / training 三段与 configs/retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml
+# 逐字段相同，由 tests/test_retail_ops_r4_round2_cli.py 断言。
+#
+# 注意 C 的 lora.target_modules 仍是 attention-only 的四投影，与第一轮相同——
+# 这是刻意的：C 要测的是"指令框定"这一层，把候选 A 已证实有效的容量改动叠加进来
+# 会让读数无法归因。A 与 C 是并列消融，不叠加。
+#
+# C 必须重跑 base dev：system_prompt_sha256 在 PAIRING_FIELDS 内，既有
+# qwen3-4b-dev-base-001 在新 prompt 下不再可配对。C 的 delta 也因此不能与 A/B 的
+# delta 直接相比，跨候选比较只能用 refund_eligible 的绝对通过数。
+pipeline: sft
+model:
+  name: models/Qwen3-4B-pinned
+  load_in_4bit: true
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+data:
+  train_relpath: train-export/train-export-004/sft.jsonl
+  eval_relpath: dev-sft/dev-sft-001/sft.jsonl
+training:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8
+  lr: 2.0e-4
+  max_seq_len: 1024
+  bf16: true
+  gradient_checkpointing: true
+  assistant_only_loss: true
+  verify_adapter_reload: true
