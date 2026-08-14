@@ -1,0 +1,10 @@
+# R4 formal_release：用第二次封存 holdout 观测的两份 sealed 报告执行 SPEC §6 发布门禁。
+#
+# 与 R3 的 formal_release 配置逐字段相同（同一份 domains/retail_ops/v1/release.yaml 阈值、
+# 同一份 build_release_gates 实现），差别只在 --baseline_dir / --candidate_dir 指向
+# 本次的两份报告。阈值一个字不改——不因负结果降低发布门槛。
+#
+# 输入：qwen3-4b-holdout-base-002 与 qwen3-4b-holdout-candidate-002 的 sealed-report.json。
+# 门禁计算前先做配对契约校验，任一字段不符直接失败，不产出"带警告"的发布结论。
+pipeline: formal_release
+bundle_dir: domains/retail_ops/v1

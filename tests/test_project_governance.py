@@ -505,6 +505,47 @@ _R4_ROUND2_CONFIG_NAMES = (
 )
 
 
+#: 封存 holdout 与 release 配置。它们**必然**提到 holdout，因此不能套用
+#: `_R4_ROUND2_CONFIG_NAMES` 那组「不得引用 holdout」的断言（R3 的既有做法同样把
+#: holdout 配置排除在那组之外）。其余治理口径——secret、绝对路径、私有根字面量、
+#: 模型 pin——一条不放宽，见 `test_r4_release_configs_hold_the_governance_line`。
+_R4_RELEASE_CONFIG_NAMES = (
+    "retail_ops/evaluate/retail_ops_v1_r4_holdout_base.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r4_holdout_candidate.yaml",
+    "retail_ops/release/retail_ops_v1_r4_formal_release.yaml",
+)
+
+
+def test_r4_release_configs_hold_the_governance_line() -> None:
+    """holdout / release 配置的治理口径：除"不得提 holdout"外一条不放宽。
+
+    尤其是**私有根路径字面量**——公开配置只能写 receipt/manifest 路径，
+    holdout 的私有数据路径由 `--input_dir` 在运行时提供并经
+    `authorize_formal_holdout` 校验，绝不写进版本控制的配置文件。
+    """
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R4_RELEASE_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        assert "bfcl" not in text.lower(), name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r}"
+
+        model = parsed.get("model")
+        if model is not None:
+            assert len(model["revision"]) >= 7, name
+            assert model["file_sha256"], name
+            for digest in model["file_sha256"].values():
+                assert len(digest) == 64, name
+
+
 def test_every_r4_config_is_enrolled_in_the_governance_scan() -> None:
     """R4 的每一份 config 都必须出现在扫描列表里。
 
@@ -512,7 +553,11 @@ def test_every_r4_config_is_enrolled_in_the_governance_scan() -> None:
     漏登记一份配置，那份配置就完全不受 secret / 绝对路径 / 私有根 / BFCL / holdout
     检查约束，且没有任何信号。这条测试把"下一个人记得加"换成"忘了加就红"。
     """
-    enrolled = set(_R4_CONFIG_NAMES) | set(_R4_ROUND2_CONFIG_NAMES)
+    enrolled = (
+        set(_R4_CONFIG_NAMES)
+        | set(_R4_ROUND2_CONFIG_NAMES)
+        | set(_R4_RELEASE_CONFIG_NAMES)
+    )
     on_disk = {
         f"retail_ops/{path.relative_to(ROOT / 'configs/retail_ops')}"
         for path in (ROOT / "configs/retail_ops").rglob("*.yaml")
