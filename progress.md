@@ -605,3 +605,21 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-14 | `evaluate --config …r4_holdout_base.yaml` | EXIT=0，**103/120**，p95 3052 ms |
 | 2026-08-14 | `evaluate --config …r4_holdout_candidate.yaml` | EXIT=0，**120/120**，p95 5730 ms |
 | 2026-08-14 | `release --config …r4_formal_release.yaml` | **NO-GO**，4 PASS / 1 FAIL（p95 1.8774） |
+
+## 2026-08-14 — R4 第三轮跨规模验证（Qwen3-1.7B）
+
+- 目的：把 4B 上的"容量决定训练符号"从单模型观察升级为跨规模规律。
+- 方法：2（模型规模）× 2（LoRA 覆盖）对照，同一份 `train-export-004`、同一组超参，
+  各与同规模同 prompt 的零训练 base 配对；对齐关系由
+  `tests/test_retail_ops_r4_round3_cross_scale.py` 断言并经三处突变验证。
+- **结果：上一轮结论被证伪。** 1.7B 上 attention-only 58/60（强正作用）、
+  全 linear 45/60（几乎无增益，且拒绝类由 30/30 崩到 15/30、policy_violation 0→5）。
+- 替换后的规律：**容量必须与模型规模匹配，不存在"越大越好"**；且**数据配比与容量耦合**。
+- 另一条被限缩：**prompt 干预对 1.7B 完全无效**（elig 0/10），prompt/训练分工结论只在 4B 成立。
+- 详见 `findings.md` 同日小节与 **LOG-20260814-05**。未消耗 holdout 观测。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-14 | 1.7B base 重跑 `base-1p7b-002` | EXIT=0，**44/60**，elig 0/10 |
+| 2026-08-14 | 1.7B attn 训练 + 评测 | 100.1 s / adapter 13 MB；**58/60**，delta **+0.2333** |
+| 2026-08-14 | 1.7B full 训练 + 评测 | 116.3 s / adapter 34 MB；**45/60**，delta +0.0167 |
