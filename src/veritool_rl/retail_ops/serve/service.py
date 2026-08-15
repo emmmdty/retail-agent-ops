@@ -9,18 +9,24 @@
 
 from __future__ import annotations
 
+import hmac
 import threading
+import time
+import uuid
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import Field, field_validator
 
 from veritool_rl.core.agent.qwen import GenerationBackend, QwenPolicy
 from veritool_rl.core.agent.runner import run_episode
 from veritool_rl.core.artifacts import sha256_file
-from veritool_rl.core.trajectory import Trajectory
+from veritool_rl.core.trajectory import TaskSpec, Trajectory
 from veritool_rl.core.trajectory.schema import StrictModel
 from veritool_rl.retail_ops.build.manifests import load_built_tasks, load_task_manifest
 from veritool_rl.retail_ops.domain.bundle import load_bundle
@@ -36,14 +42,36 @@ from veritool_rl.retail_ops.release.release import (
     ReleaseDecision,
     load_release_report,
 )
+from veritool_rl.retail_ops.serve.observability import (
+    REQUEST_RECORD,
+    ServiceMetrics,
+    digest_text,
+    emit,
+    new_record,
+)
 
 #: 单卡服务同时只跑一条 episode：并发解码会让显存峰值不可预测，也会破坏
 #: 逐 episode 的延迟测量。SPEC §9 要求限制并发，这里用最保守的串行化实现。
+#: 保留 503 而不是排队：排队会让延迟测量失真，而延迟是发布门禁项。
 _MAX_CONCURRENT_EPISODES = 1
 
-#: SPEC §9 的请求大小上限。当前端点不接受请求体，这个上限因此是**前瞻性**的：
-#: 它保证后续新增带 body 的端点时，超限请求在触达模型之前就被拒绝。
+#: SPEC §9 的请求大小上限。`POST /v1/chat` 是第一个带 body 的端点，这个上限
+#: 因此不再是"前瞻性"的——超限请求在触达模型之前就被拒绝。
 MAX_REQUEST_BYTES = 64 * 1024
+
+#: 自由请求的步数上限。与正式评测的 4–5 步同量级，避免一条请求无限占用单卡。
+CHAT_MAX_STEPS = 5
+
+#: 单次 episode 的默认时限（秒）。超时返回结构化错误而不是挂死。
+DEFAULT_EPISODE_TIMEOUT_S = 120.0
+
+#: 自由请求没有任务真值。给 env 一个**永远不可能达成**的 target_state，
+#: 使 `verify_final_state` 恒为 0，episode 只能由最终答复、步数上限或政策违规
+#: 终止。服务因此不会报告 `success`——那会把一次演示包装成能力证明。
+_NO_GROUND_TRUTH_STATE: dict[str, Any] = {"__no_ground_truth__": True}
+
+#: 不需要鉴权的端点：两者都不暴露任务内容、请求原文或凭据。
+_OPEN_PATHS = frozenset({"/health", "/metrics"})
 
 BackendFactory = Callable[[ModelArtifact, AdapterArtifact | None], GenerationBackend]
 
@@ -118,19 +146,52 @@ class FormalHealthResponse(StrictModel):
     rollback: str
 
 
+class ChatRequest(StrictModel):
+    """自由工具 Agent 请求。
+
+    `context_task_id` 只提供**订单数据上下文**（可见订单、customer_id、current_day），
+    不提供任务真值：`user_request` 完全由调用方决定。省略时使用演示任务集里第一条
+    任务的上下文，保证本地演示无需先查 task id。
+    """
+
+    user_request: str = Field(min_length=1, max_length=4096)
+    context_task_id: str | None = None
+
+    @field_validator("user_request")
+    @classmethod
+    def reject_blank(cls, value: str) -> str:
+        if not value.strip():
+            msg = "user_request 不得为空白"
+            raise ValueError(msg)
+        return value
+
+
 def create_formal_app(
     release_dir: Path,
     bundle_dir: Path,
     build_dir: Path,
     *,
     backend_factory: BackendFactory,
+    api_key: str,
+    episode_timeout_s: float = DEFAULT_EPISODE_TIMEOUT_S,
 ) -> FastAPI:
     """按封存 holdout 的发布决策加载真实模型并暴露受控工具 Agent 服务。
 
     SPEC §4 的"没有通过发布门禁的模型不得被服务入口加载"在这里是**双重**执行的：
     NO-GO 时 adapter 根本不会传给工厂，且随后还会核对工厂真正返回的后端没有挂
     adapter。只做前者不够——工厂是注入缝，实现可能来自别处。
+
+    `api_key` 是必填的：缺失时在**装配期**就失败，而不是在运行期放行。运行期放行
+    是部署脚本里最容易被忽略的失败形态。key 由调用方提供（CLI 从环境变量读），
+    因此永远不会出现在仓库里。
     """
+    if not api_key or not api_key.strip():
+        msg = "formal service 必须配置非空 API key"
+        raise ValueError(msg)
+    if episode_timeout_s <= 0:
+        msg = "episode_timeout_s 必须为正数"
+        raise ValueError(msg)
+
     release = load_formal_release_report(release_dir / "release.json")
     bundle = load_bundle(bundle_dir)
     if release.bundle_sha256 != bundle.bundle_sha256:
@@ -153,8 +214,26 @@ def create_formal_app(
     tasks = load_built_tasks(build_dir)
     allowed_tools = tuple(sorted(tool.name for tool in bundle.tools))
     episode_lock = threading.BoundedSemaphore(_MAX_CONCURRENT_EPISODES)
+    # 生成是同步阻塞调用，无法从外部中断。放进单 worker 线程池后，超时的请求
+    # 可以立刻返回结构化错误，而占着单卡的那次生成继续跑到自然结束；信号量直到
+    # 那时才释放，于是后续请求得到 503 而不是把第二份工作压到同一张卡上。
+    executor = ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_EPISODES)
+    metrics = ServiceMetrics()
 
     app = FastAPI(title="RetailAgentOps", version=bundle.bundle.bundle_version)
+    app.state.metrics = metrics
+
+    @app.middleware("http")
+    async def authenticate(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if request.url.path in _OPEN_PATHS:
+            return await call_next(request)
+        if not _authorized(request, api_key):
+            _mark_rejected("unauthorized")
+            return JSONResponse(status_code=401, content={"detail": "缺少或无效的 API key"})
+        return await call_next(request)
 
     @app.middleware("http")
     async def limit_request_size(
@@ -163,11 +242,33 @@ def create_formal_app(
     ) -> Response:
         declared = request.headers.get("content-length")
         if declared is not None and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
+            _mark_rejected("request_too_large")
             return JSONResponse(
                 status_code=413,
                 content={"detail": f"请求体超过 {MAX_REQUEST_BYTES} 字节上限"},
             )
         return await call_next(request)
+
+    @app.middleware("http")
+    async def observe(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        record = new_record(uuid.uuid4().hex, request.url.path)
+        REQUEST_RECORD.set(record)
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        finally:
+            record["duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+        record["status"] = response.status_code
+        response.headers["X-Trace-Id"] = record["trace_id"]
+        if request.url.path not in _OPEN_PATHS:
+            metrics.record_request(request.url.path, response.status_code)
+            if record["reject_reason"] is not None:
+                metrics.record_rejection(str(record["reject_reason"]))
+            emit(record)
+        return response
 
     @app.get("/health", response_model=FormalHealthResponse)
     def health() -> FormalHealthResponse:
@@ -182,32 +283,147 @@ def create_formal_app(
             rollback=_rollback_instruction(release),
         )
 
+    @app.get("/metrics")
+    def prometheus_metrics() -> PlainTextResponse:
+        return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
+
     @app.get("/v1/tasks")
     def list_tasks() -> dict[str, Any]:
         return {"task_ids": sorted(tasks), "allowed_tools": list(allowed_tools)}
+
+    def _run_guarded(task: TaskSpec) -> Trajectory:
+        """在并发上限与时限内跑一条 episode；两种降级都是结构化错误。"""
+        if not episode_lock.acquire(blocking=False):
+            _mark_rejected("concurrency_limit")
+            raise HTTPException(status_code=503, detail="服务已达并发上限，请稍后重试")
+        future = executor.submit(
+            run_episode,
+            task,
+            lambda current: RetailOpsEnv(current, bundle),
+            policy,
+            manifest.seed,
+        )
+        future.add_done_callback(lambda _: episode_lock.release())
+        try:
+            return future.result(timeout=episode_timeout_s)
+        except FutureTimeoutError:
+            metrics.record_timeout()
+            _mark_rejected("episode_timeout")
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "error": "episode_timeout",
+                    "trace_id": _trace_id(),
+                    "timeout_s": episode_timeout_s,
+                },
+            ) from None
+
+    def _finish(trajectory: Trajectory) -> None:
+        record = REQUEST_RECORD.get(None) or {}
+        tool_calls = [
+            step.tool_call.name for step in trajectory.steps if step.tool_call is not None
+        ]
+        record["termination"] = trajectory.termination.value
+        record["tool_calls"] = tool_calls
+        record["violations"] = list(trajectory.violations)
+        record["deployment"] = release.deployment
+        record["policy_id"] = policy_id
+        metrics.record_episode(
+            latency_ms=float(record.get("duration_ms", 0.0)),
+            tool_calls=len(tool_calls),
+            violations=len(trajectory.violations),
+        )
 
     @app.post("/v1/tasks/{task_id}/run")
     def run_task(task_id: str) -> dict[str, Any]:
         task = tasks.get(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="未知演示 task")
-        if not episode_lock.acquire(blocking=False):
-            raise HTTPException(status_code=503, detail="服务已达并发上限，请稍后重试")
-        try:
-            trajectory = run_episode(
-                task,
-                lambda current: RetailOpsEnv(current, bundle),
-                policy,
-                seed=manifest.seed,
-            )
-        finally:
-            episode_lock.release()
+        trajectory = _run_guarded(task)
+        _finish(trajectory)
         response = _public_trajectory_response(trajectory)
         response["deployment"] = release.deployment
         response["policy_id"] = policy_id
+        response["trace_id"] = _trace_id()
+        return response
+
+    @app.post("/v1/chat")
+    def chat(payload: ChatRequest) -> dict[str, Any]:
+        context = _chat_context(tasks, payload.context_task_id)
+        record = REQUEST_RECORD.get(None) or {}
+        record["request_sha256"] = digest_text(payload.user_request)
+        record["request_chars"] = len(payload.user_request)
+        trajectory = _run_guarded(_chat_task(context, payload.user_request, _trace_id()))
+        _finish(trajectory)
+        response = _public_trajectory_response(trajectory)
+        # 自由请求没有真值：删掉 success 而不是填一个恒假的值，避免任何
+        # 下游把它读成"这次请求失败了"。
+        response.pop("success", None)
+        response["ground_truth"] = False
+        response["final_response"] = _last_final_response(trajectory)
+        response["deployment"] = release.deployment
+        response["policy_id"] = policy_id
+        response["trace_id"] = _trace_id()
+        response["context_task_id"] = context.task_id
         return response
 
     return app
+
+
+def _authorized(request: Request, api_key: str) -> bool:
+    """常量时间比较，避免按前缀逐字符试探。"""
+    header = request.headers.get("authorization", "")
+    scheme, _, presented = header.partition(" ")
+    if scheme.lower() != "bearer" or not presented:
+        presented = request.headers.get("x-api-key", "")
+    if not presented:
+        return False
+    return hmac.compare_digest(presented, api_key)
+
+
+def _mark_rejected(reason: str) -> None:
+    record = REQUEST_RECORD.get(None)
+    if record is not None:
+        record["reject_reason"] = reason
+
+
+def _trace_id() -> str:
+    record = REQUEST_RECORD.get(None) or {}
+    return str(record.get("trace_id", ""))
+
+
+def _chat_context(tasks: dict[str, TaskSpec], task_id: str | None) -> TaskSpec:
+    if task_id is None:
+        return tasks[sorted(tasks)[0]]
+    context = tasks.get(task_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="未知上下文 task")
+    return context
+
+
+def _chat_task(context: TaskSpec, user_request: str, trace_id: str) -> TaskSpec:
+    """借用演示任务的订单数据，但**不借用**它的真值。"""
+    return TaskSpec(
+        task_id=f"chat-{trace_id}",
+        split="qualification",
+        scenario=context.scenario,
+        user_request=user_request,
+        initial_state=context.initial_state,
+        target_state=dict(_NO_GROUND_TRUTH_STATE),
+        expected_calls=[],
+        expected_decision=None,
+        required_reads=[],
+        transient_failures={},
+        max_steps=CHAT_MAX_STEPS,
+        metadata={"context_task_id": context.task_id, "ground_truth": False},
+    )
+
+
+def _last_final_response(trajectory: Trajectory) -> str | None:
+    for step in reversed(trajectory.steps):
+        if step.final_response is not None:
+            return step.final_response
+    return None
 
 
 def _require_backend_matches_deployment(

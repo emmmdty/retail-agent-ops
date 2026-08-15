@@ -11,6 +11,7 @@ import numpy as np
 import yaml
 
 from veritool_rl.core.artifacts import write_json, write_jsonl, write_yaml
+from veritool_rl.core.metrics import DIAGNOSTIC_NOTE
 from veritool_rl.core.trajectory import Trajectory
 
 
@@ -59,9 +60,13 @@ def aggregate_runs(
                 "adapter_success": after.success,
                 "baseline_termination": before.termination.value,
                 "adapter_termination": after.termination.value,
-                "baseline_verifier_reward": sum(step.reward.total for step in before.steps),
-                "adapter_verifier_reward": sum(step.reward.total for step in after.steps),
                 "outcome": outcome,
+                # 奖励值降级为诊断量并单独分组：它三次与主判据反向，和
+                # success/termination 平铺在同一层会被顺手拿去排序候选。
+                "diagnostics": {
+                    "baseline_verifier_reward": sum(step.reward.total for step in before.steps),
+                    "adapter_verifier_reward": sum(step.reward.total for step in after.steps),
+                },
             }
         )
 
@@ -89,6 +94,7 @@ def aggregate_runs(
         "baseline": baseline_metrics,
         "adapter": adapter_metrics,
         "delta": delta,
+        "diagnostics_note": DIAGNOSTIC_NOTE,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(output_dir / "config.yaml", {**config, "seed": seed})

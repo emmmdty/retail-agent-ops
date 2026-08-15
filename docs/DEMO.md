@@ -121,6 +121,9 @@ fault 走 **NO-GO/baseline**。同一份策略文件、同一套门禁算术产�
     --seed 0 --output_dir reports/retail_ops/v1/r3/serve-demo-build
 
 # 2) 按发布决策启动服务（NO-GO → 只加载冻结基座）
+#    API key 只从环境变量读，绝不进配置文件或 Git；缺失时**启动即失败**，
+#    不会退化成"没配就放行"。
+export RETAIL_AGENT_OPS_API_KEY="$(openssl rand -hex 16)"
 TORCH_DISABLE_NATIVE_JIT=1 CUDA_VISIBLE_DEVICES=0 \
 .venv/bin/retail-agent-ops serve \
     --config configs/retail_ops/serve/retail_ops_v1_r3_formal_serve.yaml \
@@ -128,6 +131,11 @@ TORCH_DISABLE_NATIVE_JIT=1 CUDA_VISIBLE_DEVICES=0 \
     --input_dir  reports/retail_ops/v1/r3/serve-demo-build \
     --output_dir reports/retail_ops/v1/r3/serve-demo-001
 ```
+
+> 下面 `/v1/*` 的每条请求都要带 `-H "Authorization: Bearer $RETAIL_AGENT_OPS_API_KEY"`。
+> `/health` 与 `/metrics` 不需要——两者都不暴露任务内容或凭据。
+> 2026-08-11 的实跑记录早于服务层补强（该轮只有预置任务端点、无鉴权），
+> 下面的输出摘自那次运行，端点语义已按当前代码更新。
 
 ### 3.1 先看部署身份
 
@@ -166,13 +174,46 @@ curl -s -X POST http://127.0.0.1:8000/v1/tasks/<task_id>/run
 **正确拒绝**与**政策违规**是分离语义：模型该拒绝时拒绝了就是成功，
 只有真的尝试了被禁止的状态变更才算违规。这个区分是 R1 设计时刻意做的。
 
-### 3.3 并发保护
+### 3.3 自由请求（`POST /v1/chat`）
+
+预置任务端点只能跑 12 条固定 fixture，回答不了"随便说一句话它怎么办"。
+`/v1/chat` 接受任意 `user_request`，复用同一 `RetailOpsEnv`、同一 tool allowlist、
+同一条 `run_episode`：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/chat \
+  -H "Authorization: Bearer $RETAIL_AGENT_OPS_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"user_request":"帮我看看我那笔订单到哪了","context_task_id":"<task_id>"}'
+```
+
+`context_task_id` 只提供**订单数据上下文**（可见订单、customer_id、current_day），
+不提供任务真值。因此响应里**没有 `success` 字段**，而是 `ground_truth: false`——
+自由请求没有真值，报告一个成功率就是把演示包装成能力证明。
+
+### 3.4 并发保护、超时与可观测性
 
 ```bash
 curl -X POST .../run & sleep 0.3; curl -X POST .../run & wait
 ```
 
-先到者 200，后到者 **503「服务已达并发上限，请稍后重试」**。
+先到者 200，后到者 **503「服务已达并发上限，请稍后重试」**。并发上限保持 1 而不是排队：
+排队会让延迟测量失真，而延迟是发布门禁项。
+
+- 每条请求分配 `trace_id`（也回在 `X-Trace-Id` 头），并输出**一行** JSON 日志：
+  trace_id、端点、状态码、部署、工具调用序列、终止原因、耗时、violations。
+  日志记的是请求的 **SHA-256 摘要与字符数，不是原文**——足以事后对上一条 trace，
+  又不会把用户数据或任务答案写进日志文件。
+- 单次 episode 超时返回 **504** 结构化错误（带 trace_id）而不是挂死。生成是同步阻塞
+  调用无法中断，因此那次生成会跑到自然结束，**信号量直到那时才释放**：后续请求得到
+  503，而不是把第二份工作压到同一张卡上。
+- `GET /metrics`（Prometheus 文本，无新依赖）：请求数、episode 数、p50/p95 端到端延迟、
+  工具调用与违规累计、按原因分的拒绝数（`unauthorized` / `request_too_large` /
+  `concurrency_limit` / `episode_timeout`）、超时数。
+
+```bash
+curl -s http://127.0.0.1:8000/metrics | head
+```
 
 ---
 

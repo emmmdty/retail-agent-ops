@@ -1,7 +1,8 @@
 """封存 holdout 上的 GO/NO-GO 发布门禁。
 
 与 R1 qualification 的 `ReleaseReport` 并行而不是替换它：`ReleaseReport` 的
-`validate_decision_consistency` 断言 gate 集合与顺序精确等于 `GATE_IDS`，且
+`validate_decision_consistency` 断言 gate 集合与顺序精确等于该 schema 版本的
+冻结集合（`GATE_IDS_BY_SCHEMA`），且
 `decide_release` 的返回类型被 `serve` 与既有测试依赖，向它加 formal provenance
 字段会破坏已冻结的 R1 契约。两条通道**共用** `build_release_gates`，因此同一份
 `domains/retail_ops/v1/release.yaml` 只有一种阈值语义。
@@ -13,6 +14,7 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -20,6 +22,7 @@ from pydantic import Field, field_validator, model_validator
 
 from veritool_rl.core.agent.qwen import GenerationSettings
 from veritool_rl.core.artifacts import canonical_json, create_output_dir, write_json
+from veritool_rl.core.metrics import DIAGNOSTIC_NOTE, split_headline_and_diagnostic
 from veritool_rl.core.trajectory.schema import StrictModel, validate_json_value
 from veritool_rl.retail_ops.domain.bundle import ReleasePolicyConfig
 from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
@@ -29,8 +32,9 @@ from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
     require_comparable_sealed_runs,
 )
 from veritool_rl.retail_ops.release.release import (
-    GATE_IDS,
+    GATE_IDS_BY_SCHEMA,
     GateResult,
+    GateSchemaVersion,
     ReleaseDecision,
     build_release_gates,
 )
@@ -44,7 +48,7 @@ class FormalReleaseReport(StrictModel):
     强制，不能被调用方单独改写。
     """
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: GateSchemaVersion = "1.0"
     decision: ReleaseDecision
     deployment: Literal["candidate", "baseline"]
     policy_version: str = Field(min_length=1)
@@ -75,7 +79,7 @@ class FormalReleaseReport(StrictModel):
     @model_validator(mode="after")
     def validate_decision_consistency(self) -> Self:
         """门禁集合、失败项、结论与部署选择必须互相一致。"""
-        if tuple(gate.gate_id for gate in self.gates) != GATE_IDS:
+        if tuple(gate.gate_id for gate in self.gates) != GATE_IDS_BY_SCHEMA[self.schema_version]:
             raise ValueError("发布门禁集合或顺序不符合冻结契约")
         failed = [gate.gate_id for gate in self.gates if not gate.passed]
         if failed != self.failed_gate_ids:
@@ -91,11 +95,18 @@ def decide_formal_release(
     base: SealedEvaluationReport,
     candidate: SealedEvaluationReport,
     policy: ReleasePolicyConfig,
+    *,
+    gate_schema_version: GateSchemaVersion = "1.0",
+    paired_outcomes: Sequence[tuple[bool, bool]] | None = None,
 ) -> FormalReleaseReport:
     """在证明两份 sealed 报告可配对后，按冻结策略给出 GO/NO-GO。
 
     配对校验在门禁计算**之前**：契约不一致时直接抛错，绝不产出一份带警告的
     发布报告——那种报告会被直接抄进交付材料。
+
+    `gate_schema_version` **默认 v1.0**：磁盘上两次 NO-GO 判定就是它得出的，
+    改默认值会让历史结论与新口径复算结论无法区分。v1.1 的语义见
+    `release.GATE_IDS_V1_1`。
     """
     require_comparable_sealed_runs(base, candidate)
     assert candidate.adapter is not None  # noqa: S101 - 由上一行的配对校验保证
@@ -106,10 +117,13 @@ def decide_formal_release(
         candidate.metrics,
         evidence_complete=evidence_complete,
         policy=policy,
+        schema_version=gate_schema_version,
+        paired_outcomes=paired_outcomes,
     )
     failed_gate_ids = [gate.gate_id for gate in gates if not gate.passed]
     decision = ReleaseDecision.NO_GO if failed_gate_ids else ReleaseDecision.GO
     return FormalReleaseReport(
+        schema_version=gate_schema_version,
         decision=decision,
         deployment="baseline" if failed_gate_ids else "candidate",
         policy_version=policy.policy_version,
@@ -185,13 +199,24 @@ def _render_markdown(report: FormalReleaseReport) -> str:
         )
         for gate in report.gates
     )
+    base_headline, base_diagnostic = split_headline_and_diagnostic(report.base_metrics)
+    candidate_headline, candidate_diagnostic = split_headline_and_diagnostic(
+        report.candidate_metrics
+    )
     lines.extend(
         [
             "",
             "## 配对指标",
             "",
-            f"- 基座：`{_escape_text(canonical_json(report.base_metrics))}`",
-            f"- 候选：`{_escape_text(canonical_json(report.candidate_metrics))}`",
+            f"- 基座：`{_escape_text(canonical_json(base_headline))}`",
+            f"- 候选：`{_escape_text(canonical_json(candidate_headline))}`",
+            "",
+            "## 诊断量",
+            "",
+            DIAGNOSTIC_NOTE,
+            "",
+            f"- 基座：`{_escape_text(canonical_json(base_diagnostic))}`",
+            f"- 候选：`{_escape_text(canonical_json(candidate_diagnostic))}`",
             "",
         ]
     )
@@ -208,6 +233,10 @@ def _render_html(report: FormalReleaseReport) -> str:
         f"<td>{html.escape(gate.reason)}</td>"
         "</tr>"
         for gate in report.gates
+    )
+    base_headline, base_diagnostic = split_headline_and_diagnostic(report.base_metrics)
+    candidate_headline, candidate_diagnostic = split_headline_and_diagnostic(
+        report.candidate_metrics
     )
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
@@ -227,8 +256,12 @@ def _render_html(report: FormalReleaseReport) -> str:
         "<th>观测值</th><th>阈值</th><th>说明</th></tr></thead>"
         f"<tbody>{gate_rows}</tbody></table>"
         "<h2>配对指标</h2>"
-        f"<h3>基座</h3><pre>{html.escape(canonical_json(report.base_metrics))}</pre>"
-        f"<h3>候选</h3><pre>{html.escape(canonical_json(report.candidate_metrics))}</pre>"
+        f"<h3>基座</h3><pre>{html.escape(canonical_json(base_headline))}</pre>"
+        f"<h3>候选</h3><pre>{html.escape(canonical_json(candidate_headline))}</pre>"
+        "<h2>诊断量</h2>"
+        f"<p>{html.escape(DIAGNOSTIC_NOTE)}</p>"
+        f"<h3>基座</h3><pre>{html.escape(canonical_json(base_diagnostic))}</pre>"
+        f"<h3>候选</h3><pre>{html.escape(canonical_json(candidate_diagnostic))}</pre>"
         "</body></html>\n"
     )
 

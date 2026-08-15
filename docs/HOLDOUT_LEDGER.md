@@ -1,0 +1,82 @@
+# 封存 holdout 观测台账
+
+**本文件是封存 holdout 观测次数与状态的唯一事实源。**其它任何文档（`README.md`、
+`docs/SYSTEM_CARD.md`、`docs/MODEL_CARD*.md`、`docs/DEMO.md`、`docs/RESUME_EVIDENCE.md`）
+一律**引用本文件**，不得复述次数或判定——同一个数字在五个文件里各写一遍，必然漂移，
+2026-08-15 的评审就是从这里发现三处文档仍写着"唯一一次观测"的。
+
+数字全部来自已落盘产物（`reports/retail_ops/v1/*/formal-release-00*/release.json`），
+不是转述。每份 release 报告的 `report_id` 是全字段自哈希，手改任一字段都会加载失败。
+
+## 当前状态
+
+| 项 | 值 |
+|---|---|
+| 数据集 | `retail_ops_v1_r2_20260722`，120 条，六类各 20 |
+| 已消耗观测 | **2 次**（2026-08-11、2026-08-14） |
+| 剩余"未观测"状态 | **无**。任何新判定都是第三次，需用户单独决策 |
+| 最新判定 | **NO-GO / baseline** |
+| 阈值变更次数 | **0**（`tests/test_retail_ops_r4_release_configs.py::test_release_config_does_not_touch_the_gates` 锁定） |
+
+配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
+`SEALED_PAIRING_FIELDS` 内，因此**任何后续提交之后，已有的 sealed base 证据都不再可与
+新候选配对**。下一次判定必然是 base + candidate **两侧**完整重跑。
+
+## 观测 1 — 2026-08-11（LOG-20260811-03）
+
+| | base | candidate |
+|---|---|---|
+| policy | `qwen:Qwen/Qwen3-4B@8cd0101f` | 同基座 `+adapter:reports/retail_ops/v1/r3/sft-001#34544fac3ec9` |
+| `task_success` | 0.7833（94/120） | 0.7500（90/120） |
+| `policy_violation_count` | 16 | 0 |
+| `invalid_call_count` | 41 | 0 |
+| `schema_valid_rate` | 0.7819 | 1.0000 |
+| `p95_latency_ms` | 5255.02 | 5711.94 |
+
+**判定：NO-GO / baseline**，唯一失败门禁 `success_delta` = **−0.0333** < +0.05。
+其余四项全过（`policy_violation_delta` −16、`invalid_call_count` 0、
+`p95_latency_ratio` **1.0870** ≤ 1.25、`evidence_complete` true）。
+
+候选失败 **100% 是 `premature_final_response`**，`refund_eligible` 20/20 全数失败——
+判定正确但不执行。`code_commit` `90c9038`，`report_id` base `b538a6c4…` / candidate `a8cfcf38…`。
+
+## 观测 2 — 2026-08-14（LOG-20260814-04）
+
+| | base | candidate |
+|---|---|---|
+| policy | `qwen:Qwen/Qwen3-4B@8cd0101f` | 同基座 `+adapter:reports/retail_ops/v1/r4/sft-006#8a49251fbfc9` |
+| `task_success` | 0.8583（103/120） | **1.0000（120/120，六类各 20/20）** |
+| `policy_violation_count` | 11 | 0 |
+| `invalid_call_count` | 5 | 0 |
+| `schema_valid_rate` | 0.9691 | 1.0000 |
+| `p95_latency_ms` | 3052.15 | 5730.25 |
+| `average_tool_calls` | 1.3083 | 1.5000 |
+| `average_latency_ms` | 1958.26 | 4457.06 |
+
+**判定：NO-GO / baseline**，唯一失败门禁 `p95_latency_ratio` = **1.8774** > 1.25。
+`success_delta` **+0.1417** 通过。`code_commit` `ae82917`，
+`report_id` base `89fe01d8…` / candidate `866d21e9…`。
+
+**延迟代价的归因**（这一条决定了后续做法）：调用次数只增 **1.146×**、turns 1.061×，
+而单次调用耗时 **1496.8 → 2971.4 ms（1.985×）**。因此代价来自**全 linear LoRA 的前向
+开销**，不是"候选多做了工具调用"。旁证：观测 1 的 attention-only adapter（4 投影）
+p95 比值仅 1.087。
+
+## 判定口径的边界（引用时必须一并引用）
+
+1. **120/120 不是泛化证据。** `domain/formal_tasks.py:_user_request` 只有 6 场景 × 2 变体
+   = 12 句中文模板，train / dev / holdout **共用这 12 句**；跨 split 变化的只有随机
+   order_id、reason 枚举词、deadline margin、distractor 数量与 lookup status。五维指纹
+   保证的是"没有逐字重复"，**不是"没有分布重叠"**。在分布外 holdout（提示词 §7.1）
+   完成之前，不得把 120/120 表述为泛化能力。
+2. **两次结果都不得反馈进开发**：不得进入训练、调参、checkpoint 选择或 prompt/parser 修改。
+3. **`p95_latency_ratio` 的口径是部署形态而非模型能力**。观测 2 的候选在任务指标上满分，
+   被自己的部署实现（未 merge 的 LoRA + 逐 episode 串行 HF `generate`）挡在门外。
+   merge 后重测尚未进行。
+
+## 变更规则
+
+- 只有真正落盘并被读取的观测才写进本表（判据是"有没有数字落盘并被读取"，不是跑了多久）。
+  2026-08-11 之前有一次运行被机器重启中断、**零产出**，未消耗盲性，因此不计入。
+- 每条记录必须带 LOG ID、`code_commit` 与两侧 `report_id`。
+- 历史条目不得改写。判定被新口径重算时，新旧结论**并列**陈述并写清口径差异。

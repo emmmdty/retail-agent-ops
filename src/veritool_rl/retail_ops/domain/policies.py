@@ -64,11 +64,61 @@ class UnknownToolPolicy:
         )
 
 
+class SchemaAdaptiveOraclePolicy:
+    """按 gold 调用序列执行，但**工具名从当前工具清单解析**。
+
+    与 `OraclePolicy` 的唯一差别是名字从哪来：`OraclePolicy` 把 `expected_calls`
+    里的名字直接发出去，本策略先在当前呈现的工具里找参数键集合与本次调用完全
+    一致的那一个。两者在同一批任务上的对照，就是 `perturb_schema` 想量化的东西
+    ——"换一份工具 schema 之后还能不能用"。
+
+    解析不到时**原样发出 gold 名字**，让它以 `unknown_tool` 可见地失败。静默换一个
+    工具是最坏的失败形态：读报告的人会以为 schema 兼容，其实是被兜住了。
+    """
+
+    name = "schema_adaptive"
+
+    def __init__(self, task: TaskSpec) -> None:
+        _require_qualification_task(task)
+        self._calls = [call.model_copy(deep=True) for call in task.expected_calls]
+        self._index = 0
+
+    def respond(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSchema],
+    ) -> PolicyOutput:
+        del messages
+        if self._index >= len(self._calls):
+            return PolicyOutput(raw_text="任务已完成。", final_response="任务已完成。")
+        call = self._calls[self._index]
+        self._index += 1
+        resolved = call.model_copy(update={"name": _resolve_tool_name(call, tools)})
+        payload = {"name": resolved.name, "arguments": resolved.arguments}
+        raw = f"<tool_call>\n{json.dumps(payload, ensure_ascii=False)}\n</tool_call>"
+        return PolicyOutput(raw_text=raw, tool_call=resolved)
+
+
+def _resolve_tool_name(call: ToolCall, tools: list[ToolSchema]) -> str:
+    """按参数键集合唯一匹配当前工具；不唯一或无匹配时回落到 gold 名字。"""
+    wanted = set(call.arguments)
+    matches = [
+        tool.name
+        for tool in tools
+        if set(tool.parameters.get("properties", {})) == wanted
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return call.name
+
+
 def build_qualification_policy(policy_type: str, task: TaskSpec) -> Policy:
     """按名称构建 qualification policy。"""
     _require_qualification_task(task)
     if policy_type == "oracle":
         return OraclePolicy(task)
+    if policy_type == "schema_adaptive":
+        return SchemaAdaptiveOraclePolicy(task)
     if policy_type == "baseline":
         return QualificationBaselinePolicy(task)
     if policy_type == "unknown_tool":

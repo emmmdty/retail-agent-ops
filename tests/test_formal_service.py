@@ -31,6 +31,8 @@ DATASET_VERSION = "retail_ops_v1_r2_20260722"
 ADAPTER_RUN_DIR = "reports/retail_ops/v1/r3/sft-001"
 REVISION = "8cd0101f70cac4f1efcebc979faf483558e39297"
 ORDER_PATTERN = "O-"
+API_KEY = "test-formal-service-key"
+AUTH = {"Authorization": f"Bearer {API_KEY}"}
 
 
 class _RecordingBackend:
@@ -167,6 +169,7 @@ def test_no_go_release_must_not_load_the_adapter(workspace: Path) -> None:
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording(seen),
+        api_key=API_KEY,
     )
 
     assert len(seen) == 1
@@ -185,6 +188,7 @@ def test_go_release_loads_the_pinned_adapter(workspace: Path) -> None:
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording(seen),
+        api_key=API_KEY,
     )
 
     assert len(seen) == 1
@@ -213,6 +217,7 @@ def test_backend_that_ignores_the_rollback_is_rejected(workspace: Path) -> None:
             workspace / BUNDLE_REL,
             workspace / "build",
             backend_factory=rogue,
+            api_key=API_KEY,
         )
 
 
@@ -225,6 +230,7 @@ def test_health_exposes_the_decision_and_rollback_path(workspace: Path) -> None:
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording([]),
+        api_key=API_KEY,
     )
 
     payload = TestClient(app).get("/health").json()
@@ -246,11 +252,12 @@ def test_episode_runs_the_model_policy_and_returns_the_tool_trace(workspace: Pat
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording([]),
+        api_key=API_KEY,
     )
     client = TestClient(app)
-    task_id = client.get("/v1/tasks").json()["task_ids"][0]
+    task_id = client.get("/v1/tasks", headers=AUTH).json()["task_ids"][0]
 
-    response = client.post(f"/v1/tasks/{task_id}/run")
+    response = client.post(f"/v1/tasks/{task_id}/run", headers=AUTH)
 
     assert response.status_code == 200
     body = response.json()
@@ -268,9 +275,10 @@ def test_unknown_task_is_rejected(workspace: Path) -> None:
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording([]),
+        api_key=API_KEY,
     )
 
-    assert TestClient(app).post("/v1/tasks/../escape/run").status_code == 404
+    assert TestClient(app).post("/v1/tasks/../escape/run", headers=AUTH).status_code == 404
 
 
 def test_formal_service_rejects_a_bundle_that_differs_from_the_release(
@@ -291,6 +299,7 @@ def test_formal_service_rejects_a_bundle_that_differs_from_the_release(
             other_bundle,
             workspace / "build",
             backend_factory=_factory_recording([]),
+            api_key=API_KEY,
         )
 
 
@@ -303,14 +312,15 @@ def test_oversized_request_body_is_rejected(workspace: Path) -> None:
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=_factory_recording([]),
+        api_key=API_KEY,
     )
     client = TestClient(app)
-    task_id = client.get("/v1/tasks").json()["task_ids"][0]
+    task_id = client.get("/v1/tasks", headers=AUTH).json()["task_ids"][0]
 
     response = client.post(
         f"/v1/tasks/{task_id}/run",
         content=b"x" * (MAX_REQUEST_BYTES + 1),
-        headers={"content-type": "application/octet-stream"},
+        headers={**AUTH, "content-type": "application/octet-stream"},
     )
 
     assert response.status_code == 413
@@ -348,20 +358,21 @@ def test_concurrent_episodes_are_capped_instead_of_queueing(workspace: Path) -> 
         workspace / BUNDLE_REL,
         workspace / "build",
         backend_factory=factory,
+        api_key=API_KEY,
     )
     client = TestClient(app)
-    task_ids = client.get("/v1/tasks").json()["task_ids"]
+    task_ids = client.get("/v1/tasks", headers=AUTH).json()["task_ids"]
 
     first_status: list[int] = []
 
     def run_first() -> None:
-        first_status.append(client.post(f"/v1/tasks/{task_ids[0]}/run").status_code)
+        first_status.append(client.post(f"/v1/tasks/{task_ids[0]}/run", headers=AUTH).status_code)
 
     worker = threading.Thread(target=run_first)
     worker.start()
     try:
         assert entered.wait(timeout=5)
-        second = client.post(f"/v1/tasks/{task_ids[1]}/run")
+        second = client.post(f"/v1/tasks/{task_ids[1]}/run", headers=AUTH)
     finally:
         release_hold.set()
         worker.join(timeout=10)
@@ -370,7 +381,10 @@ def test_concurrent_episodes_are_capped_instead_of_queueing(workspace: Path) -> 
     assert first_status == [200]
 
 
-def test_serve_cli_dispatches_the_formal_path_and_records_provenance(workspace: Path) -> None:
+def test_serve_cli_dispatches_the_formal_path_and_records_provenance(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`serve` 必须有一条按封存 holdout 发布决策启动真实模型服务的通道。
 
     `uvicorn.run` 会阻塞，因此 runner 是注入缝；本测试只验证服务被正确装配、
@@ -381,7 +395,9 @@ def test_serve_cli_dispatches_the_formal_path_and_records_provenance(workspace: 
     import yaml
     from fastapi import FastAPI
 
-    from veritool_rl.product_cli import _run_serve
+    from veritool_rl.product_cli import SERVICE_API_KEY_ENV, _run_serve
+
+    monkeypatch.setenv(SERVICE_API_KEY_ENV, API_KEY)
 
     release_dir = _write_release(workspace, go=False)
     config_path = workspace / "formal-serve.yaml"
@@ -393,6 +409,7 @@ def test_serve_cli_dispatches_the_formal_path_and_records_provenance(workspace: 
                 "models_root": "models",
                 "host": "127.0.0.1",
                 "port": 8000,
+                "episode_timeout_s": 30.0,
             },
             allow_unicode=True,
         ),

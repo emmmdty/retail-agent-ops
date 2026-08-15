@@ -117,6 +117,13 @@ def evaluate_retail_ops(
         raise ValueError("parser_id 必须是非空字符串")
     if not isinstance(budget, dict):
         raise ValueError("budget 必须是 mapping")
+    # 没有默认值：schema 扰动改变的是**评测条件**，"忘了写"与"故意不启用"必须
+    # 在配置层可分辨，否则两次运行的读数不可比却看不出来。
+    if "perturb_schema" not in config:
+        raise ValueError("配置必须显式声明 perturb_schema（bool）")
+    perturb_schema = config["perturb_schema"]
+    if not isinstance(perturb_schema, bool):
+        raise ValueError("perturb_schema 必须是 bool")
     validate_json_value(config)
 
     tasks_by_id = load_built_tasks(build_dir)
@@ -124,6 +131,13 @@ def evaluate_retail_ops(
     if any(task.split != manifest.split for task in tasks):
         raise ValueError("任务 split 与 manifest 不一致")
     _validate_task_coverage(manifest, tasks, bundle.bundle.task_categories)
+
+    def make_env(current: TaskSpec) -> RetailOpsEnv:
+        """运行与重放共用同一个环境工厂——扰动种子必须一致，否则证据自相矛盾。"""
+        env = RetailOpsEnv(current, bundle)
+        if perturb_schema:
+            env.perturb_schema(seed)
+        return env
 
     trajectories: list[Trajectory] = []
     for task in tasks:
@@ -135,16 +149,13 @@ def evaluate_retail_ops(
         trajectories.append(
             run_episode(
                 task,
-                lambda current: RetailOpsEnv(current, bundle),
+                make_env,
                 build_qualification_policy(policy_type, policy_task),
                 seed,
             )
         )
     replayed = sum(
-        replay_trajectory(
-            trajectory,
-            lambda current: RetailOpsEnv(current, bundle),
-        ).matched
+        replay_trajectory(trajectory, make_env).matched
         for trajectory in trajectories
     )
     if [trajectory.task.task_id for trajectory in trajectories] != manifest.task_ids:
@@ -154,6 +165,7 @@ def evaluate_retail_ops(
     if not isinstance(bootstrap_samples, int) or isinstance(bootstrap_samples, bool):
         raise ValueError("bootstrap_samples 必须是整数")
     metrics = compute_metrics(trajectories, bootstrap_samples, seed)
+    metrics["schema_perturbed"] = perturb_schema
     metrics["replayable_count"] = replayed
     metrics["replayable_rate"] = replayed / manifest.task_count
     evidence_complete = len(trajectories) == manifest.task_count == replayed and all(

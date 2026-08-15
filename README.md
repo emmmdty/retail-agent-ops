@@ -78,6 +78,32 @@ env -u UV_INDEX_URL uv sync --project tools/bfcl_eval --frozen
 
 这套数据是用于验证工程契约的合成 qualification；R1 未生成正式 holdout，也没有读取 holdout 真值。BFCL 只保留为独立外部回归，现有 BFCL 成绩不是 RetailOps 内部指标。
 
+### 自动化复现与容器
+
+上面六条命令由 `scripts/ci/verify_qualification_chain.py` 自动跑一遍，并断言两份
+`release.json` 的决策、失败门禁、`bundle_sha256` / `task_manifest_sha256` 与确定性
+指标等于冻结期望值——这是 `SPEC.md` §11「新环境能按文档完成 CPU smoke」的唯一自动化
+证明。GitHub Actions workflow 见 `.github/workflows/ci.yml`；**仓库当前无 remote，
+该 workflow 尚未真正运行过**。CPU-only 镜像见 `Dockerfile`（刻意不含 torch）。
+
+```bash
+.venv/bin/python scripts/ci/verify_qualification_chain.py
+```
+
+### 工具 schema 鲁棒性对照
+
+`perturb_schema` 会给工具改别名并打乱参数顺序（参数**键集合**不变）。两份只差一个
+开关的配置构成对照，回答"换一份客户的工具 schema 还能不能用"：
+
+```bash
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml     --seed 0 --input_dir <build> --output_dir <out-clean>
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml --seed 0 --input_dir <build> --output_dir <out-perturbed>
+```
+
+从工具清单按参数形状解析工具名的 `schema_adaptive` 策略在两侧都是 12/12；把
+`policy_type` 换成硬编码工具名的 `oracle`，扰动侧会**全灭**（测试锁定这个对照）。
+这条只用规则策略在 CPU 上跑，不涉及任何模型。
+
 ## 仓库结构
 
 按 `build → evaluate → release → serve` 四个稳定接口组织，详见
@@ -103,11 +129,21 @@ R3 候选（Qwen3-4B QLoRA-SFT）在 60 条冻结 dev 任务上：非法工具�
 关键政策违规 8→0、schema 合规率 0.781→1.000（精确 McNemar `p<0.0001` / `p=0.0078`）；
 但任务成功率 48/60→43/60，回退全部集中在需 ≥2 次工具调用的场景。
 
-封存 120 条 holdout 上（2026-08-11 首次也是唯一一次观测）复现了同一模式且更极端：
-非法调用 41→0、政策违规 16→0、schema 合规率 0.7819→1.0000，而任务成功率
-0.7833（94/120）→0.7500（90/120）。五项发布门禁里唯一失败的是 `success_delta`
-（−0.0333 < +0.05），判定 **`NO-GO` / `deployment=baseline`**，服务据此回滚到冻结基座。
-候选失败 100% 是 `premature_final_response`，其中 `refund_eligible` 20/20 全数失败。
+封存 120 条 holdout 已消耗**两次**观测，两次判定**都是 `NO-GO` / `deployment=baseline`**，
+且阈值一个字未改。逐次读数、失败门禁与判定口径边界见
+[`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)——**那是唯一事实源，本文件不复述**。
+
+- 观测 1（2026-08-11，R3 候选）复现了 dev 的同一模式且更极端：非法调用 41→0、
+  政策违规 16→0、schema 合规率 0.7819→1.0000，而任务成功率 0.7833→0.7500。
+  唯一失败门禁 `success_delta` −0.0333 < +0.05；候选失败 100% 是
+  `premature_final_response`，`refund_eligible` 20/20 全数失败。
+- 观测 2（2026-08-14，R4 候选 `sft-006`）任务指标全面达标：**120/120**、
+  `success_delta` +0.1417、违规与非法调用清零。唯一失败门禁是
+  `p95_latency_ratio` 1.8774 > 1.25，判定仍是 `NO-GO`。**这个数字是部署形态的代价
+  而不是模型能力的结论**：单次调用耗时 1.985×，而调用次数只增 1.146×。
+
+**120/120 不构成泛化证据**：train/dev/holdout 共用同一批 12 句请求模板，
+holdout 落在 train 的模板空间内，见 `docs/HOLDOUT_LEDGER.md` 的"判定口径的边界"。
 
 两侧 CI95 大幅重叠，仅凭 −3.3pp **不能**断言整体显著回退；但门禁要求的是实测 +5pp 的
 提升，候选没有做到，NO-GO 因此成立。另有一条必须一起说的观察：候选的

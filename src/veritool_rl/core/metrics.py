@@ -12,6 +12,55 @@ from veritool_rl.core.trajectory import TaskScenario, Trajectory
 
 _INVALID_CODES = {"unknown_tool", "invalid_arguments", "format_error"}
 
+#: 只做诊断、**不得**用于候选选择或发布判定的指标。
+#:
+#: `verifier_reward` 是复合奖励（最终状态 + milestone + 格式/政策惩罚）。在本项目里
+#: 它已三次与主判据反向：格式与政策分量改善时，它会掩盖执行能力的退化。把它留在
+#: 报告主表里和 `task_success` 并排，读报告的人没有任何信号知道这一列不能用来排序候选。
+#:
+#: **这里降级的是呈现，不是计算**：`core/rewards/verifier.py` 与 `compute_metrics`
+#: 的输出一字未改，机器可读证据（`metrics.json`、`release.json`）仍带全部字段，
+#: 否则已有产物会失去可比性。
+DIAGNOSTIC_METRICS = frozenset({"verifier_reward"})
+
+DIAGNOSTIC_NOTE = (
+    "诊断量：`verifier_reward` 已三次与主判据反向（R3 dev、封存 holdout、R4 dev），"
+    "不得用作候选选择依据或发布门禁输入；主判据是最终状态与政策 verifier。"
+)
+
+
+def split_headline_and_diagnostic(metrics: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """把一份 metrics 拆成主指标与诊断量两部分，供报告渲染使用。"""
+    headline = {key: value for key, value in metrics.items() if key not in DIAGNOSTIC_METRICS}
+    diagnostic = {key: value for key, value in metrics.items() if key in DIAGNOSTIC_METRICS}
+    return headline, diagnostic
+
+
+#: 发布门禁里配对 bootstrap 的固定预算与种子。发布判定必须可复现——同一份配对证据
+#: 两次运行要给出逐位相同的下界，否则"门禁通过"就成了一次抽样的运气。
+RELEASE_BOOTSTRAP_SAMPLES = 10000
+RELEASE_BOOTSTRAP_SEED = 0
+
+
+def paired_bootstrap_delta_ci95(
+    paired_outcomes: Sequence[tuple[bool, bool]],
+    samples: int = RELEASE_BOOTSTRAP_SAMPLES,
+    seed: int = RELEASE_BOOTSTRAP_SEED,
+) -> tuple[float, float]:
+    """逐任务配对成功/失败结局的 delta 均值 CI95。
+
+    配对（而不是两组独立比例）是必须的：base 与 candidate 跑的是**同一批任务**，
+    独立区间会把任务本身的难度方差算进不确定性，从而系统性地高估噪声。
+    """
+    if not paired_outcomes:
+        msg = "配对证据不得为空"
+        raise ValueError(msg)
+    deltas = np.asarray(
+        [float(candidate) - float(base) for base, candidate in paired_outcomes],
+        dtype=np.float64,
+    )
+    return _bootstrap_ci(deltas, samples, seed)
+
 
 def compute_metrics(
     trajectories: Sequence[Trajectory],

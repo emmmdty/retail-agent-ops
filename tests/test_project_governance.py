@@ -632,3 +632,189 @@ def test_r4_round2_export_outputs_stay_ignored() -> None:
             check=False,
         )
         assert ignored.returncode == 0, ignored_path
+
+
+def _iter_keys(value: object) -> list[str]:
+    if isinstance(value, dict):
+        keys: list[str] = []
+        for key, item in value.items():
+            keys.append(str(key))
+            keys.extend(_iter_keys(item))
+        return keys
+    if isinstance(value, list):
+        keys = []
+        for item in value:
+            keys.extend(_iter_keys(item))
+        return keys
+    return []
+
+
+def test_service_credentials_never_live_in_the_repo() -> None:
+    """服务 API key 只能来自环境变量，且服务层必须把它当作必填参数。
+
+    这是 P1-7 新增自由请求端点的连带治理：新增一个鉴权面时最常见的失败不是
+    比较算法写错，而是把 key 顺手写进配置文件、或者给它一个"没配就放行"的
+    默认值。两者都由这条测试变成红灯。
+    """
+    import inspect
+
+    import yaml
+
+    from veritool_rl.product_cli import SERVICE_API_KEY_ENV
+    from veritool_rl.retail_ops.serve.service import create_formal_app
+
+    forbidden = {"api_key", "apikey", "api-key", "token", "secret", "password", "credential"}
+    for path in sorted((ROOT / "configs").rglob("*.yaml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for key in _iter_keys(parsed):
+            assert key.lower() not in forbidden, f"{path}: 配置文件不得声明凭据字段 {key!r}"
+
+    assert SERVICE_API_KEY_ENV == "RETAIL_AGENT_OPS_API_KEY"
+    parameter = inspect.signature(create_formal_app).parameters["api_key"]
+    assert parameter.default is inspect.Parameter.empty, "api_key 不得有默认值"
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+    service = _read("src/veritool_rl/retail_ops/serve/service.py")
+    assert SERVICE_API_KEY_ENV not in service, "服务模块不读环境变量，key 由调用方注入"
+
+
+def test_ci_and_container_exist_and_do_not_overclaim() -> None:
+    """P2-12：`SPEC.md` §11 的"新环境能按文档完成 CPU smoke"要有自动化背书。
+
+    同时锁住诚实口径：仓库当前无 remote，这份 workflow 从未真正运行过，
+    因此它自己必须写明这一点，交付文档里也不得出现"CI 已通过"。
+    """
+    workflow = _read(".github/workflows/ci.yml")
+    for step in ("uv sync", "pytest", "ruff check", "mypy", "verify_qualification_chain.py"):
+        assert step in workflow, f"CI 缺少步骤：{step}"
+    assert "尚未在" in workflow and "运行过" in workflow, "workflow 必须写明它还没真正运行过"
+
+    dockerfile = _read("Dockerfile")
+    assert "torch" in dockerfile, "Dockerfile 必须说明为什么不含 torch"
+    assert "RUN pip install torch" not in dockerfile
+    assert "USER appuser" in dockerfile, "服务不得以 root 运行"
+
+    for name in ("README.md", "docs/SYSTEM_CARD.md", "docs/MODEL_CARD.md", "docs/DEMO.md"):
+        text = _read(name)
+        assert "CI 已通过" not in text, f"{name}: 不得声称 CI 已通过"
+
+
+def test_holdout_ledger_is_the_single_source_of_truth() -> None:
+    """P2-11：封存 holdout 的观测次数只有一个事实源。
+
+    同一个数字在五个文件里各写一遍必然漂移——2026-08-15 的评审正是从三处仍写着
+    "唯一一次观测"发现这一点的。这条测试把"记得同步五个文件"换成"漏引用就红"。
+    """
+    ledger = _read("docs/HOLDOUT_LEDGER.md")
+    for expected in (
+        "唯一事实源",
+        "LOG-20260811-03",
+        "LOG-20260814-04",
+        "success_delta",
+        "p95_latency_ratio",
+        "1.8774",
+        "-0.0333".replace("-", "−"),
+    ):
+        assert expected in ledger, f"台账缺少 {expected!r}"
+    assert ledger.count("NO-GO") >= 2, "两次判定都必须留在台账里"
+
+    for name in (
+        "README.md",
+        "docs/SYSTEM_CARD.md",
+        "docs/MODEL_CARD.md",
+        "docs/MODEL_CARD_sft-006.md",
+        "docs/RESUME_EVIDENCE.md",
+        "docs/REPO_MAP.md",
+    ):
+        assert "HOLDOUT_LEDGER.md" in _read(name), f"{name} 必须引用封存 holdout 台账"
+
+    # 被评审点名的三处漂移表述不得再出现在任何活动文档里
+    # （`docs/PROJECT_LOG.md` 是 append-only 历史档案，记录的是当时的事实，不在此列）。
+    for name in ("README.md", "docs/SYSTEM_CARD.md", "docs/MODEL_CARD.md", "docs/DEMO.md"):
+        text = _read(name)
+        assert "唯一一次观测" not in text, f"{name}: 观测次数表述已过期"
+        assert "首次也是" not in text, f"{name}: 观测次数表述已过期"
+
+
+def test_the_strongest_candidate_has_a_model_card() -> None:
+    """在封存 holdout 上做到 120/120 的候选必须有自己的模型卡。
+
+    最强的那个 artifact 没有卡，是交付文档最容易出现的空洞。
+    """
+    card = _read("docs/MODEL_CARD_sft-006.md")
+    for expected in (
+        "8a49251fbfc9",  # adapter 指纹
+        "ae82917e6ee43d0da8fe8418bba1b6b162a958fe",  # code_commit
+        "8ae813c4284246b9",  # system_prompt_sha256
+        "120/120",
+        "p95_latency_ratio",
+        "不是泛化证据",
+        "只存在于 gpu-5090",  # 产物可得性风险必须写明
+    ):
+        assert expected in card, f"sft-006 模型卡缺少 {expected!r}"
+    assert "HOLDOUT_LEDGER.md" in card
+
+
+_R45_CONFIG_NAMES = (
+    "retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml",
+    "retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml",
+    "retail_ops/release/retail_ops_v1_r45_formal_release_v11.yaml",
+)
+
+
+def test_r45_configs_hold_the_governance_line() -> None:
+    """补强轨道新增的三份 config 落在与既有各轮完全相同的治理口径下。"""
+    import yaml
+
+    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+    for name in _R45_CONFIG_NAMES:
+        text = _read(f"configs/{name}")
+        assert "TEACHER_LLM_" not in text, name
+        assert "bfcl" not in text.lower(), name
+        parsed = yaml.safe_load(text)
+        assert isinstance(parsed, dict)
+        for leaf in _iter_leaf_values(parsed):
+            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
+            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
+            for marker in secret_markers:
+                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r}"
+
+
+def test_schema_perturbation_configs_differ_only_by_the_switch() -> None:
+    """对照实验的两侧只能差一个变量，否则测的不是 schema 鲁棒性。"""
+    import yaml
+
+    clean = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml")
+    )
+    perturbed = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml")
+    )
+
+    assert clean["perturb_schema"] is False
+    assert perturbed["perturb_schema"] is True
+    assert {key: value for key, value in clean.items() if key != "perturb_schema"} == {
+        key: value for key, value in perturbed.items() if key != "perturb_schema"
+    }
+
+
+def test_every_qualification_config_declares_the_perturbation_switch() -> None:
+    """`perturb_schema` 没有默认值——漏写一份配置就必须红，而不是静默按旧行为跑。"""
+    import yaml
+
+    evaluate_root = ROOT / "configs/retail_ops/evaluate"
+    for path in sorted(evaluate_root.glob("retail_ops_v1_qualification_*.yaml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert "perturb_schema" in parsed, f"{path.name}: 缺少 perturb_schema"
+        assert isinstance(parsed["perturb_schema"], bool), path.name
+
+
+def test_release_configs_declare_their_gate_schema_version() -> None:
+    """"这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠默认值。"""
+    import yaml
+
+    for path in sorted((ROOT / "configs/retail_ops/release").glob("*.yaml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if parsed.get("pipeline") != "formal_release":
+            continue
+        assert parsed["gate_schema_version"] in {"1.0", "1.1"}, path.name

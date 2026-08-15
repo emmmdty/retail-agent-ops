@@ -5,3 +5,7 @@ bootstrap_samples: 1000
 parser_id: hermes-single-call-v1
 budget:
   max_steps: 5
+# 工具 schema 扰动开关，没有默认值：它改变评测条件，
+# "忘了写"与"故意不启用"必须在配置层可分辨。对照配置见
+# retail_ops_v1_qualification_schema_{clean,perturbed}.yaml。
+perturb_schema: false

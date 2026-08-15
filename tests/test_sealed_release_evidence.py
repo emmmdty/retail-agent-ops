@@ -830,7 +830,11 @@ def test_release_cli_dispatches_the_formal_holdout_gate(workspace: Path) -> None
     config_path = workspace / "formal-release.yaml"
     config_path.write_text(
         yaml.safe_dump(
-            {"pipeline": "formal_release", "bundle_dir": str(BUNDLE_REL)},
+            {
+                "pipeline": "formal_release",
+                "bundle_dir": str(BUNDLE_REL),
+                "gate_schema_version": "1.0",
+            },
             allow_unicode=True,
         ),
         encoding="utf-8",
@@ -880,7 +884,11 @@ def test_release_cli_rejects_a_bundle_that_differs_from_the_sealed_evidence(
     config_path = workspace / "bad-bundle-release.yaml"
     config_path.write_text(
         yaml.safe_dump(
-            {"pipeline": "formal_release", "bundle_dir": "other-bundle"},
+            {
+                    "pipeline": "formal_release",
+                    "bundle_dir": "other-bundle",
+                    "gate_schema_version": "1.0",
+                },
             allow_unicode=True,
         ),
         encoding="utf-8",

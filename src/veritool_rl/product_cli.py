@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import uvicorn
 from fastapi import FastAPI
@@ -85,10 +86,13 @@ from veritool_rl.retail_ops.release.formal_release import (
 )
 from veritool_rl.retail_ops.release.governance import EvidencePurpose
 from veritool_rl.retail_ops.release.release import (
+    GATE_IDS_BY_SCHEMA,
+    GateSchemaVersion,
     decide_release,
     load_release_report,
     write_release_report,
 )
+from veritool_rl.retail_ops.serve.observability import configure_service_logging
 from veritool_rl.retail_ops.serve.service import BackendFactory, create_app, create_formal_app
 from veritool_rl.training.sft import run_sft
 
@@ -132,6 +136,21 @@ def build_product_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="候选 run evidence 目录",
+    )
+    release.add_argument(
+        "--baseline_trajectories",
+        type=Path,
+        default=None,
+        help=(
+            "可选：基座逐任务 trajectories.jsonl（私有产物）。"
+            "只有 gate schema v1.1 的配对统计检验需要它；不给则该门禁判 FAIL"
+        ),
+    )
+    release.add_argument(
+        "--candidate_trajectories",
+        type=Path,
+        default=None,
+        help="可选：候选逐任务 trajectories.jsonl（私有产物），与上一项必须成对提供",
     )
 
     serve = subparsers.add_parser("serve", help="按发布结论启动 qualification 服务")
@@ -205,6 +224,7 @@ def _run_evaluate(args: argparse.Namespace) -> None:
                 "bootstrap_samples",
                 "parser_id",
                 "budget",
+                "perturb_schema",
             },
         )
         bundle_dir = _bundle_dir(config)
@@ -304,7 +324,36 @@ def _run_serve(
 # R3 pipeline: formal_serve (serve)
 # ---------------------------------------------------------------------------
 
-_FORMAL_SERVE_KEYS = {"pipeline", "bundle_dir", "models_root", "host", "port"}
+_FORMAL_SERVE_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "models_root",
+    "host",
+    "port",
+    "episode_timeout_s",
+}
+
+#: 服务 API key 只从环境变量读，绝不进配置文件或 Git。缺失时启动即失败。
+SERVICE_API_KEY_ENV = "RETAIL_AGENT_OPS_API_KEY"
+
+
+def _service_api_key() -> str:
+    """从环境变量取服务 API key；缺失时给出可操作的错误而不是静默放行。"""
+    key = os.environ.get(SERVICE_API_KEY_ENV, "")
+    if not key.strip():
+        msg = (
+            f"必须通过环境变量 {SERVICE_API_KEY_ENV} 提供服务 API key；"
+            "该值不得写入配置文件或提交进 Git"
+        )
+        raise ValueError(msg)
+    return key
+
+
+def _episode_timeout(config: dict[str, Any]) -> float:
+    value = config["episode_timeout_s"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError("episode_timeout_s 必须是正数（秒）")
+    return float(value)
 
 
 def _default_formal_backend(
@@ -341,11 +390,14 @@ def _run_formal_serve(
     factory = backend_factory or (
         lambda model, adapter: _default_formal_backend(model, adapter, models_root)
     )
+    configure_service_logging()
     app = create_formal_app(
         args.release_dir,
         bundle_dir,
         args.input_dir,
         backend_factory=factory,
+        api_key=_service_api_key(),
+        episode_timeout_s=_episode_timeout(config),
     )
     release = load_formal_release_report(args.release_dir / "release.json")
 
@@ -375,7 +427,7 @@ def _default_app_runner(app: FastAPI, host: str, port: int) -> None:
 # R3 pipeline: formal_release (release)
 # ---------------------------------------------------------------------------
 
-_FORMAL_RELEASE_KEYS = {"pipeline", "bundle_dir"}
+_FORMAL_RELEASE_KEYS = {"pipeline", "bundle_dir", "gate_schema_version"}
 
 
 def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -384,8 +436,12 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
     公开 sealed 报告是单文件副本，同目录没有私有产物，因此这里显式传
     `verify_artifacts=False`——`load_sealed_evaluation_report` 的默认值是校验，
     不显式关掉会退化成"文件缺失即失败"。report_id 自哈希仍然逐字校验。
+
+    `gate_schema_version` 没有默认值，必须在配置里写出来：判定用的是哪一套门禁
+    语义，是这份证据最重要的元数据之一，不能靠"没写就是旧的"。
     """
     _require_config_keys(config, _FORMAL_RELEASE_KEYS)
+    gate_schema_version = _gate_schema_version(config)
     bundle = load_bundle(_bundle_dir(config))
     base = load_sealed_evaluation_report(
         args.baseline_dir / "sealed-report.json", verify_artifacts=False
@@ -398,9 +454,58 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
             raise ValueError(f"{label} sealed 证据与 release bundle SHA-256 不匹配")
 
     write_formal_release_report(
-        decide_formal_release(base, candidate, bundle.release),
+        decide_formal_release(
+            base,
+            candidate,
+            bundle.release,
+            gate_schema_version=gate_schema_version,
+            paired_outcomes=_paired_outcomes(args),
+        ),
         args.output_dir,
     )
+
+
+def _gate_schema_version(config: dict[str, Any]) -> GateSchemaVersion:
+    value = config["gate_schema_version"]
+    if value not in GATE_IDS_BY_SCHEMA:
+        raise ValueError(
+            f"未知 gate_schema_version: {value!r}，可选 {sorted(GATE_IDS_BY_SCHEMA)}"
+        )
+    return cast(GateSchemaVersion, value)
+
+
+def _paired_outcomes(args: argparse.Namespace) -> list[tuple[bool, bool]] | None:
+    """从两份私有 `trajectories.jsonl` 读逐任务配对结局。
+
+    两个路径必须成对提供：只给一侧是配置错误，不是"降级到无配对证据"——后者会把
+    一次误用悄悄变成一个 FAIL 的门禁，看起来像模型问题。
+    """
+    baseline_path = getattr(args, "baseline_trajectories", None)
+    candidate_path = getattr(args, "candidate_trajectories", None)
+    if baseline_path is None and candidate_path is None:
+        return None
+    if baseline_path is None or candidate_path is None:
+        raise ValueError("--baseline_trajectories 与 --candidate_trajectories 必须成对提供")
+    baseline = _success_by_task(baseline_path)
+    candidate = _success_by_task(candidate_path)
+    if set(baseline) != set(candidate):
+        raise ValueError("两侧逐任务证据的 task_id 集合不一致，无法配对")
+    return [(baseline[task_id], candidate[task_id]) for task_id in sorted(baseline)]
+
+
+def _success_by_task(path: Path) -> dict[str, bool]:
+    outcomes: dict[str, bool] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        task_id = record["task"]["task_id"]
+        if task_id in outcomes:
+            raise ValueError(f"逐任务证据中存在重复 task_id: {task_id}")
+        outcomes[task_id] = bool(record["success"])
+    if not outcomes:
+        raise ValueError(f"逐任务证据为空: {path}")
+    return outcomes
 
 
 # ---------------------------------------------------------------------------

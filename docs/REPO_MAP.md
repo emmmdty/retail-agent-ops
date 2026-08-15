@@ -27,8 +27,14 @@
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
-| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE`）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
+| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
+| `scripts/ci/` | 活动 | CPU 全链路复现校验（`verify_qualification_chain.py`），CI 与本地共用同一条命令 |
+| `.github/workflows/` | 活动 | CPU 质量门 workflow。**仓库无 remote，尚未真正运行过** |
+| `Dockerfile` | 活动 | CPU-only 镜像，刻意不含 torch（重依赖只在 GPU 主机装） |
 | `tools/bfcl_eval/` | legacy | BFCL 官方 evaluator 的独立 uv 环境 |
+
+**封存 holdout 观测次数与判定的唯一事实源是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)**，
+其它文档一律引用而不复述。
 
 ## 3. `src/veritool_rl/` 分层
 
@@ -64,8 +70,8 @@ src/veritool_rl/
 | 路径 | 消费命令 |
 |---|---|
 | `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
-| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate） |
-| `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release） |
+| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate）。qualification 侧有一个**必填**键 `perturb_schema`：它改变评测条件（工具别名 + 参数顺序扰动），"忘了写"与"故意不启用"必须在配置层可分辨；`..._schema_{clean,perturbed}.yaml` 是只差这一个开关的对照 |
+| `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release）。`formal_release` 有一个**必填**键 `gate_schema_version`（`"1.0"` / `"1.1"`）——"这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠"没写就是旧的" |
 | `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
 | `configs/examples/` | 模板 |
 | `configs/legacy/` | 旧 MVP/BFCL 配置 |
@@ -81,6 +87,16 @@ src/veritool_rl/
 | `release` | 完成（`release.py`） | 完成（`formal_release.py`，与 R1 共用 `build_release_gates`） |
 | `serve` | 完成（`create_app`） | 完成（`create_formal_app`，后端工厂注入） |
 
+`release` 的门禁语义是**版本化**的：`GATE_IDS_BY_SCHEMA` 把 v1.0（R1 起的五项冻结
+集合）与 v1.1（拆分延迟门禁 + 配对统计检验）分开，两个 report 模型按各自
+`schema_version` 断言集合与顺序。就地增删 `GATE_IDS` 会让磁盘上全部已有 release 报告
+无法加载，因此新口径只能走版本化路径；有测试断言旧报告仍能被加载。
+
+`serve` 的 formal 通道在 2026-08-15 从演示夹具补成服务：`POST /v1/chat` 自由请求、
+`/v1` 全面 Bearer 鉴权（key 只从环境变量读）、请求级 trace_id 与结构化 JSON 日志
+（只落请求摘要不落原文）、`GET /metrics`（Prometheus 文本，无新依赖）、
+episode 超时结构化降级。并发上限仍是 1 且保留 503 语义。
+
 两条轨道**共用一份阈值语义**：`domains/retail_ops/v1/release.yaml` 经
 `release.build_release_gates` 同时服务于两者，因此同一个候选不可能在两条通道上
 得到互相矛盾的结论。R1 的 `ReleaseReport` 契约已冻结（gate 集合与顺序被
@@ -92,6 +108,7 @@ holdout 的 base/candidate 背靠背评测、首个 formal 发布判定（**NO-G
 与第二次判定（同样 **NO-GO / baseline**，候选 120/120 但 `p95_latency_ratio`
 1.8774 > 1.25，LOG-20260814-04）。**封存 holdout 的两次观测均已消耗，不再有"未观测"
 状态**；结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择，任何新判定都是第三次。
+逐次读数与判定的唯一事实源是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
 
 **配对可比性的连带约束**（R4 起必须知道）：`code_commit`、`uv_lock_sha256`、
 `system_prompt_sha256` 都在 `SEALED_PAIRING_FIELDS` 内，因此任何后续改动提交后，

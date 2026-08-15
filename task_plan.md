@@ -6,172 +6,126 @@
 
 ## Current Phase
 
-R4「失败驱动优化」**三轮已跑完**，封存 holdout 两次观测均已消耗。当前处于
-**R4 收尾 / R5 待启动**之间：没有进行中的实验，下一步方向待用户决定。
+**R4.5 架构补强**（用户于 2026-08-15 裁定新开补强轨道，`docs/EXECUTION_PLAN.md` 已更新）。
+执行提示词：`docs/handoffs/2026-08-15-architecture-hardening-execution-prompt.md`。
+R4 已标为已完成；封存 holdout 两次观测均已消耗，本轨道不消耗第三次。
 
-## Current Task
+## Current Task：架构补强（评审 13 条）
 
-（无进行中的任务。以下是 R4 的收口状态，供接管者判断下一步。）
+这一轮的性质与 R4 三轮**不同**：R4 是"改模型让候选达标"，这一轮是"补齐系统本身的
+架构缺口"。**没有一项以候选通过发布门禁为成功标准。**
 
-### 三轮实验的最终结论（每条都带规模条件，详见 LOG-20260814-01/02/03/04/05）
+### 输入
 
-**结论一：LoRA 容量必须与模型规模匹配，不存在"越大越好"。**
-dev 60 条、同一份 `train-export-004`、同一组超参：
+- 评审 13 条问题及证据位置（提示词第 3 节），已逐条复核代码属实（见 `findings.md`
+  2026-08-15 小节）；
+- 已冻结的四条硬契约：`GATE_IDS` 逐字段冻结、dev `PAIRING_FIELDS`、
+  `SEALED_PAIRING_FIELDS`、`dataset_version` + 40/10/20 配额；
+- 基线：698 tests passed，Ruff / mypy / uv lock 全绿；
+- 已有真实产物：`formal-release-001/002`、R1 qualification release 报告、
+  两侧 sealed holdout 证据、`sft-006` adapter 与 dev/holdout 逐任务证据。
 
-| 模型 | 零训练 | attention-only | 全 linear |
-|---|---|---|---|
-| Qwen3-4B | 54/60（elig 9/10） | 55/60（elig 5/10） | **60/60** |
-| Qwen3-1.7B | 44/60（elig 0/10） | **58/60** | 45/60 |
+### 输出
 
-1.7B 上方向相反：全 linear 的 15 条失败**全部**是"该拒绝却没拒绝"
-（`refund_denied_ownership` 10/10 全灭、`policy_violation` 0→5、
-`average_tool_calls` 1.27→2.08），是**学过头**而非没学会。
-
-**结论二（连带约束）：数据配比与 LoRA 容量耦合，不能当作两个独立旋钮。**
-`train-export-004` 沿用第一轮 ×3 oversample 使"执行:拒绝"=240:120=2:1；
-该偏向在 4B 无害、在 1.7B + 过剩容量下致命。今后调 oversample 必须连同
-`target_modules` 一起评估。
-
-**结论三：提示词干预是模型规模依赖的。** 新 prompt 使 4B 的 `refund_eligible`
-5/10→9/10，对 1.7B **完全无效**（0/10），而训练对 1.7B 极其有效（0/10→10/10）。
-
-**被自己实验证伪的一般化表述**：「容量决定训练效果的符号」（第二轮原表述）
-已被第三轮跨规模验证推翻。历史 LOG 条目未改写，以最新条目为准。
-
-### 发布判定状态
-
-两次判定均为 **NO-GO / baseline**，阈值一个字未改（有测试锁定）：
-
-| | 第一次（2026-08-11） | 第二次（2026-08-14） |
+| 批次 | 内容 | 资源 |
 |---|---|---|
-| base | 0.7833（94/120） | 0.8583（103/120） |
-| 候选 | 0.7500（90/120） | **1.0000（120/120）** |
-| 失败门禁 | `success_delta` −0.0333 | `p95_latency_ratio` **1.8774** > 1.25 |
+| 1 | serve 服务化（1.1）、CI + Dockerfile（1.2）、文档单一事实源 + `sft-006` 模型卡（1.3）、`verifier_reward` 降级为诊断量（1.4） | 纯 CPU |
+| 3 | 发布门禁语义**版本化**升级：延迟门禁拆分（6.1）、配对统计检验（6.2）、`schema_version` 1.0/1.1 双路径（6.3） | 纯 CPU |
+| 2 | 政策外置（2.1）、幂等键（2.2）、guardrail + 注入评测（2.3） | 改被哈希输入，需一次性 dev base 重跑 |
+| 4 | 分布外 holdout（7.1）、serving 形态对照（7.2）、Agent 能力面（7.3） | 需 GPU / API / 用户裁定 |
 
-第二次的延迟代价已归因：调用次数只增 14.6%，**单次调用耗时 1497→2971 ms（1.985×）**，
-主因是全 linear LoRA 的前向开销，**不是**"多做了工具调用"。
+批次 1 与批次 3 均为纯 CPU 且不触碰被哈希的领域输入，可连续完成；批次 2 的实现是 CPU，
+但其证据重跑是 GPU 执行门；批次 4 逐项请示。
 
-**封存 holdout 两次观测均已消耗**，任何新判定都是第三次，需用户单独决策。
+### 非目标（硬约束）
 
-### 挡在 GO 前面的唯一问题
+- **不调模型超参、不产生新的发布候选、不追第三次 holdout 观测**；
+- **不下调任何发布门禁阈值**（`test_release_config_does_not_touch_the_gates` 必须保持通过）；
+- 不改 `formal_tasks.assert_exact_quotas` 的 40/10/20 配额，不改 `dataset_version`；
+- 不重命名 Python 包；
+- 不就地增删 `GATE_IDS`（必须走 schema 版本化路径）；
+- 不削弱被评审认可的机制：`SEALED_PAIRING_FIELDS` 逐字段配对、两段式授权门、
+  产物自哈希与不可覆盖目录、模型文件 SHA-256 锁定、负结果留档；
+- 不改 R1 `create_app` / `ReleaseReport` v1.0 的既有契约语义；
+- 不删除或改写旧口径下的两次 NO-GO 结论。
 
-延迟。三条未验证的可选路径：(a) 只加部分 MLP 投影或降 r，在效果与延迟间取中间点；
-(b) 把 adapter 合并进基座以消除 LoRA 前向开销后重测延迟（**不改变模型数值，最干净**）；
-(c) 与用户讨论 `p95_latency_ratio` 门禁是否应区分"更慢"与"做了更多工作"——
-属发布口径变更，需用户决策，且不得为通过判定而放宽。
+### 失败模式（实施时主动防御）
 
-### 未测且不得推断
+1. **照着结果改门禁**：批次 3 的新口径必须在看到任何新读数**之前**定稿并提交；
+2. **就地改 `GATE_IDS`** → 磁盘上已有全部 release 报告无法加载（不可逆证据损失）；
+3. **政策外置时 prompt 渲染不确定** → 同一 bundle 渲染出不同字节的 prompt，
+   `system_prompt_sha256` 变成不可复现，配对契约失效；
+4. **guardrail 做成 env 的一个方法** → 不是纵深防御，两层退化成一层；
+5. **serve 加自由端点时泄漏 holdout 真值或答案**到日志/响应；
+6. **API key 进 Git**（必须纳入既有 secret 扫描治理测试）；
+7. **文档新增未经运行的数字**——所有数字必须来自已有产物；
+8. 幂等键改 `tool_schema_sha256` 后**静默**让 240 条 teacher 轨迹参数非法（需用户裁定，
+   见下方决策点）。
 
-A+B 叠加（终局回复 + 容量）、三者叠加、1.7B 上的 prompt×容量完整 2×2、
-以及本轮全部结论在其他领域/语言上的迁移。
+### 影响文件（预计）
+
+- 批次 1：`retail_ops/serve/service.py`、`core/reporting.py`、`core/metrics.py`（只读）、
+  新增 `.github/workflows/`、`Dockerfile`、`docs/HOLDOUT_LEDGER.md`、
+  `docs/MODEL_CARD*.md`、`docs/SYSTEM_CARD.md`、`README.md`、`tests/`；
+- 批次 3：`retail_ops/release/release.py`、`release/formal_release.py`、
+  `core/metrics.py`、`domains/retail_ops/v1/release.yaml`（**只增字段不改阈值**）、`tests/`；
+- 批次 2：`domains/retail_ops/v1/{policies,tools}.yaml`、`retail_ops/domain/{bundle,environment}.py`、
+  `core/agent/runner.py`、新增 guardrail 模块、`tests/`。
+
+### 验收命令与预期产物
+
+```bash
+.venv/bin/pytest -q            # 起始基线 698 passed，只增不减
+.venv/bin/ruff check .
+.venv/bin/mypy
+env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
+git diff --check
+```
+
+另需证明：`formal-release-001` / `formal-release-002` / R1 qualification 的 `release.json`
+在改动后**仍能被加载**（批次 3 的核心回归）。
 
 ### 授权状态
 
-GPU **否**、API **否**、数据下载 **否**、holdout 执行 **否**（第三次需单独决策）、
-公开发布 **否**。
+GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**（第三次需单独决策）、
+公开发布 **否**、新依赖 **否**（CI/Dockerfile 不引入运行时新依赖）。
 
-## 历史任务：R3 Task 3（已完成，摘要见 progress.md）
+### 待用户裁定的决策点（提示词第 9 节）
 
-R3 Task 3：为 formal（真实 Qwen3-4B）轨道补齐 sealed holdout 评测入口、发布门禁与
-可切换后端的服务入口。
+1. 阶段归属（R4 收尾 / R5 提前启动 / 新开补强轨道）；
+2. P2-8 幂等键对现有 240 条 teacher 轨迹的处理方式；
+3. P1-6 二选一：user simulator（A）还是工具面扩容（B）；
+4. P2-13 `perturb_schema`：接入 qualification 轨道还是删除；
+5. 模型卡形态：`sft-006` 独立卡还是现卡分节；
+6. 任何 GPU / 商业 API / 模型下载 / 新依赖；
+7. 第三次封存 holdout 观测。
 
-- 背景（本次核实的代码事实，不是文档转述）：仓库里存在**两条平行证据链**。R1
-  qualification 轨道（规则策略）四个接口全通；R2/R3 formal 轨道只到 `evaluate` 的 dev
-  部分，`release` 与 `serve` **完全不存在**。具体：
-  (1) `evaluate_authorized_holdout` / `authorize_formal_holdout` 全仓只被 `tests/` 引用，
-      `product_cli.py::_run_evaluate` 只识别 `formal_dev_base` / `formal_dev_candidate`，
-      正式 120 条 holdout 无任何命令可跑；
-  (2) `release.py::decide_release` 只接受 R1 的 `RunEvidence`，`_validate_paired_evidence`
-      比对的 `mode` / `task_manifest_sha256` / `budget` 是 formal 证据没有的字段，
-      SPEC §6 发布门禁对真实模型不可执行；
-  (3) `serve/service.py` 硬要求 `manifest.split == "qualification"` 并只构造
-      `build_qualification_policy` 规则策略，从不加载模型或 adapter。
-- 输入：已产出且已通过重载校验的三份真实证据——`qwen3-4b-dev-base-001/base-report.json`
-  （`BaseRunEvidence`，task_success 0.800）、`r3/candidate-001/candidate-report.json`
-  （`CandidateRunEvidence`，task_success 0.7167）、`r3/sft-001/adapter/`（23.6 MB）；
-  冻结数据集 `retail_ops_v1_r2_20260722` 的公开 `holdout-receipt.json`（120 条、六类各 20）
-  与私有 `data/private/retail_ops/v1/r2/<version>/holdout.jsonl`；发布策略
-  `domains/retail_ops/v1/release.yaml`（+5pp / 违规不增 / 非法调用 0 / p95 ≤1.25× / 证据完整）。
-- 输出：
-  - A：`evaluate` 新增 `formal_holdout` 流水线 + 对应已提交 config；`SealedEvaluationReport`
-    补齐 provenance 字段（见"关键约束"第 1 条），使两份 sealed 报告可在字段级证明同条件；
-  - B：`release` 新增 formal 路径，读两份 sealed 报告产出 `FormalReleaseReport`
-    （GO/NO-GO + 逐门禁观测 + JSON/Markdown/HTML），R1 路径逐字节不变；
-  - C：`serve` 新增 formal 路径，按 `FormalReleaseReport` 的 `deployment` 选择
-    base+adapter 或回滚 base，后端经工厂注入（默认本地 CPU 可启动，GPU 主机换真实后端），
-    并落实 SPEC §9 的工具 allowlist、请求大小、并发上限与回滚说明。
-- 非目标：**不执行任何 holdout 运行**（base 那一枪在代码就绪并经用户确认后另开任务）；
-  不动 GPU、不调商业 API、不下载模型；不改 R1 qualification 轨道的任何已冻结契约；
-  不改 `BaseRunEvidence` / `CandidateRunEvidence` / `ReleaseReport` 的字段集合；
-  不重命名 Python 包；不创建远程仓库、不 push；不改发布阈值。
-- 关键约束（已核实，违反即产生不可逆损失）：
-  1. **`SealedEvaluationReport` 的扩展窗口正在关闭**。`report_id` 是
-     `_content_id` 对全字段的自哈希（`sealed_evaluation.py:219` 校验），加字段会让已产出
-     报告永久加载失败——`BaseRunEvidence` 已因此被冻死（`findings.md:532`）。已核实
-     `data/private/.../sealed-eval/` 不存在、`reports/` 无任何 sealed 产物，**holdout 从未
-     跑过**，所以现在扩字段零成本；第一次运行落盘后即不可逆。**A 必须先于任何 holdout 运行。**
-  2. `ReleaseReport.validate_decision_consistency`（`release.py:71-82`）断言 gate 集合与
-     顺序精确等于 `_GATE_IDS`，且 `decide_release` 的返回类型被 `service.py` 与
-     `tests/test_release_policy.py` / `test_service.py` 依赖。formal 门禁**只能新增并行
-     类型**（沿用 Task 2 用子类扩展 `CandidateRunEvidence` 的既有做法），门禁阈值与算术
-     必须与 R1 共用同一份实现，不得复制粘贴出第二套语义。
-  3. `evaluate_authorized_holdout` 当前签名收 `model_name: str` 而非配置对象，与
-     `evaluate_formal_dev_base` 的 `BaseEvaluationConfig` 不对称；A 需要引入
-     `SealedEvaluationConfig` 并复用 `_require_backend_matches_pin` 的双向校验，
-     否则无法证明 sealed 运行用的是哪份模型/adapter。
-  4. sealed 公开报告是 allowlist 字段集，**不得**因为补 provenance 而漏进 task_id、
-     family_id、prompt、真值或逐任务失败样例；新增字段只能是模型/生成/硬件/代码标识。
-  5. `authorize_formal_holdout` 只接受 `EvidencePurpose.RELEASE`，且 logical_path 必须
-     精确等于 `data/private/retail_ops/v1/r2/<dataset_version>/holdout.jsonl`；CLI 接线
-     不得为了方便放宽这两条。
-- 失败模式：为了让 formal 证据穿过 `decide_release` 而放宽 `_validate_paired_evidence`，
-  使 R1 配对公平性检查失效；formal 门禁复制出第二套阈值语义，导致同一策略文件产生两种
-  结论；sealed 报告补字段时把 task 级信息漏进公开侧；serve 的后端工厂缝留成"CPU 假后端
-  也能标 GO 部署"，让未过门禁的模型可被加载（违反 SPEC §4 最后一条）；先跑 holdout 再改
-  schema 导致证据永久不可加载。
-- 影响文件（预计）：`src/veritool_rl/retail_ops/evaluate/sealed_evaluation.py`、
-  `src/veritool_rl/retail_ops/release/release.py`（新增并行类型，不改 R1 类型）、
-  `src/veritool_rl/retail_ops/serve/service.py`、`src/veritool_rl/product_cli.py`、
-  `configs/retail_ops/{evaluate,release,serve}/` 新增 config、`tests/` 对应新增测试、
-  `docs/REPO_MAP.md`、`CLAUDE.md`、`README.md`。
-- [x] A1+A2（合并为一个循环，配置对象与报告字段互相依赖）：`SealedEvaluationConfig`
-      （继承 `BaseEvaluationConfig`，`adapter` 可选）+ `SealedEvaluationReport` 补 provenance
-      + `evaluate_authorized_holdout` 签名对齐 + `require_comparable_sealed_runs`。
-      RED 先失败于 `require_comparable_sealed_runs` 不存在；两条 adapter 双向绑定测试
-      另经突变验证（去掉 `_require_backend_matches_pin` 调用后立即 `DID NOT RAISE`）。
-      基线 587 → 592 passed。
-- [x] A3：`evaluate` 新增 `formal_holdout_base` / `formal_holdout_candidate` 两条流水线
-      （拆成两条而非一条带可选 adapter：base/candidate 的区分是安全关键的，让配置文件
-      本身声明意图，比"有没有写 adapter 这个 key"更难误配置）+ 两份已提交 config，
-      走 `authorize_formal_holdout` 两段式授权；CPU 注入缝与 `_run_formal_dev_base` 对齐。
-      基线 592 → 604 passed。
-- [x] B1：`release.py` 抽出 `build_release_gates` 与公开的 `GATE_IDS`（R1 与 formal 共用
-      同一份阈值语义）；新增 `release/formal_release.py`（`FormalReleaseReport` +
-      `decide_formal_release` + 三份报告渲染），不改 R1 的 `ReleaseReport`。
-      配对校验的两条测试经突变验证（去掉 `require_comparable_sealed_runs` 后裸 `AssertionError`）。
-- [x] B2：`release` 命令按 `pipeline: formal_release` 分发 + 已提交 config；
-      公开 sealed 副本显式 `verify_artifacts=False`（同目录无私有产物），report_id 仍逐字校验。
-- [x] B3：用真实 dev 数字（base 0.800 / candidate 0.7167 / p95 6068 vs 5211）的端到端
-      NO-GO 回归：恰好 `success_delta` 一项失败、`deployment == "baseline"`；另有 GO 正对照、
-      报告往返、手改 decision 必须加载失败。基线 604 → 613 passed。
-- [x] C1：`serve/service.py` 新增 `create_formal_app`（R1 `create_app` 未改）：后端工厂
-      注入、按 `deployment` 选 base+adapter 或回滚 base。回滚是**双重**执行的——NO-GO 时
-      adapter 根本不传给工厂，且随后核对工厂真正返回的后端没挂 adapter（工厂是注入缝，
-      实现可能来自别处）。经突变验证。
-- [x] C2：并发上限（串行 episode，超限 503）、请求体大小上限（`MAX_REQUEST_BYTES`，
-      超限 413）、`/v1/tasks` 暴露工具 allowlist、`/health` 暴露决策/失败门禁/回滚说明。
-      并发上限经突变验证（提到 8 后测试立即失败）。
-- [x] C3：`serve` 命令按 `pipeline: formal_serve` 分发 + 已提交 config；`backend_factory`
-      与 `app_runner` 两个注入缝让本地 CPU 用 fake 后端即可装配服务并断言 provenance，
-      不加载模型、不监听端口。基线 613 → 624 passed。
-- [x] D：文档同步（REPO_MAP 新增「四接口双轨完成度」并标注"代码完成 ≠ 已经运行"、
-      CLAUDE.md §9、README 状态与结果边界）+ 全量门禁 + PROJECT_LOG。
-- 验收命令：`.venv/bin/pytest -q`（起始基线 587 → **完成时 624 passed**）、
-  `.venv/bin/ruff check .`、`.venv/bin/mypy`、
-  `env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`；
-  另需证明三份已产出的真实证据（R2 两份 base、R3 一份 candidate）重新加载后 `run_id`
-  复算仍一致，且 R1 qualification 的 `release.json` 仍能被 `load_release_report` 接受。
-- 授权状态：GPU **否**、API **否**、数据下载 **否**、holdout 执行 **否**、公开发布 **否**。
+### 进度
+
+- [x] 0. 上下文读取 + 13 条证据复核
+- [x] 1. `task_plan.md`
+- [x] 2. 冻结契约影响矩阵（写入 `findings.md`）
+- [x] 3. 批次 1.1 serve 服务化（19 项新测试，4 次突变验证）
+- [x] 4. 批次 1.2 CI workflow + 全链路复现脚本 + CPU-only Dockerfile
+- [x] 5. 批次 1.3 `docs/HOLDOUT_LEDGER.md` + 三处漂移修复 + `sft-006` 独立模型卡
+- [x] 6. 批次 1.4 `verifier_reward` 降级为诊断量（只改呈现层）
+- [x] 7. 批次 3 发布门禁版本化（v1.0 冻结 + v1.1 新集合，16 项测试，3 次突变验证）
+- [x] 8. P2-13 `perturb_schema` 接入 qualification 轨道（用户裁定）
+- [ ] 9. **外部执行门 1：提交**（`_current_code_commit` 拒绝脏工作树，需用户确认）
+- [ ] 10. 提交后用 v1.1 复算两次已有观测，与旧口径结论并列陈述
+- [ ] 11. 批次 2 / 批次 4：按用户裁定推进
+
+### 用户已裁定（2026-08-15）
+
+1. 阶段归属：**新开补强轨道 R4.5**（提交后再改 `docs/EXECUTION_PLAN.md`）；
+2. 本轮范围：**批次 1 + 批次 3，一次提交**；
+3. 模型卡形态：**独立** `docs/MODEL_CARD_sft-006.md`；
+4. `perturb_schema`：**接入** qualification 轨道做鲁棒性评测。
+
+### 当前基线
+
+698 passed → **755 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+`scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules
 

@@ -1,0 +1,17 @@
+# 工具 schema 鲁棒性对照：**扰动**的一侧。
+#
+# 与 ..._schema_clean.yaml 只差 perturb_schema 一个字段，两者构成
+# P2-13 的对照实验：`domain/environment.py::perturb_schema` 从"写好了但从没用过"
+# 变成一条真正跑的评测。
+#
+# policy_type=schema_adaptive 的工具名来自**当前呈现的工具清单**（按参数键集合
+# 唯一匹配），而不是硬编码。用 oracle 跑同一对配置会得到相反的结果——那正是
+# 这组对照要量化的东西："换一份客户的工具 schema，这套东西还能不能用"。
+bundle_dir: domains/retail_ops/v1
+mode: qualification
+policy_type: schema_adaptive
+bootstrap_samples: 1000
+parser_id: hermes-single-call-v1
+budget:
+  max_steps: 5
+perturb_schema: true

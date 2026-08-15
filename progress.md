@@ -623,3 +623,30 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-14 | 1.7B base 重跑 `base-1p7b-002` | EXIT=0，**44/60**，elig 0/10 |
 | 2026-08-14 | 1.7B attn 训练 + 评测 | 100.1 s / adapter 13 MB；**58/60**，delta **+0.2333** |
 | 2026-08-14 | 1.7B full 训练 + 评测 | 116.3 s / adapter 34 MB；**45/60**，delta +0.0167 |
+
+## 2026-08-15 — 架构补强轨道：批次 1 + 批次 3（纯 CPU，未提交）
+
+- 用户裁定：新开补强轨道 **R4.5**（阶段状态待提交后更新）、本轮做批次 1+3 一次提交、
+  `sft-006` 出**独立**模型卡、`perturb_schema` **接入** qualification 轨道。
+- 全部为本地 CPU。**未动 GPU / 商业 API / 模型下载 / 封存 holdout。**
+- 基线 698 passed → **755 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过。
+
+| 项 | 内容 | 证据 |
+|---|---|---|
+| 1.1 serve 服务化（P1-7） | `POST /v1/chat` 自由请求、`/v1` 全面 Bearer 鉴权（key 只来自 `RETAIL_AGENT_OPS_API_KEY`，缺失时**启动即失败**）、trace_id + 结构化 JSON 日志（只落请求 SHA-256 摘要与字符数）、`GET /metrics`（Prometheus 文本，无新依赖）、episode 超时 504 结构化降级 | `tests/test_retail_ops_service_layer.py` 19 项；4 次突变验证全部被抓（鉴权恒真、鉴权短路、去掉 fail-closed、日志写原文） |
+| 1.2 CI + 容器（P2-12） | `.github/workflows/ci.yml` + `scripts/ci/verify_qualification_chain.py` + CPU-only `Dockerfile` | 本地跑通：决策、失败门禁、`bundle_sha256`/`task_manifest_sha256` 与确定性指标全部等于冻结期望 |
+| 1.3 文档单一事实源（P2-11） | 新建 `docs/HOLDOUT_LEDGER.md`；修掉 README/SYSTEM_CARD/MODEL_CARD 的"唯一一次观测"；SYSTEM_CARD §5 资源表补 R4 实测；新建 `docs/MODEL_CARD_sft-006.md` | `test_holdout_ledger_is_the_single_source_of_truth`、`test_the_strongest_candidate_has_a_model_card` |
+| 1.4 `verifier_reward` 降级（P2-10） | 只改呈现层：报告主表移出，新增「诊断量」分区 + 固定说明；`release.json` / `metrics.json` 字段一个不少 | `tests/test_verifier_reward_demotion.py` 6 项 |
+| 3.x 门禁版本化（P1-4/P1-5/§6.3） | `GATE_IDS_BY_SCHEMA` 双版本；v1.1 把 episode p95 拆成 `per_call_latency_ratio` / `steps_to_success_ratio` / `latency_per_success_ratio`，并加配对 bootstrap CI 下界门禁；`release.yaml` **逐字节未动** | `tests/test_release_gate_schema_v11.py` 16 项；3 次突变验证全部被抓 |
+| P2-13 `perturb_schema` 接入 | qualification 轨道新增 `perturb_schema` **必填**配置键 + `schema_adaptive` 策略 + 一对只差该开关的对照配置 | `tests/test_retail_ops_schema_robustness.py` 8 项 |
+
+**本地对照读数（规则策略，不涉及模型）**：`schema_adaptive` 在未扰动/扰动两侧均 12/12、
+`invalid_call=0`；硬编码工具名的 `oracle` 在扰动侧全灭（由测试锁定）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | `.venv/bin/pytest -q` | 755 passed |
+| 2026-08-15 | `.venv/bin/ruff check .` / `.venv/bin/mypy` | All checks passed / 67 files |
+| 2026-08-15 | `uv lock --check` | Resolved 105 packages，lock 未漂移 |
+| 2026-08-15 | `.venv/bin/python scripts/ci/verify_qualification_chain.py` | 通过（决策与内容哈希等于冻结期望） |
+| 2026-08-15 | qualification schema 对照（clean / perturbed） | 12/12 与 12/12，`schema_perturbed` 落进 metrics |

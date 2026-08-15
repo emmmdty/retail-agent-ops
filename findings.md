@@ -967,3 +967,119 @@ teacher 轨迹是历史事实应当保持原样，实时重放的轨迹应当反
   **只在 4B 成立**。
 - 方法口径：跨规模只比"训练相对同规模零训练 base 的符号与量级"，1.7B 的 58/60 与 4B 的
   60/60 **不可直接相比**（不同基座）。全部 dev，未触碰 holdout。
+
+## 架构补强轨道：冻结契约影响矩阵（2026-08-15，纯 CPU 静态核查）
+
+提示词 `docs/handoffs/2026-08-15-architecture-hardening-execution-prompt.md` 第 2 节要求的
+前置产物。**13 条评审问题的证据位置已逐条复核，全部属实**（`GATE_IDS` 五元组被两个
+report 模型同时断言、`policies.yaml` 的 `rules` 在 `src/` 零引用、`_user_request` 只有
+12 句模板、`parser.py` 的两条非法判定、`serve` 只有预置任务端点、`refund_order` 无
+幂等键、`perturb_schema` 零调用）。
+
+### 矩阵
+
+| 改动项 | 触碰的哈希字段 | 需重跑 dev base | 使 sealed base 失效 |
+|---|---|---|---|
+| 1.1 serve 服务化（只加 `create_formal_app` 端点） | `code_commit` | 否 | 是 |
+| 1.2 CI workflow + Dockerfile | `code_commit`（若不改 `uv.lock`） | 否 | 是 |
+| 1.3 文档单一事实源 + `sft-006` 模型卡 | `code_commit` | 否 | 是 |
+| 1.4 `verifier_reward` 移出主表（只改呈现层） | `code_commit` | 否 | 是 |
+| 3.x 门禁版本化（**不动 `release.yaml`**，见下） | `code_commit` | 否 | 是 |
+| 2.1 政策外置（`policies.yaml` + prompt 由 bundle 渲染） | `bundle_sha256`、`system_prompt_sha256`、`code_commit` | **是** | 是 |
+| 2.2 幂等键（`tools.yaml` 增必填参数） | `tool_schema_sha256`、`bundle_sha256`、`code_commit` | **是** | 是 |
+| 2.3 guardrail 层（不改 bundle 时） | `code_commit` | 否 | 是 |
+| 4.1 分布外 holdout（独立 dataset artifact） | 新 `dataset_version`，不触碰现有三字段 | 否（自带 base） | 否 |
+| 4.2 serving 形态对照（若装 vLLM） | `uv_lock_sha256`、`code_commit` | 否 | 是 |
+
+**"使 sealed base 失效"整列为是，是本轮第一次提交就发生的一次性代价**，后续提交不再
+追加代价——`code_commit` 与 `uv_lock_sha256` 都在 `SEALED_PAIRING_FIELDS` 内。第三次
+封存 holdout 观测因此必然是 base + candidate **两侧**重跑，属用户单独决策门。
+
+### 提示词未展开、本次核查新增的两条硬约束
+
+**(e) `bundle_sha256` 把 `release.yaml` 也算进去了——这改变了批次 3 的可行路径。**
+`domain/bundle.py:109-120`：`component_sha256` 是 `bundle.yaml` / `tools.yaml` /
+`policies.yaml` / **`release.yaml`** 四个文件哈希的 mapping，`bundle_sha256` 是该 mapping
+的 canonical JSON 哈希。而 `bundle_sha256` 同时在 dev `PAIRING_FIELDS` 与
+`SEALED_PAIRING_FIELDS` 内。
+→ **在 `release.yaml` 里新增任何一个门禁参数，都会使全部已有 dev/sealed 证据不可配对，
+并要求重跑 dev base**。提示词 §6.4 断言"批次 3 纯 CPU 即可完成"**只在 `release.yaml`
+逐字节不变时成立**。
+→ 因此 v1.1 门禁集合的实现约束是：`ReleasePolicyConfig` 的五个阈值字段与
+`domains/retail_ops/v1/release.yaml` 逐字节不变，新门禁只能复用这五个阈值或使用
+schema v1.1 语义自带的结构性常量（如 CI 下界 ≥ 0），并用测试锁定这一点。
+另注：`ReleasePolicyConfig` 是 `StrictModel` 且 `schema_version` / `policy_version` /
+`invalid_call_count_max` / `require_complete_evidence` 都是 `Literal`，就地加字段还会
+让**已提交的 `release.yaml` 本身**无法通过校验。
+
+**(f) `SealedEvaluationReport` 不含逐任务结果，配对统计检验无法从公开 sealed 报告重算。**
+公开 sealed 报告是 allowlist 字段集（`metrics` 是聚合量），刻意不含 task 级信息。
+McNemar / 配对 bootstrap 需要逐任务的 base↔candidate 配对结局，只能来自私有
+`sealed-eval/*/trajectories.jsonl`。
+→ 本地实际可用的私有逐任务产物**只有第一次观测**
+（`data/private/.../sealed-eval/qwen3-4b-holdout-{base,candidate}-001/`）；
+**第二次观测（`-002`）的私有轨迹不在本地**，`reports/retail_ops/v1/r4/holdout-*-002/`
+只有 `sealed-report.json`。第二次观测的新口径重算需要先从 gpu-5090 回传私有产物
+（外部执行门 7），或接受"该门禁在证据不足时判 FAIL"的保守语义。
+→ 设计取向：v1.1 的统计门禁接受可选的逐任务配对输入，缺失时观测值记为
+`insufficient_paired_evidence` 且 `passed=False`——保守方向与"不因缺证据放宽门禁"一致。
+
+### 单次调用延迟可从聚合量复算，不需要逐任务数据
+
+`average_latency_ms / average_tool_calls`：base-002 = 1958.26/1.3083 = **1496.8 ms**，
+candidate-002 = 4457.06/1.5000 = **2971.4 ms**，比值 **1.985**——与 LOG-20260814-04 记录的
+归因逐位一致。因此 `per_call_latency_ratio` 门禁可从**已有公开 sealed 报告**直接重算。
+**预判（在实现前写下，避免事后合理化）：新口径不会把第二次判定从 NO-GO 翻成 GO**，
+因为 1.985 > 1.25 仍然失败；拆分只是把失败归因从"更慢"精确到"单次前向更慢"，
+并让 `steps_to_success` 侧证明候选**没有**靠多调用换成功率。
+
+### 执行顺序结论
+
+1. 批次 1 与批次 3 都不触碰 `bundle_sha256` / `system_prompt_sha256` / `tool_schema_sha256`，
+   可以在同一轮里连续做完再一次性提交（合并成一次 `code_commit` 变更，代价最小）。
+2. 批次 3 的新口径必须在**看到任何新读数之前**定稿并提交——因此不得在实现前打开
+   `sealed-eval/*/trajectories.jsonl`。本次核查只读了公开聚合 `metrics`（其数值早已在
+   `CLAUDE.md` 与 LOG-20260814-04 中公开记录）。
+3. 批次 2 三项必须成组做完、一次提交、一次重跑 dev base；拆开做会多烧两次 GPU。
+
+## 架构补强轨道批次 1+3 的实现级发现（2026-08-15，纯 CPU）
+
+**(g) `run_id` / `report_id` 不是跨机器可复现的。**
+`RunEvidence.run_id` 是全字段自哈希，而 `metrics` 里含 p50/p95 延迟与 token 计数——
+机器相关。本机重跑 R1 全链路得到 `348b046f…`，而 2026-07-21 落盘的是 `376e0d2c…`，
+`bundle_sha256` 与 `task_manifest_sha256` 则**逐位一致**。
+→ 自哈希保证的是"这份证据文件没被改过"，**不保证跨机器逐位重建**。
+`scripts/ci/verify_qualification_chain.py` 因此只断言内容哈希 + 决策 + 确定性指标
+（`task_success` / `policy_violation_count` / `invalid_call_count`），不断言 `run_id`；
+否则一台更快的机器会被报成"链条漂移"。这条区分以前没有任何地方写清楚。
+
+**(h) 自由请求端点必须与"有真值的评测"在类型上分开。**
+`run_episode` 在 `verify_final_state()==1.0` 时终止，而自由请求没有 `target_state`。
+做法是给 chat 任务一个**永远不可能达成**的 target（`{"__no_ground_truth__": true}`），
+使 `final_state` 恒为 0，episode 只能由最终答复 / 步数上限 / 政策违规终止；响应里
+**删掉 `success`** 并给出 `ground_truth: false`。
+填一个恒假的 `success` 比不填更糟——下游会把它读成"这次请求失败了"。
+
+**(i) 超时不能假装能中断生成。**
+HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 worker 线程池 + 信号量，
+超时立刻返回 504，但**信号量直到那次生成自然结束才释放**。于是后续请求得到 503，
+而不是把第二份工作压到同一张卡上。这是诚实的降级，不是"取消了那次生成"。
+
+**(j) v1.1 门禁在设计阶段就写下了预判，避免事后合理化。**
+拆分后第二次观测**仍应是 NO-GO**：`per_call_latency_ratio` = 1.985 > 1.25。
+拆分只把失败归因从"更慢"精确到"单次前向更慢"，并让 `steps_to_success_ratio` 侧
+证明候选**没有**靠多调用换成功率。复算在提交之后进行，届时与此处预判对照。
+
+**(k) 配对统计检验的证据来源受限（承接 (f)）。**
+`success_delta_ci_lower` 需要逐任务配对结局，公开 sealed 报告没有。CLI 因此新增
+`--baseline_trajectories` / `--candidate_trajectories` 两个**成对**可选参数指向私有
+`trajectories.jsonl`；只给一侧直接报错（不降级），两者都不给则该门禁判 FAIL。
+本地只有第一次观测的私有轨迹，第二次观测的需从 gpu-5090 回传。
+
+**(l) `perturb_schema` 的对照只有换掉策略才有信息量。**
+原有三个 qualification 策略（oracle / baseline / unknown_tool）全部硬编码工具名，
+在扰动下必然全灭——那只是复述"改了名字就找不到了"。新增 `schema_adaptive`：按
+**参数键集合**在当前工具清单里唯一匹配（`{order_id}` / `{order_id,reason}` / `{city}`
+互不相同，匹配唯一），扰动前后都是 12/12。解析不到时**原样发出 gold 名字**让它以
+`unknown_tool` 可见失败——静默换一个工具会让报告看起来"schema 兼容"，其实是被兜住了。
+另外：重放必须用与运行时**相同**的扰动种子，否则 `replayable_rate` 会假性下降。

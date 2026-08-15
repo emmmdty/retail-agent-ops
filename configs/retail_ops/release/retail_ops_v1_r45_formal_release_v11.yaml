@@ -1,0 +1,21 @@
+# 用 **gate schema v1.1** 重算已有封存 holdout 观测的发布判定。
+#
+# 这不是一次新的 holdout 观测：它读的是**已经产出**的两份 sealed 报告，
+# 不跑模型、不消耗任何观测。产出的是"同一批证据在新口径下长什么样"的对照，
+# 与旧口径的结论**并列**陈述，不替换它。
+#
+# 诚信约束（`docs/handoffs/2026-08-15-architecture-hardening-execution-prompt.md` §6）：
+# 新口径的门禁定义与阈值来源必须在看到任何新读数**之前**定稿并提交。本文件与
+# release.GATE_IDS_V1_1 是同一次提交的一部分，复算发生在提交之后。
+#
+# 阈值一个字没改：v1.1 的三个比值门禁复用 release.yaml 的 p95_latency_ratio_max
+# （1.25），CI 下界的 0 是结构性常量。release.yaml 逐字节未动——它在 bundle_sha256
+# 的分量里，改它会使全部已有 dev/sealed 证据不可配对。
+#
+# 配对统计检验需要逐任务结局，公开 sealed 报告不含它。运行时用
+#   --baseline_trajectories / --candidate_trajectories
+# 指向两份私有 trajectories.jsonl；不提供时 success_delta_ci_lower 判 FAIL
+# （缺证据不是通过的理由）。
+pipeline: formal_release
+bundle_dir: domains/retail_ops/v1
+gate_schema_version: "1.1"

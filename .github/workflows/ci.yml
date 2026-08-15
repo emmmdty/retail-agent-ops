@@ -1,0 +1,62 @@
+# RetailAgentOps CPU 回归。
+#
+# 仓库当前没有 remote（见 docs/REPO_MAP.md §7），因此这份 workflow **尚未在
+# 任何一次 push 上真正运行过**。它先提交、待用户决定公开仓库时才会生效；在此
+# 之前不得在任何文档里表述为"CI 已通过"。本地等价命令见 job 内每一步的注释。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    name: CPU 质量门与全链路复现
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 同步冻结依赖
+        # 本地等价：env -u UV_INDEX_URL uv sync --extra dev --frozen
+        # --frozen 保证 uv.lock 逐字节生效；lock 与代码的绑定是配对契约的一部分。
+        run: uv sync --extra dev --frozen
+
+      - name: pytest
+        run: uv run --frozen pytest -q
+
+      - name: ruff
+        run: uv run --frozen ruff check .
+
+      - name: mypy
+        run: uv run --frozen mypy
+
+      - name: uv.lock 未漂移
+        run: uv lock --check
+
+      - name: CPU qualification 全链路复现
+        # build → evaluate ×3 → release ×2，然后断言两份 release.json 的决策、
+        # 失败门禁、bundle/manifest 内容哈希与确定性指标等于冻结期望值。
+        # 这是 SPEC §11「新环境能按文档完成 CPU smoke」的唯一自动化证明。
+        run: uv run --frozen python scripts/ci/verify_qualification_chain.py
+
+      - name: 工作树保持干净
+        # 全链路跑完不得留下未跟踪产物：正式运行产物只能落 ignored 目录。
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)" || {
+            echo "运行后工作树不干净："
+            git status --porcelain
+            exit 1
+          }
