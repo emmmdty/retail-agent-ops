@@ -206,8 +206,13 @@ def create_formal_app(
 
     deploy_candidate = release.deployment == "candidate"
     adapter = release.adapter if deploy_candidate else None
-    backend = backend_factory(release.model, adapter)
-    _require_backend_matches_deployment(backend, adapter)
+    # 合并形态的候选是**另一份权重**而不是"基座 + 旁路"：GO 时加载它，
+    # NO-GO 时必须回到基座——后者恰恰是被拒绝的那个东西。
+    model = release.model
+    if deploy_candidate and release.candidate_model is not None:
+        model = release.candidate_model
+    backend = backend_factory(model, adapter)
+    _require_backend_matches_deployment(backend, model, adapter)
 
     policy_id = release.candidate_policy_id if deploy_candidate else release.base_policy_id
     policy = QwenPolicy(backend, policy_id, release.generation.max_new_tokens)
@@ -428,9 +433,22 @@ def _last_final_response(trajectory: Trajectory) -> str | None:
 
 def _require_backend_matches_deployment(
     backend: GenerationBackend,
+    expected_model: ModelArtifact,
     expected_adapter: AdapterArtifact | None,
 ) -> None:
-    """核对工厂返回的后端与发布决策一致；这条检查是回滚承诺的执行者。"""
+    """核对工厂返回的后端与发布决策一致；这条检查是回滚承诺的执行者。
+
+    **模型与 adapter 都要核。** 只核 adapter 在合并形态下是空的保证：那时候选与基座
+    两侧都没有 adapter，真正的区别在**加载了哪份权重**——工厂是注入缝，返回错的那份
+    权重会让"回滚"变成一句空话。
+    """
+    declared_model = getattr(backend, "model_dir", None)
+    if declared_model is not None and Path(declared_model).name != expected_model.local_dir:
+        msg = (
+            f"后端加载的模型与发布决策不一致：期望 {expected_model.local_dir}，"
+            f"实际 {Path(declared_model).name}"
+        )
+        raise ValueError(msg)
     declared = getattr(backend, "adapter_path", None)
     if expected_adapter is None:
         if declared is not None:

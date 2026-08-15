@@ -74,6 +74,7 @@ from veritool_rl.retail_ops.evaluate.evaluation import (
     load_run_evidence,
 )
 from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
+    MergedProvenance,
     SealedEvaluationConfig,
     evaluate_authorized_holdout,
     load_sealed_evaluation_report,
@@ -991,7 +992,11 @@ def _run_formal_dev_candidate(
 
 #: 两条 holdout 流水线刻意分开命名：base/candidate 的区分是安全关键的，让配置
 #: 文件本身声明意图，比"有没有写 adapter 这个 key"更难被误配置。
-_FORMAL_HOLDOUT_PIPELINES = ("formal_holdout_base", "formal_holdout_candidate")
+_FORMAL_HOLDOUT_PIPELINES = (
+    "formal_holdout_base",
+    "formal_holdout_candidate",
+    "formal_holdout_merged_candidate",
+)
 
 _FORMAL_HOLDOUT_BASE_KEYS = {
     "pipeline",
@@ -1004,6 +1009,10 @@ _FORMAL_HOLDOUT_BASE_KEYS = {
     "attempt_id",
 }
 _FORMAL_HOLDOUT_CANDIDATE_KEYS = _FORMAL_HOLDOUT_BASE_KEYS | {"adapter"}
+#: 合并形态的候选没有 adapter，取而代之的是**可复算的血统**。
+#: `merged_from` 里的 `merged_revision` 必须等于由「基座 revision + adapter 逐文件
+#: 哈希」导出的派生标识，配对校验据此认证它确实来自那对输入。
+_FORMAL_HOLDOUT_MERGED_KEYS = _FORMAL_HOLDOUT_BASE_KEYS | {"merged_from"}
 
 #: `authorize_formal_holdout` 要求逻辑路径精确等于这个前缀下的冻结文件。
 _PRIVATE_R2_LOGICAL_ROOT = Path("data/private/retail_ops/v1/r2")
@@ -1042,10 +1051,14 @@ def _run_formal_holdout(
     """
     pipeline = config.get("pipeline")
     is_candidate = pipeline == "formal_holdout_candidate"
-    _require_config_keys(
-        config,
-        _FORMAL_HOLDOUT_CANDIDATE_KEYS if is_candidate else _FORMAL_HOLDOUT_BASE_KEYS,
-    )
+    is_merged = pipeline == "formal_holdout_merged_candidate"
+    if is_candidate:
+        expected_keys = _FORMAL_HOLDOUT_CANDIDATE_KEYS
+    elif is_merged:
+        expected_keys = _FORMAL_HOLDOUT_MERGED_KEYS
+    else:
+        expected_keys = _FORMAL_HOLDOUT_BASE_KEYS
+    _require_config_keys(config, expected_keys)
     if args.seed != 0:
         raise ValueError(f"{pipeline} 冻结 seed=0，收到 --seed 与之不一致")
 
@@ -1069,6 +1082,9 @@ def _run_formal_holdout(
         dataset_version=dataset_version,
         model=ModelArtifact(**model_value),
         adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
+        merged_from=(
+            MergedProvenance(**_config_mapping(config, "merged_from")) if is_merged else None
+        ),
         generation=GenerationSettings(**generation_value),
         code_commit=(code_commit_factory or _current_code_commit)(),
         uv_lock_sha256=_current_uv_lock_sha256(),

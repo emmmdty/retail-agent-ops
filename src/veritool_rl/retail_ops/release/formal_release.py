@@ -28,6 +28,7 @@ from veritool_rl.retail_ops.domain.bundle import ReleasePolicyConfig
 from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
 from veritool_rl.retail_ops.evaluate.candidate_evaluation import AdapterArtifact
 from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
+    DeploymentForm,
     SealedEvaluationReport,
     require_comparable_sealed_runs,
 )
@@ -64,8 +65,15 @@ class FormalReleaseReport(StrictModel):
     evaluator_id: str = Field(min_length=1)
     code_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     uv_lock_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    #: 基座模型。**回滚永远回到它**，与候选是什么形态无关。
     model: ModelArtifact
-    adapter: AdapterArtifact
+    #: 候选的 adapter。合并形态下为 `None`——合并之后已经没有 adapter 可挂。
+    adapter: AdapterArtifact | None = None
+    #: 候选自己的权重。只有合并形态才有：那时候选是**另一份模型**而不是
+    #: "基座 + 旁路"，`serve` 必须知道 GO 时该加载哪一份。
+    candidate_model: ModelArtifact | None = None
+    #: 候选的部署形态。旧报告没有这个字段（`None`），语义等同 base_plus_adapter。
+    deployment_form: DeploymentForm | None = None
     generation: GenerationSettings
     base_policy_id: str = Field(min_length=1)
     candidate_policy_id: str = Field(min_length=1)
@@ -88,6 +96,16 @@ class FormalReleaseReport(StrictModel):
         expected_deployment = "baseline" if failed else "candidate"
         if self.decision is not expected_decision or self.deployment != expected_deployment:
             raise ValueError("发布结论、失败门禁与 deployment 不一致")
+        if self.deployment_form is DeploymentForm.MERGED:
+            if self.adapter is not None:
+                raise ValueError("合并形态的发布报告不得声明 adapter")
+            if self.candidate_model is None:
+                raise ValueError("合并形态必须声明 candidate_model，否则 serve 不知道加载哪份权重")
+        else:
+            if self.adapter is None:
+                raise ValueError("base_plus_adapter 形态的发布报告必须声明 adapter")
+            if self.candidate_model is not None:
+                raise ValueError("只有合并形态才能声明 candidate_model")
         return self
 
 
@@ -109,7 +127,6 @@ def decide_formal_release(
     `release.GATE_IDS_V1_1`。
     """
     require_comparable_sealed_runs(base, candidate)
-    assert candidate.adapter is not None  # noqa: S101 - 由上一行的配对校验保证
 
     evidence_complete = base.evidence_complete and candidate.evidence_complete
     gates = build_release_gates(
@@ -140,6 +157,8 @@ def decide_formal_release(
         uv_lock_sha256=base.uv_lock_sha256,
         model=base.model,
         adapter=candidate.adapter,
+        candidate_model=candidate.model if _is_merged(candidate) else None,
+        deployment_form=candidate.deployment_form,
         generation=base.generation,
         base_policy_id=base.policy_id,
         candidate_policy_id=candidate.policy_id,
@@ -148,6 +167,10 @@ def decide_formal_release(
         base_metrics=base.metrics,
         candidate_metrics=candidate.metrics,
     )
+
+
+def _is_merged(report: SealedEvaluationReport) -> bool:
+    return report.deployment_form is DeploymentForm.MERGED
 
 
 def write_formal_release_report(report: FormalReleaseReport, output_dir: Path) -> None:

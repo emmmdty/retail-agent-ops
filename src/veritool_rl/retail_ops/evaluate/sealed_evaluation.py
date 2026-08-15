@@ -15,16 +15,18 @@ from __future__ import annotations
 import time
 from collections import Counter
 from collections.abc import Sequence
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from veritool_rl.core.agent.qwen import (
     GenerationBackend,
     GenerationSettings,
     HardwareProvider,
     QwenPolicy,
+    derive_merged_revision,
     verify_local_model_files,
 )
 from veritool_rl.core.agent.runner import SYSTEM_PROMPT
@@ -40,10 +42,8 @@ from veritool_rl.retail_ops.evaluate.base_evaluation import (
     HardwareProvenance,
     ModelArtifact,
     _category_counts,
-    _content_id,
     _content_sha256,
     _evidence_complete,
-    _finalize_evidence,
     _rate,
     _require_backend_matches_pin,
     _require_matching_bundle,
@@ -75,6 +75,48 @@ _MAX_STEPS = 5
 _SEALED_EVIDENCE_DIR = "sealed-eval"
 
 
+class DeploymentForm(StrEnum):
+    """候选**以什么形态被评测**——这是 v1.1 才有的概念。
+
+    v1.0 只能表达两种情形，且靠 `adapter` 是否为 None 隐式区分。第三次观测
+    （LOG-20260815-03）证明这个假设不够用：把 adapter 合并回基座之后，模型既没有
+    adapter、又不是原来的那份权重，于是一个 120/120、门禁算术全过的部署形态**结构上
+    拿不到判定**。形态因此升为显式字段。
+    """
+
+    BASE = "base"
+    BASE_PLUS_ADAPTER = "base_plus_adapter"
+    MERGED = "merged"
+
+
+class MergedProvenance(StrictModel):
+    """合并权重的血统：它由哪个基座和哪个 adapter 合成。
+
+    `merged_revision` **必须可复算**——`derive_merged_revision` 用「基座 revision +
+    adapter 逐文件哈希」确定性导出它。自己声明一个标识等于没有证明；可复算才让
+    "这份权重来自那对输入"成为可验证的事实，也才让合并候选能靠**血统**而不是
+    **同一性**与 base 配对。
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    base_repo: str = Field(pattern=r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+    base_revision: str = Field(pattern=r"^[0-9a-f]{7,64}$")
+    adapter_file_sha256: dict[str, str]
+    merged_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_derived_identity(self) -> Self:
+        expected = derive_merged_revision(self.base_revision, self.adapter_file_sha256)
+        if self.merged_revision != expected:
+            msg = (
+                "merged_revision 必须等于由基座 revision 与 adapter 哈希导出的派生标识："
+                f"声明 {self.merged_revision}，复算 {expected}"
+            )
+            raise ValueError(msg)
+        return self
+
+
 class SealedEvaluationConfig(BaseEvaluationConfig):
     """sealed holdout 运行的冻结契约：与 dev base 完全相同，外加一个可选 adapter。
 
@@ -86,6 +128,9 @@ class SealedEvaluationConfig(BaseEvaluationConfig):
     """
 
     adapter: AdapterArtifact | None = None
+    #: 声明本次运行的模型是"某个基座 + 某个 adapter"合并而来。给出它即进入 v1.1
+    #: 语义：报告会带上 `deployment_form=merged` 与可复算的血统。
+    merged_from: MergedProvenance | None = None
 
 
 class SealedEvaluationReport(StrictModel):
@@ -100,7 +145,7 @@ class SealedEvaluationReport(StrictModel):
     这些字段只描述模型与运行环境，不含任何任务侧信息，因此不破坏 allowlist 语义。
     """
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     report_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     purpose: Literal["release"] = "release"
     split: Literal["holdout"] = "holdout"
@@ -136,7 +181,35 @@ class SealedEvaluationReport(StrictModel):
     evidence_complete: bool
     private_artifact_sha256: dict[str, str]
 
+    #: 以下两个字段自 v1.1 起存在。**它们不进 v1.0 报告的自哈希**（见
+    #: `SEALED_V1_0_FIELDS` 与 `_sealed_content_id`），因此加上它们不会作废任何一份
+    #: 已产出的证据——这正是这次扩展能做的唯一前提。
+    deployment_form: DeploymentForm | None = None
+    merged_from: MergedProvenance | None = None
+
     _validate_json_fields = field_validator("metrics")(validate_json_value)
+
+    @model_validator(mode="after")
+    def validate_form_matches_version_and_artifacts(self) -> Self:
+        """形态、版本与产物三者必须自洽，否则报告在描述一个不存在的东西。"""
+        if self.schema_version == "1.0":
+            if self.deployment_form is not None or self.merged_from is not None:
+                raise ValueError("v1.0 sealed 报告不得声明 deployment_form / merged_from")
+            return self
+        if self.deployment_form is None:
+            raise ValueError("v1.1 起 sealed 报告必须显式声明 deployment_form")
+        if self.deployment_form is DeploymentForm.MERGED:
+            if self.merged_from is None:
+                raise ValueError("merged 形态必须携带 merged_from 血统")
+            if self.adapter is not None:
+                raise ValueError("merged 形态不得同时声明 adapter——合并后已经没有 adapter")
+        elif self.merged_from is not None:
+            raise ValueError("只有 merged 形态才能携带 merged_from")
+        if self.deployment_form is DeploymentForm.BASE_PLUS_ADAPTER and self.adapter is None:
+            raise ValueError("base_plus_adapter 形态必须声明 adapter")
+        if self.deployment_form is DeploymentForm.BASE and self.adapter is not None:
+            raise ValueError("base 形态不得声明 adapter")
+        return self
 
     @field_validator("private_artifact_sha256")
     @classmethod
@@ -232,7 +305,7 @@ def evaluate_authorized_holdout(
 
     def build(staging: Path) -> SealedEvaluationReport:
         artifact_sha256 = write_run_artifacts(staging, run_config, trajectories, metrics)
-        report = _finalize_evidence(
+        report = _finalize_sealed(
             SealedEvaluationReport(
                 report_id=_ID_PLACEHOLDER,
                 dataset_version=receipt.dataset_version,
@@ -265,8 +338,10 @@ def evaluate_authorized_holdout(
                 replayable_count=replayed,
                 evidence_complete=_evidence_complete(trajectories, replayed),
                 private_artifact_sha256=artifact_sha256,
+                deployment_form=_deployment_form(config),
+                merged_from=config.merged_from,
+                schema_version=_schema_version(config),
             ),
-            "report_id",
         )
         write_json(staging / "report.json", report.model_dump(mode="json"))
         return report
@@ -284,6 +359,96 @@ def _policy_id(config: SealedEvaluationConfig) -> str:
     if config.adapter is None:
         return base
     return f"{base}+adapter:{config.adapter.identity}"
+
+
+#: v1.0 报告的字段集合。**这是那七份已产出证据的哈希输入，逐字冻结。**
+#:
+#: `report_id` 是全字段自哈希，因此任何新字段都会改变旧报告的复算结果、使它们永久
+#: 加载失败——LOG-20260810-02 说的"再改即作废"指的就是这件事。版本感知的内容哈希
+#: 把"新增字段"与"作废旧证据"解耦：v1.0 报告只按这份集合复算。
+SEALED_V1_0_FIELDS = frozenset(
+    {
+        "schema_version",
+        "report_id",
+        "purpose",
+        "split",
+        "dataset_version",
+        "generator_id",
+        "bundle_id",
+        "bundle_version",
+        "bundle_sha256",
+        "parser_id",
+        "evaluator_id",
+        "seed",
+        "policy_id",
+        "max_steps",
+        "task_count",
+        "category_counts",
+        "holdout_artifact_sha256",
+        "holdout_receipt_sha256",
+        "system_prompt_sha256",
+        "tool_schema_sha256",
+        "config_sha256",
+        "code_commit",
+        "uv_lock_sha256",
+        "model",
+        "adapter",
+        "generation",
+        "hardware",
+        "metrics",
+        "failure_type_counts",
+        "failure_category_counts",
+        "failure_last_error_counts",
+        "failure_violation_counts",
+        "replayable_count",
+        "evidence_complete",
+        "private_artifact_sha256",
+    }
+)
+
+#: 各 schema 版本参与自哈希的字段集合。新增版本时只能**追加**条目，
+#: 已有版本的集合一个字都不能改——改了就等于宣布那一版的全部证据无效。
+SEALED_HASHED_FIELDS: dict[str, frozenset[str]] = {
+    "1.0": SEALED_V1_0_FIELDS,
+    "1.1": SEALED_V1_0_FIELDS | {"deployment_form", "merged_from"},
+}
+
+
+def _finalize_sealed(report: SealedEvaluationReport) -> SealedEvaluationReport:
+    """用版本感知的内容哈希回填 `report_id`。"""
+    return report.model_copy(update={"report_id": sealed_content_id(report)})
+
+
+def _schema_version(config: SealedEvaluationConfig) -> Literal["1.0", "1.1"]:
+    """只有需要 v1.1 才有的语义时才升版本。
+
+    默认停在 v1.0：升版本会改变 `report_id` 的计算口径，而 base 与 candidate 两侧
+    必须用同一口径才能配对。让"合并候选"这一个真实需求驱动版本，而不是让版本号
+    随代码演进自动漂移。
+    """
+    return "1.1" if config.merged_from is not None else "1.0"
+
+
+def _deployment_form(config: SealedEvaluationConfig) -> DeploymentForm | None:
+    if config.merged_from is None:
+        return None
+    return DeploymentForm.MERGED
+
+
+def sealed_content_id(report: SealedEvaluationReport) -> str:
+    """按报告**自身声明的 schema 版本**复算 report_id。
+
+    与通用的 `_content_id` 的差别只有一处：它先把 payload 投影到该版本的字段集合上。
+    v1.0 报告因此看不到 v1.1 才有的字段，复算结果与它当初落盘时逐位相同。
+    """
+    allowed = SEALED_HASHED_FIELDS[report.schema_version]
+    payload = report.model_dump(mode="json")
+    projected = {
+        key: value
+        for key, value in payload.items()
+        if key in allowed and key not in {"report_id", "schema_version"}
+    }
+    return _content_sha256(projected)
 
 
 #: 两份 sealed 报告必须逐字段相同才允许配对——任何一项不同，delta 都不再归因于 adapter。
@@ -311,6 +476,55 @@ SEALED_PAIRING_FIELDS = (
 )
 
 
+def _candidate_form(report: SealedEvaluationReport) -> DeploymentForm:
+    """报告没有显式声明形态时（v1.0），从 `adapter` 推断——那正是 v1.0 的原语义。"""
+    if report.deployment_form is not None:
+        return report.deployment_form
+    return DeploymentForm.BASE_PLUS_ADAPTER if report.adapter is not None else DeploymentForm.BASE
+
+
+def _require_valid_forms(
+    base: SealedEvaluationReport,
+    candidate: SealedEvaluationReport,
+) -> None:
+    if _candidate_form(base) is not DeploymentForm.BASE:
+        msg = "base 位置必须是未挂 adapter、未合并的基座 sealed 报告"
+        raise ComparisonError(msg)
+    if _candidate_form(candidate) is DeploymentForm.BASE:
+        msg = "candidate 位置必须是候选形态（base_plus_adapter 或 merged）的 sealed 报告"
+        raise ComparisonError(msg)
+
+
+def _require_merged_lineage(
+    base: SealedEvaluationReport,
+    candidate: SealedEvaluationReport,
+) -> None:
+    """合并候选靠**血统**而不是同一性与 base 配对。
+
+    它的 `model` 与 base **必然不同**——合并产物就是另一份权重。可比性因此建立在
+    两条可验证的事实上：(1) 它声明的基座就是 base 那一侧实际跑的那个模型；
+    (2) 它的 `model.revision` 等于由「基座 revision + adapter 哈希」复算出的派生标识。
+    第二条让"这份权重确实由那对输入合成"无法被一句声明蒙混过去。
+    """
+    lineage = candidate.merged_from
+    if lineage is None:
+        msg = "merged 候选缺少 merged_from 血统"
+        raise ComparisonError(msg)
+    if lineage.base_repo != base.model.repo or lineage.base_revision != base.model.revision:
+        msg = (
+            "merged 候选的血统与 base 不符："
+            f"声明基座 {lineage.base_repo}@{lineage.base_revision}，"
+            f"base 侧实际是 {base.model.repo}@{base.model.revision}"
+        )
+        raise ComparisonError(msg)
+    if candidate.model.revision != lineage.merged_revision:
+        msg = (
+            "merged 候选的 model.revision 必须等于其派生标识："
+            f"model {candidate.model.revision}，血统 {lineage.merged_revision}"
+        )
+        raise ComparisonError(msg)
+
+
 def require_comparable_sealed_runs(
     base: SealedEvaluationReport,
     candidate: SealedEvaluationReport,
@@ -321,12 +535,7 @@ def require_comparable_sealed_runs(
     比没有比较更危险，它会被直接抄进发布报告。这里只校验可比性，不做 GO/NO-GO
     判定——发布判定属于 release 门禁。
     """
-    if base.adapter is not None:
-        msg = "base 位置必须是未挂 adapter 的基座 sealed 报告"
-        raise ComparisonError(msg)
-    if candidate.adapter is None:
-        msg = "candidate 位置必须是挂载了 adapter 的候选 sealed 报告"
-        raise ComparisonError(msg)
+    _require_valid_forms(base, candidate)
 
     for field in SEALED_PAIRING_FIELDS:
         base_value = getattr(base, field)
@@ -334,7 +543,9 @@ def require_comparable_sealed_runs(
         if base_value != candidate_value:
             msg = f"配对字段 {field} 不一致：base={base_value!r} candidate={candidate_value!r}"
             raise ComparisonError(msg)
-    if base.model != candidate.model:
+    if _candidate_form(candidate) is DeploymentForm.MERGED:
+        _require_merged_lineage(base, candidate)
+    elif base.model != candidate.model:
         msg = "配对字段 model 不一致：候选必须跑在与 base 相同的已锁定基座模型上"
         raise ComparisonError(msg)
     if base.generation != candidate.generation:
@@ -353,7 +564,7 @@ def load_sealed_evaluation_report(
     `verify_artifacts=False`，不要静默跳过校验。
     """
     report = SealedEvaluationReport.model_validate_json(path.read_text(encoding="utf-8"))
-    if _content_id(report, "report_id") != report.report_id:
+    if sealed_content_id(report) != report.report_id:
         msg = "sealed 评测报告 report_id 不匹配"
         raise ValueError(msg)
     if verify_artifacts:

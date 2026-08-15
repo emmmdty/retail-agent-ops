@@ -346,6 +346,10 @@ def test_sealed_public_report_only_exposes_allowlisted_aggregates(
         "schema_version",
         "report_id",
         "purpose",
+        # v1.1 新增：**部署形态**与合并血统。两者只描述模型与它的来源，
+        # 不含任何 task/family 标识或真值，因此不破坏 allowlist 语义。
+        "deployment_form",
+        "merged_from",
         "dataset_version",
         "generator_id",
         "bundle_id",

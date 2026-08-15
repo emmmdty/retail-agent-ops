@@ -15,6 +15,7 @@ from pydantic import ConfigDict, Field
 
 from veritool_rl.core.agent.parser import parse_qwen_response
 from veritool_rl.core.agent.policy import PolicyOutput
+from veritool_rl.core.artifacts import canonical_json
 from veritool_rl.core.envs.base import ToolSchema
 from veritool_rl.core.paths import validate_project_relative_path
 from veritool_rl.core.trajectory.schema import StrictModel
@@ -125,6 +126,25 @@ class CudaHardwareProvider:
             msg = "CUDA_VISIBLE_DEVICES 必须使用数字物理索引才能记录 GPU 身份"
             raise ValueError(msg)
         return int(entry)
+
+
+def derive_merged_revision(base_revision: str, adapter_file_sha256: Mapping[str, str]) -> str:
+    """给"把 adapter 合并进基座"的产物一个**可复算的**内容标识。
+
+    它不是上游 revision，也不假装是：`ModelArtifact.revision` 只要求 7–64 位小写十六
+    进制，这里用一个由「基座 revision + adapter 逐文件哈希」确定性导出的摘要。
+
+    可复算是关键。自己声明一个标识等于没有证明；而这个值能被任何拿到"基座 revision
+    与 adapter 哈希"的人重新算一遍，于是"这份合并权重确实来自那对输入"成为可验证的
+    事实，而不是报告里的一句话。发布判定的配对校验正是靠它给合并候选做血统认证。
+    """
+    payload = canonical_json(
+        {
+            "base_revision": base_revision,
+            "adapter_file_sha256": dict(adapter_file_sha256),
+        }
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def hash_local_model_files(model_dir: Path, filenames: Sequence[str]) -> dict[str, str]:

@@ -27,7 +27,6 @@ holdout 观测的候选都因此背了 1.96–1.99× 的单次前向代价
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -38,26 +37,13 @@ if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from veritool_rl.core.agent.qwen import (  # noqa: E402
+    derive_merged_revision,
     hash_local_model_files,
     verify_local_model_files,
 )
 from veritool_rl.core.artifacts import canonical_json  # noqa: E402
 
 PROVENANCE_SUFFIX = ".provenance.json"
-
-
-def derive_merged_revision(base_revision: str, adapter_file_sha256: dict[str, str]) -> str:
-    """给合并产物一个**派生的**内容标识。
-
-    它不是上游 revision，也不假装是：`ModelArtifact.revision` 只要求 7–64 位小写
-    十六进制，用一个由「基座 revision + adapter 逐文件哈希」确定性导出的摘要，
-    既满足形状、又让"这个合并产物由哪两样东西合成"可从标识本身追溯。
-    同一对输入永远导出同一个标识。
-    """
-    payload = canonical_json(
-        {"base_revision": base_revision, "adapter_file_sha256": adapter_file_sha256}
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_provenance(

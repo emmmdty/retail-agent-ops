@@ -770,6 +770,8 @@ _R45_CONFIG_NAMES = (
     "retail_ops/evaluate/retail_ops_v1_r45_holdout_base.yaml",
     "retail_ops/evaluate/retail_ops_v1_r45_holdout_candidate.yaml",
     "retail_ops/evaluate/retail_ops_v1_r45_holdout_merged.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45b_holdout_base.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45b_holdout_merged_candidate.yaml",
 )
 
 
@@ -914,6 +916,52 @@ def test_third_observation_uses_fresh_attempt_ids_and_the_same_pins() -> None:
         assert cand_now[key] == cand_prev[key], key
     assert cand_now["adapter"] == cand_prev["adapter"], "候选必须仍是同一个 sft-006"
     assert "adapter" not in current
+
+
+def test_the_merged_candidate_lineage_is_recomputable_from_the_config() -> None:
+    """合并候选的血统必须能从配置本身复算——这是它取得配对资格的全部依据。
+
+    `merged_revision` 若只是抄进来的一串字符，"这份权重来自那个基座和那个 adapter"
+    就只是一句声明。这条测试重算它，并核对模型 pin 的 revision 就是它。
+    """
+    import yaml
+
+    from veritool_rl.core.agent.qwen import derive_merged_revision
+
+    parsed = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r45b_holdout_merged_candidate.yaml")
+    )
+    lineage = parsed["merged_from"]
+
+    recomputed = derive_merged_revision(
+        lineage["base_revision"], lineage["adapter_file_sha256"]
+    )
+
+    assert recomputed == lineage["merged_revision"]
+    assert parsed["model"]["revision"] == recomputed
+    assert parsed["pipeline"] == "formal_holdout_merged_candidate"
+    assert "adapter" not in parsed, "合并之后已经没有 adapter"
+    # 血统声明的 adapter 必须就是第三次观测里那个候选用的 adapter。
+    candidate = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r45_holdout_candidate.yaml")
+    )
+    assert lineage["adapter_file_sha256"] == candidate["adapter"]["file_sha256"]
+
+
+def test_the_fourth_observation_base_matches_the_third_field_by_field() -> None:
+    """第四次的 base 侧除 attempt_id 外必须与第三次逐字段相同。"""
+    import yaml
+
+    root = ROOT / "configs/retail_ops/evaluate"
+    third = yaml.safe_load((root / "retail_ops_v1_r45_holdout_base.yaml").read_text("utf-8"))
+    fourth = yaml.safe_load((root / "retail_ops_v1_r45b_holdout_base.yaml").read_text("utf-8"))
+
+    assert fourth["attempt_id"] == "qwen3-4b-holdout-base-004"
+    assert fourth["attempt_id"] != third["attempt_id"]
+    for key in third:
+        if key == "attempt_id":
+            continue
+        assert fourth[key] == third[key], key
 
 
 def test_the_merged_holdout_probe_is_not_a_paired_candidate() -> None:

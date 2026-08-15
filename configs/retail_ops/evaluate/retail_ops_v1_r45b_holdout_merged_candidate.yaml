@@ -1,0 +1,44 @@
+# 第四次封存 holdout 观测的**候选侧：合并部署形态**。
+#
+# 这是 sealed 契约 v1.1 的第一次真实使用。第三次观测证明了合并形态在门禁算术上全过，
+# 但它**拿不到判定**——`require_comparable_sealed_runs` 当时要求 candidate = 同一基座
+# + adapter，而合并版两条都不满足（LOG-20260815-03）。契约扩展之后，合并候选靠
+# **可复算的血统**与 base 配对：
+#
+#   merged_revision == sha256(canonical_json({base_revision, adapter_file_sha256}))
+#
+# 自己声明一个标识等于没有证明；可复算才让"这份权重确实由那个基座和那个 adapter
+# 合成"成为可验证的事实。配对校验会重算它，对不上直接拒绝。
+#
+# 与 base 侧唯一的差别是模型与形态；生成参数、receipt、bundle、seed 全部相同。
+pipeline: formal_holdout_merged_candidate
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-merged-candidate-004
+merged_from:
+  base_repo: Qwen/Qwen3-4B
+  base_revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  merged_revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
+  adapter_file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "74bfa80b728abeb9cb5c627a4098c72b830d8b906b6cb99595bce1b2677ab89f"
+    adapter_model.safetensors: "8a49251fbfc9d1bab23041a97727c65f34d2dd1704c6453ec39e4ec95eefcd95"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "5dbaa8fa3cc5c293c7ffd9ec9764c9a6cfca0a027df04e845d69096378e7b7c4"
+model:
+  repo: local/Qwen3-4B-sft-006-merged
+  revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
+  local_dir: Qwen3-4B-sft-006-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "fea64487d78d1ff578684b064e4cee6a4b05cbc41a53ef004853b522ecb3b499"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
