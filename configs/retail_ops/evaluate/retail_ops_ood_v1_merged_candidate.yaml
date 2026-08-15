@@ -1,0 +1,22 @@
+# 分布外评测：**合并部署形态**的候选（第四次观测里拿到 GO 的那一份权重）。
+#
+# 这是"120/120 是不是泛化"这个问题的直接对照：同一个候选，在模板内是满分，
+# 在模板外会怎样。答案不管是什么都要照实写——这个集合存在的意义就是它可能打脸。
+#
+# 走 ood_base 通道：合并之后模型里已经没有 adapter，它就是一份新的基座权重。
+pipeline: ood_base
+bundle_dir: domains/retail_ops/v1
+models_root: models
+model:
+  repo: local/Qwen3-4B-sft-006-merged
+  revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
+  local_dir: Qwen3-4B-sft-006-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "fea64487d78d1ff578684b064e4cee6a4b05cbc41a53ef004853b522ecb3b499"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256

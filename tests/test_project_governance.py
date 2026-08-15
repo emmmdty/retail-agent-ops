@@ -772,6 +772,9 @@ _R45_CONFIG_NAMES = (
     "retail_ops/evaluate/retail_ops_v1_r45_holdout_merged.yaml",
     "retail_ops/evaluate/retail_ops_v1_r45b_holdout_base.yaml",
     "retail_ops/evaluate/retail_ops_v1_r45b_holdout_merged_candidate.yaml",
+    "retail_ops/build/retail_ops_ood_v1_build.yaml",
+    "retail_ops/evaluate/retail_ops_ood_v1_base.yaml",
+    "retail_ops/evaluate/retail_ops_ood_v1_merged_candidate.yaml",
 )
 
 

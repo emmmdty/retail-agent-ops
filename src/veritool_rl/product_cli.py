@@ -41,6 +41,7 @@ from veritool_rl.retail_ops.build.formal_manifests import (
     write_formal_task_set,
 )
 from veritool_rl.retail_ops.build.manifests import build_qualification
+from veritool_rl.retail_ops.build.ood_manifests import build_ood_task_set, load_ood_manifest
 from veritool_rl.retail_ops.build.teacher_client import OpenAICompatibleTeacherClient, TeacherClient
 from veritool_rl.retail_ops.build.teacher_data import (
     TeacherAttemptEvidence,
@@ -73,6 +74,7 @@ from veritool_rl.retail_ops.evaluate.evaluation import (
     evaluate_retail_ops,
     load_run_evidence,
 )
+from veritool_rl.retail_ops.evaluate.ood_evaluation import OodEvaluationConfig, evaluate_ood
 from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
     MergedProvenance,
     SealedEvaluationConfig,
@@ -204,7 +206,9 @@ def _run_build(args: argparse.Namespace) -> None:
             bundle_dir, args.seed, args.output_dir, inject=inject, clarify=clarify
         )
         return
-    if pipeline == "formal_freeze":
+    if pipeline == "ood_build":
+        _run_ood_build(args, config)
+    elif pipeline == "formal_freeze":
         _run_formal_freeze(args, config)
     elif pipeline == "teacher_collect":
         _run_teacher_collect(args, config)
@@ -262,6 +266,9 @@ def _run_evaluate(args: argparse.Namespace) -> None:
         return
     if pipeline in _FORMAL_HOLDOUT_PIPELINES:
         _run_formal_holdout(args, config)
+        return
+    if pipeline in _OOD_EVAL_PIPELINES:
+        _run_ood_evaluate(args, config)
         return
     raise ValueError(f"未知 evaluate pipeline: {pipeline!r}")
 
@@ -515,6 +522,83 @@ def _success_by_task(path: Path) -> dict[str, bool]:
     if not outcomes:
         raise ValueError(f"逐任务证据为空: {path}")
     return outcomes
+
+
+# ---------------------------------------------------------------------------
+# R4.5 pipeline: 分布外任务集（build + evaluate）
+# ---------------------------------------------------------------------------
+
+_OOD_BUILD_KEYS = {"pipeline", "bundle_dir"}
+_OOD_EVAL_PIPELINES = ("ood_base", "ood_candidate", "ood_merged_candidate")
+_OOD_EVAL_BASE_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "models_root",
+    "model",
+    "generation",
+}
+_OOD_EVAL_CANDIDATE_KEYS = _OOD_EVAL_BASE_KEYS | {"adapter"}
+
+
+def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    """生成分布外任务集。它是**独立 dataset artifact**，不碰冻结数据集的一个字节。"""
+    _require_config_keys(config, _OOD_BUILD_KEYS)
+    if args.input_dir is not None:
+        raise ValueError("ood_build 不接受 --input_dir")
+    build_ood_task_set(_bundle_dir(config), args.seed, args.output_dir)
+
+
+def _default_ood_backend(
+    config: OodEvaluationConfig, models_root: Path
+) -> GenerationBackend:
+    model_dir = models_root / config.model.local_dir
+    adapter_dir = None if config.adapter is None else str(config.adapter.adapter_dir)
+    return TransformersBackend.from_pretrained(
+        str(model_dir),
+        adapter_dir,
+        revision=config.model.revision,
+        expected_file_sha256=config.model.file_sha256,
+        settings=config.generation,
+    )
+
+
+def _run_ood_evaluate(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    backend_factory: Callable[[OodEvaluationConfig, Path], GenerationBackend] | None = None,
+    hardware_provider: HardwareProvider | None = None,
+    code_commit_factory: Callable[[], str] | None = None,
+) -> None:
+    """在分布外集合上评测一个模型形态（基座 / base+adapter / 合并版）。
+
+    这条路径**不是**封存 holdout：分布外集合公开、可反复读、可逐类别拆解。
+    两者的治理级别不同，因此代码路径也不同——共用的只有环境、verifier 与模型 pin 校验。
+    """
+    pipeline = config.get("pipeline")
+    is_candidate = pipeline == "ood_candidate"
+    _require_config_keys(
+        config, _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS
+    )
+    bundle = load_bundle(_bundle_dir(config))
+    models_root = _project_relative_path(config, "models_root")
+    manifest = load_ood_manifest(args.input_dir / "manifest.json")
+    ood_config = OodEvaluationConfig(
+        model=ModelArtifact(**_config_mapping(config, "model")),
+        adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
+        generation=GenerationSettings(**_config_mapping(config, "generation")),
+        code_commit=(code_commit_factory or _current_code_commit)(),
+    )
+    evaluate_ood(
+        config=ood_config,
+        bundle=bundle,
+        manifest=manifest,
+        build_dir=args.input_dir,
+        models_root=models_root,
+        output_dir=args.output_dir,
+        backend_factory=backend_factory or _default_ood_backend,
+        hardware_provider=hardware_provider or CudaHardwareProvider(),
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,10 @@
+# 生成分布外任务集（60 条：表达 / 场景 / 对抗，各 20）。
+#
+# **独立 dataset artifact**：自己的 dataset_version（retail_ops_ood_v1_20260815）、
+# 自己的 manifest，绝不加成 FormalTaskSet 的第四个字段，也不动 40/10/20 配额。
+# 冻结数据集 retail_ops_v1_r2_20260722 因此一个字节不变。
+#
+# 这个集合**不封存**：它要回答"模板外还成不成"，需要被反复读、被逐类别拆解。
+# 封存 holdout 的价值恰恰来自"很少被看"，两者治理级别不同。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v1
