@@ -126,8 +126,11 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 - [x] 13a. 7.3 Agent 能力面：**用户裁定方案 A**（user simulator + 多轮澄清）已完成
       （`docs/AGENT_LOOP.md`；三组对照 1.0000 / 0.0000 / 1.0000）
 - [ ] 13b. 7.1 分布外 holdout（需 teacher API 预算批准）
-- [ ] 14. **第三次封存 holdout 观测**：用户已裁定「按原契约跑 base vs base+adapter，
-      延迟另测部署形态」。必须在**所有代码改动冻结并提交之后**一次性进行。
+- [x] 14. **第三次封存 holdout 观测已完成**（LOG-20260815-03）：三次运行、
+      两套口径判定**都是 NO-GO**；合并部署形态的门禁算术全部通过但**拿不到判定**
+      （契约要求 candidate = 同一基座 + adapter）。
+- [ ] 15. 若要让合并形态可判定：版本化 `SealedEvaluationReport`（需版本感知的内容
+      哈希以保住两份旧证据可加载）——**独立决策，未做**。
 
 ### 尚未做的（需要新的裁定）
 
@@ -148,7 +151,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 
 ### 当前基线
 
-698 passed → **842 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+698 passed → **844 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
 `scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules

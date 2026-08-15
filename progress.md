@@ -706,3 +706,19 @@ v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3
 新增：`core/agent/user_simulator.py`（确定性规则式模拟用户）、`message_grounded`
 机制探针策略、`clarify` 任务变体、`clarification_*` 三个指标、两份只差
 `user_simulator` 的对照配置、`docs/AGENT_LOOP.md`（含**仍然缺的东西**逐条列举）。
+
+## 2026-08-15 — R4.5：第三次封存 holdout 观测（gpu-5090 物理 GPU 0）
+
+- 代码冻结于 `b529bc9`，两端工作树干净后一次性执行三次运行。**三次判定全部 NO-GO。**
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | `evaluate …r45_holdout_base.yaml` | EXIT=0，**103/120**，p95 2787.4 ms，4m04s |
+| 2026-08-15 | `evaluate …r45_holdout_candidate.yaml` | EXIT=0，**120/120**，p95 5644.4 ms，9m00s |
+| 2026-08-15 | `evaluate …r45_holdout_merged.yaml` | EXIT=0，**120/120**，p95 3384.0 ms，6m41s |
+| 2026-08-15 | `release …r4_formal_release.yaml`（v1.0） | **NO-GO**，失败 `p95_latency_ratio` 2.0250 |
+| 2026-08-15 | `release …r45_formal_release_v11.yaml`（v1.1，含配对证据） | **NO-GO**，失败 `per_call_latency_ratio` 2.1209 / `latency_per_success_ratio` 2.0871；`success_delta_ci_lower` +0.0833 PASS |
+| 2026-08-15 | 合并版门禁算术（**诊断，非判定**） | v1.0 与 v1.1 **全部通过**（p95 比值 1.2141、单次调用 1.2364） |
+
+产物已回传，双端 SHA-256 一致（三份私有 `trajectories.jsonl` 逐条核对）。
+逐项读数与四条限制见 `docs/HOLDOUT_LEDGER.md` 观测 3 与 **LOG-20260815-03**。

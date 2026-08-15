@@ -13,9 +13,9 @@
 | 项 | 值 |
 |---|---|
 | 数据集 | `retail_ops_v1_r2_20260722`，120 条，六类各 20 |
-| 已消耗观测 | **2 次**（2026-08-11、2026-08-14） |
-| 剩余"未观测"状态 | **无**。任何新判定都是第三次，需用户单独决策 |
-| 最新判定 | **NO-GO / baseline** |
+| 已消耗观测 | **3 次**（2026-08-11、2026-08-14、2026-08-15），第三次含 **3 次运行**（base / candidate / 合并版探针） |
+| 剩余"未观测"状态 | **无**。每一次新判定都需用户单独决策 |
+| 最新判定 | **NO-GO / baseline**（三次判定全部如此） |
 | 阈值变更次数 | **0**（`tests/test_retail_ops_r4_release_configs.py::test_release_config_does_not_touch_the_gates` 锁定） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -61,6 +61,79 @@
 而单次调用耗时 **1496.8 → 2971.4 ms（1.985×）**。因此代价来自**全 linear LoRA 的前向
 开销**，不是"候选多做了工具调用"。旁证：观测 1 的 attention-only adapter（4 投影）
 p95 比值仅 1.087。
+
+## 观测 3 — 2026-08-15（第三次判定，两套口径并列）
+
+代码冻结于 `b529bc9`，三次运行同 commit、同 `uv_lock` `9227e307…`。
+**base / candidate 侧相对第二次观测除 `attempt_id` 外逐字段相同**（模型 pin、生成参数、
+receipt、bundle 一个字未改），有治理测试锁定；因此两次之间的差异只可能来自
+`code_commit` 与 `uv_lock`。
+
+| | base-003 | candidate-003（未合并） | merged-003（**探针**） |
+|---|---|---|---|
+| `report_id` | `931ed6f8…` | `4c8839a2…` | `19f858fb…` |
+| `task_success` | 0.8583（103/120） | **1.0000** | **1.0000** |
+| `policy_violation_count` | 11 | 0 | 0 |
+| `invalid_call_count` | 5 | 0 | 0 |
+| `average_tool_calls` | 1.3083 | 1.5000 | **1.5000** |
+| 单次调用耗时 | 1389.3 ms | 2946.5 ms | **1717.7 ms** |
+| `p95_latency_ms` | 2787.4 | 5644.4 | **3384.0** |
+| 输出吞吐 | 50.66 tok/s | 29.78 | **48.87** |
+| wall time | 218.4 s | 530.7 s | 309.5 s |
+
+**任务指标逐位复现**：base-003 与 base-002 的 `task_success` / 违规 / 非法调用 /
+schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立。
+
+### 第三次判定（未合并候选，两套口径）
+
+| | v1.0 | v1.1 |
+|---|---|---|
+| `success_delta` | PASS +0.1417 | PASS +0.1417 |
+| `success_delta_ci_lower` | — | **PASS +0.0833** |
+| `policy_violation_delta` | PASS −11 | PASS −11 |
+| `invalid_call_count` | PASS 0 | PASS 0 |
+| `p95_latency_ratio` | **FAIL 2.0250** | 已拆分 |
+| `per_call_latency_ratio` | — | **FAIL 2.1209** |
+| `steps_to_success_ratio` | — | PASS 0.9841 |
+| `latency_per_success_ratio` | — | **FAIL 2.0871** |
+| **判定** | **NO-GO / baseline** | **NO-GO / baseline** |
+
+**三次判定全部 NO-GO，阈值一个字未改。**
+
+### 合并部署形态的诊断算术——**不是发布判定**
+
+合并版没有 adapter、且是不同的 `ModelArtifact`，`require_comparable_sealed_runs`
+会（正确地）拒绝把它当作 candidate：该契约要求 candidate = 同一基座 + adapter。
+**因此下面这组数字是诊断，不是判定，不得表述为"候选通过了发布门禁"。**
+
+同一批门禁算术，把候选侧换成合并版：
+
+| 门禁 | v1.0 | v1.1 |
+|---|---|---|
+| `success_delta` | PASS +0.1417 | PASS +0.1417 |
+| `success_delta_ci_lower` | — | PASS +0.0833 |
+| `policy_violation_delta` | PASS −11 | PASS −11 |
+| `invalid_call_count` | PASS 0 | PASS 0 |
+| `p95_latency_ratio` | **PASS 1.2141** | 已拆分 |
+| `per_call_latency_ratio` | — | **PASS 1.2364** |
+| `steps_to_success_ratio` | — | PASS 0.9841 |
+| `latency_per_success_ratio` | — | **PASS 1.2167** |
+| 失败门禁 | 无 | 无 |
+
+**同一份权重、同一套行为**（两侧 `average_tool_calls` 都是 1.5000、任务指标都是
+120/120），只差加载方式，就是 NO-GO 与"全部门禁算术通过"之间的全部距离。
+
+**四条必须一起说的限制**：
+
+1. **这不是 GO。** 正式判定是上面那两张表：**NO-GO**。要让合并形态获得判定，需要
+   版本化 `SealedEvaluationReport` 使"合并型候选"可被表达——那是一次独立决策，
+   且 `report_id` 是全字段自哈希，需要版本感知的内容哈希才能让两份旧证据仍可加载。
+2. **余量很薄**：1.2141 与 1.2364 对阈值 1.25，只剩 3% 和 1%。而 base 侧的 p95 在
+   观测 2 是 3052.2 ms、观测 3 是 2787.4 ms——同机同配置，**9% 的波动**。
+   **一次重跑就可能把它推到另一侧。** 不得据此宣称延迟问题已解决。
+3. **本次观测消耗了三次运行**（base / candidate / 合并版探针）。合并版探针只为测部署
+   形态，但它同样产出任务指标、同样读了 holdout，因此如实计入消耗。
+4. 120/120 仍**不是泛化证据**：train/dev/holdout 共用同一批 12 句模板（见下方边界）。
 
 ## 新口径（gate schema v1.1）复算：两次判定都**不变**
 

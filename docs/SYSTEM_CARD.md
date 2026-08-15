@@ -17,9 +17,9 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | 接口 | 职责 | 真实模型轨道产物 |
 |---|---|---|
 | `build` | 生成/导入轨迹，执行校验、去重、覆盖与划分审计 | 240/60/120 冻结数据集 + teacher 采集 + SFT 导出 + QLoRA 训练 |
-| `evaluate` | 在冻结任务上跑 base/candidate，输出可比证据 | dev 报告（1.7B/4B base、候选）、封存 holdout sealed 报告 ×2 |
-| `release` | 按版本化策略产出 GO/NO-GO | `formal-release-001/`（JSON/MD/HTML），NO-GO / baseline |
-| `serve` | 加载通过门禁的模型，暴露受控服务 | 按 NO-GO 回滚加载纯基座，三条演示流程 + 并发保护 |
+| `evaluate` | 在冻结任务上跑 base/candidate，输出可比证据 | dev 报告（1.7B/4B base、候选、合并版）、封存 holdout sealed 报告 ×7 |
+| `release` | 按版本化策略产出 GO/NO-GO | 三次判定（`formal-release-001/002/003`，JSON/MD/HTML），**全部 NO-GO / baseline**；门禁语义已版本化（v1.0 / v1.1） |
+| `serve` | 加载通过门禁的模型，暴露受控服务 | 按 NO-GO 回滚加载纯基座，三条演示流程 + 并发保护；2026-08-15 补齐自由请求端点、鉴权、结构化日志与 `/metrics` |
 
 两条平行轨道共用同一实现：**qualification 轨道**（12 条确定性 fixture、规则策略、纯 CPU）
 用于契约回归与无 GPU 演示；**formal 轨道**（真实 Qwen3-4B）用于正式判定。
@@ -38,7 +38,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | 原子发布 | 多文件产物走 staging + rename，任何后续步骤失败整体回滚，不留半成品 |
 | 不可覆盖 | 每次正式运行必须新输出目录，`create_output_dir` 对已存在目录直接失败 |
 
-**holdout 使用状态**：已消耗 **2 次**观测（2026-08-11、2026-08-14），不再有"未观测"状态。
+**holdout 使用状态**：已消耗 **3 次**观测（2026-08-11、2026-08-14、2026-08-15，第三次含 3 次运行：base / candidate / 合并版部署形态探针），不再有"未观测"状态。
 逐次读数、失败门禁与口径边界见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)——**那是唯一事实源，
 本卡不复述次数与判定**。此外有一次运行被机器重启中断、**零产出**，未消耗盲性，因此不计入
 （判据是"有没有数字落盘并被读取"，不是跑了多久）。
@@ -63,7 +63,11 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | 回滚 | `deployment=baseline` 时 adapter 根本不传给后端工厂，**并且**核对工厂真正返回的后端声明的 `adapter_path` —— 工厂是注入缝，实现可能来自别处 | `/health` 与每条响应均为 `adapter_loaded=false`、`policy_id` 无 adapter 后缀 |
 | 工具 allowlist | `/v1/tasks` 暴露 `get_order`/`refund_order`/`get_store_hours` | 已验证 |
 | 并发上限 | 串行 episode（上限 1），超限返回 **503** 而不排队——排队会让延迟测量失真，而延迟是门禁项 | 并发两请求：200 + 503 |
-| 请求体上限 | `MAX_REQUEST_BYTES = 64 KB`，超限 413 | 前瞻性：现有端点不接受请求体 |
+| 请求体上限 | `MAX_REQUEST_BYTES = 64 KB`，超限 413 | `POST /v1/chat` 是第一个带 body 的端点，该上限不再是"前瞻性"的 |
+| 鉴权 | `/v1` 全面 Bearer；key 只从环境变量读，缺失时**装配期即失败** | 缺 key / 错 key 均 401，且计入 metrics |
+| 自由请求 | `POST /v1/chat` 复用同一 env、allowlist 与 `run_episode`；**无真值故不报告 `success`** | 响应带 `ground_truth: false` |
+| 可观测性 | 请求级 `trace_id` + 一行结构化 JSON 日志（只落请求 SHA-256 摘要，不落原文）；`GET /metrics` Prometheus 文本 | 突变验证：把原文写进日志立即红 |
+| 超时降级 | 超过 `episode_timeout_s` 返回 504 结构化错误；生成无法中断，信号量直到它自然结束才释放 | 后续请求得 503 而非压第二份工作到同一张卡 |
 | 输出边界 | 响应为固定字段集，不含任务真值 | 已验证 |
 
 ## 5. 资源画像（实测）
@@ -79,16 +83,24 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | dev 评测（60 条） | R3 | 154 s（基座）/ 251 s（候选） | 2.94 / 2.95 GB |
 | holdout 评测（120 条），观测 1 | `holdout-*-001` | **286.98 s**（基座）/ **544.21 s**（候选） | 2.946 / 2.952 GB |
 | holdout 评测（120 条），观测 2 | `holdout-*-002` | **235.22 s**（基座）/ **535.12 s**（候选） | 2.929 / 3.046 GB |
+| holdout 评测（120 条），观测 3 | `holdout-*-003` | **218.4 s**（基座）/ **530.7 s**（未合并候选）/ **309.5 s**（合并版） | 2.929 / 3.046 / 2.910 GB |
+| LoRA 合并（bf16，CPU） | `sft-006` → 合并产物 7.6 GB | 数分钟 | — |
 | 服务冷启动 | R3 演示 | 权重加载约 1–2 s（页缓存热）；冷启动含 13 文件 SHA-256 校验约 15 min | 同评测量级 |
 | teacher 采集（240 条全量） | DeepSeek `deepseek-v4-flash` API | — | 约 $0.055（519 次请求的 smoke 批次实测） |
 
 吞吐（`hardware.output_tokens_per_second`）：观测 1 基座 45.68 / 候选 32.32 tok/s；
-观测 2 基座 47.02 / 候选 **29.53** tok/s。
+观测 2 基座 47.02 / 候选 **29.53** tok/s；观测 3 基座 50.66 / 未合并候选 29.78 /
+**合并版 48.87**（几乎回到基座水平）。
 
 延迟：观测 1 基座 p50/p95 = 2035/5255 ms、候选 4700/5712 ms；观测 2 基座 p95 3052 ms、
 候选 p95 5730 ms。**观测 2 的候选是全 linear LoRA**，单次调用耗时 1496.8 → 2971.4 ms
-（1.985×），这是它被 `p95_latency_ratio` 拒绝的直接原因；逐次读数见
-[`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
+（1.985×），这是它被 `p95_latency_ratio` 拒绝的直接原因。
+
+**观测 3 把这笔代价归因到了部署形态**：同一份权重合并回基座后，单次调用
+2946.5 → **1717.7 ms**、p95 比值 2.0250 → **1.2141**，而任务指标（120/120）与调用次数
+（1.5000）**一位没变**。但合并形态**拿不到发布判定**——契约要求 candidate = 同一基座
++ adapter。逐次读数与四条限制见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 与
+[`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)。
 
 **步骤 wall time ≠ 评测延迟**：基座那一步整体耗时 20 分钟，其中约 15 分钟是冷启动读
 7.6 GB 权重并逐一校验 13 个文件哈希。可用于比较的量是 provenance 里的
@@ -110,12 +122,17 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 ## 7. 已知限度（必须与结果一同陈述）
 
 1. **共享 GPU 的延迟精度**：gpu-5090 多人共用，评测期间他人占用与利用率显著波动。
-   p95 比值距阈值有余量，但延迟数不得表述为精确测量。
+   延迟数不得表述为精确测量——base 侧 p95 在观测 2 与观测 3 之间有 9% 的波动，
+   而合并形态的门禁余量只有 1–3%。
 2. **统计功效**：holdout n=120，CI 宽度约 ±7.5pp；dev n=60 更宽。系统无法分辨小幅差异。
 3. **单 seed**：训练与评测各一个 seed，未做重复性验证。
 4. **领域窄**：2 个业务工具、6 类任务、单一中文零售退款场景，无跨领域证据。
+   Agent 本体仍是单工具调用、无并行、无 thinking——能力面与仍缺的东西逐条见
+   [`AGENT_LOOP.md`](./AGENT_LOOP.md)。
 5. **teacher 依赖**：训练数据来自单一商业 API teacher，其偏好（如详尽风格）会被继承。
-6. **holdout 已消耗一次观测**，多次判定会侵蚀其独立性。
+6. **holdout 已消耗三次观测（共 7 次运行）**，多次判定会侵蚀其独立性。
+   合并形态的门禁余量只有 1–3%，而 base 侧 p95 在观测间有 9% 的波动——
+   不得表述为"延迟问题已解决"。
 7. **`refund_denied_window` 曾不可解**：环境早期未向模型暴露 `current_day`，任何推理式
    Agent 都无法判断订单是否超窗。该缺陷由真实 teacher 采集暴露（该类通过率 30%），
    修复后升至 95%。**Oracle 驱动的测试永远发现不了这类问题**——这是本项目最有价值的
@@ -128,7 +145,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
-.venv/bin/pytest -q          # 698 passed
+.venv/bin/pytest -q          # 844 passed
 # build → evaluate(base/oracle/fault) → release(GO/NO-GO) → serve
 # 六条命令见 README「本地 CPU 演示」
 ```
