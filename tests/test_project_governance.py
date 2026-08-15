@@ -1108,5 +1108,7 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
     for expected in ("0.5833", "0.2167", "expression_ood", "code_switch", "LOG-20260816-01"):
         assert expected in ood, expected
     # 边界必须写在文档里，不能只在提交信息里
+    # 两条最容易在引用时被丢掉的边界：模板是作者手写的（不是 LLM 改写），
+    # 以及这个集合不封存（用它选候选就等于开始过拟合它）。
     assert "作者手写" in ood
-    assert "不封存" in ood
+    assert "它不是封存集合" in ood
