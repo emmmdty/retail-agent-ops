@@ -692,3 +692,17 @@ v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3
 | 2026-08-15 | 注入对照 build + evaluate ×2（CLI 全链路，CPU） | 未防护 10/12 注入成功（0.83）、task_success 0.6667、违规 4；防护后 **0/12**、1.0000、0，可重放 1.00 |
 | 2026-08-15 | `.venv/bin/pytest -q` | 826 passed |
 | 2026-08-15 | `verify_qualification_chain.py` | 通过，v1 决策与内容哈希未漂 |
+
+## 2026-08-15 — R4.5：P1-6 方案 A（user simulator + 多轮澄清，纯 CPU）
+
+- 用户在 A/B 二选一中裁定 **A**。826 → **842 passed**；全部质量门通过；
+  v1 全链路复现校验通过。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | 澄清对照 build + evaluate ×3（CLI 全链路，CPU） | 不欠指定 **1.0000**；欠指定/无模拟器 **0.0000**（轮次 1.00）；欠指定/有模拟器 **1.0000**（轮次 3.17），三组可重放均 1.00 |
+| 2026-08-15 | `.venv/bin/pytest -q` | 842 passed |
+
+新增：`core/agent/user_simulator.py`（确定性规则式模拟用户）、`message_grounded`
+机制探针策略、`clarify` 任务变体、`clarification_*` 三个指标、两份只差
+`user_simulator` 的对照配置、`docs/AGENT_LOOP.md`（含**仍然缺的东西**逐条列举）。

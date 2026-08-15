@@ -17,3 +17,5 @@ budget:
 perturb_schema: true
 # 独立于环境的 guardrail 层开关，没有默认值：开不开第二道防线是评测条件的一部分。
 guardrail: false
+# 多轮澄清开关（确定性规则式模拟用户），没有默认值：它决定 episode 是单轮还是多轮。
+user_simulator: false

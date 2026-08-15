@@ -9,3 +9,5 @@
 bundle_dir: domains/retail_ops/v2
 split: qualification
 inject: true
+# 多轮澄清变体开关：把订单号从用户请求里拿掉，Agent 必须先问。真值不变。
+clarify: false

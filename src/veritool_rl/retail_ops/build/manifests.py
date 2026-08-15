@@ -83,6 +83,7 @@ def build_qualification(
     output_dir: Path,
     *,
     inject: bool = False,
+    clarify: bool = False,
 ) -> TaskManifest:
     """从冻结 bundle 构建十二条 qualification 任务与不可变 manifest。
 
@@ -93,7 +94,9 @@ def build_qualification(
     bundle = load_bundle(bundle_dir)
     refund = next(tool for tool in bundle.tools if tool.name == "refund_order")
     idempotency = "idempotency_key" in refund.parameters.get("required", [])
-    tasks = build_qualification_tasks(seed, idempotency=idempotency, inject=inject)
+    tasks = build_qualification_tasks(
+        seed, idempotency=idempotency, inject=inject, clarify=clarify
+    )
     category_counts, task_ids, family_ids = _validate_qualification_tasks(tasks, bundle)
 
     create_output_dir(output_dir)

@@ -1,2 +1,9 @@
-# v2 qualification 基线任务集（无注入），作为注入变体的对照。
+# v2 qualification 基线任务集：无注入、不欠指定，作为另两个变体的共同对照。
+#
+# 相对 v1 的任务差别只有一处：gold 的 refund_order 调用带 idempotency_key
+# （由 bundle 的 refund_order schema 决定，不由本文件声明——schema 与 gold 序列
+# 各说各话是最难查的一类不一致）。
+bundle_dir: domains/retail_ops/v2
+split: qualification
 inject: false
+clarify: false

@@ -14,6 +14,7 @@ from pydantic import Field, field_validator
 
 from veritool_rl.core.agent.guardrail import RetailOpsGuardrail
 from veritool_rl.core.agent.runner import run_episode
+from veritool_rl.core.agent.user_simulator import ScriptedRetailUserSimulator
 from veritool_rl.core.artifacts import (
     canonical_json,
     create_output_dir,
@@ -133,6 +134,12 @@ def evaluate_retail_ops(
     use_guardrail = config["guardrail"]
     if not isinstance(use_guardrail, bool):
         raise ValueError("guardrail 必须是 bool")
+    # user simulator 决定 episode 是单轮还是可澄清的多轮——同样是评测条件。
+    if "user_simulator" not in config:
+        raise ValueError("配置必须显式声明 user_simulator（bool）")
+    use_user_simulator = config["user_simulator"]
+    if not isinstance(use_user_simulator, bool):
+        raise ValueError("user_simulator 必须是 bool")
     validate_json_value(config)
 
     tasks_by_id = load_built_tasks(build_dir)
@@ -171,11 +178,17 @@ def evaluate_retail_ops(
                 seed,
                 system_prompt=system_prompt,
                 guardrail=make_guardrail() if use_guardrail else None,
+                user_simulator=(
+                    ScriptedRetailUserSimulator() if use_user_simulator else None
+                ),
             )
         )
     replayed = sum(
         replay_trajectory(
-            trajectory, make_env, make_guardrail if use_guardrail else None
+            trajectory,
+            make_env,
+            make_guardrail if use_guardrail else None,
+            ScriptedRetailUserSimulator if use_user_simulator else None,
         ).matched
         for trajectory in trajectories
     )
@@ -188,6 +201,7 @@ def evaluate_retail_ops(
     metrics = compute_metrics(trajectories, bootstrap_samples, seed)
     metrics["schema_perturbed"] = perturb_schema
     metrics["guardrail_enabled"] = use_guardrail
+    metrics["user_simulator_enabled"] = use_user_simulator
     metrics["replayable_count"] = replayed
     metrics["replayable_rate"] = replayed / manifest.task_count
     evidence_complete = len(trajectories) == manifest.task_count == replayed and all(

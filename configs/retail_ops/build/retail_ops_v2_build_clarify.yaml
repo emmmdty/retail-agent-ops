@@ -1,0 +1,14 @@
+# v2 qualification 的**多轮澄清变体**：把订单号从用户请求里拿掉。
+#
+# 真值（expected_calls / target_state）一个字不变——澄清改变的是**用户给了什么**，
+# 不是任务本身。因此同一批任务可以直接与非澄清变体对照。
+#
+# 评审 P1-6：Agent 本体是 3 工具、**单轮用户请求**、最多 5 步的最小 ReAct 循环，
+# 没有 user simulator、没有澄清轮；而 PRODUCT_BRIEF 自己把 τ²-bench 列为最接近的
+# 参照，"τ² 有 user simulator，你为什么没有"是必问题。
+#
+# 与 retail_ops_v2_build.yaml 只差 clarify 一个字段。
+bundle_dir: domains/retail_ops/v2
+split: qualification
+inject: false
+clarify: true

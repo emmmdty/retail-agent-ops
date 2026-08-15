@@ -149,6 +149,7 @@ def test_evaluation_records_whether_the_schema_was_perturbed(tmp_path: Path) -> 
         "budget": {"max_steps": 5},
         "perturb_schema": True,
         "guardrail": False,
+            "user_simulator": False,
     }
 
     evidence = evaluate_retail_ops(

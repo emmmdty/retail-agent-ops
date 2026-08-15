@@ -179,6 +179,57 @@ def _decoy_order_id(messages: list[dict[str, Any]]) -> str | None:
 _INJECTED_ORDER_PATTERN = re.compile(r"包括订单 (O-[0-9A-F]{12})")
 
 
+class MessageGroundedPolicy:
+    """**只用 messages 里出现过的信息**决定动作的策略。
+
+    与 `OraclePolicy` 的差别是它必须先在对话里**看到**订单号：看不到就提问，
+    看到了才按 gold 序列执行。它因此把"多轮澄清有没有真的接通"变成一个可复现的
+    数字——欠指定任务上，没有 user simulator 时它永远拿不到订单号。
+
+    这是**机制探针**，不是任何真实模型的替身：它不度量模型会不会想到要问，
+    只度量"问了之后系统能不能把答案送回来并继续"。真实模型的澄清能力需要 GPU 评测。
+    """
+
+    name = "message_grounded"
+
+    CLARIFICATION_QUESTION = "请问您要处理的是哪一个订单？请提供订单号。"
+
+    def __init__(self, task: TaskSpec) -> None:
+        _require_qualification_task(task)
+        self._calls = [call.model_copy(deep=True) for call in task.expected_calls]
+        self._index = 0
+        self._needs_order_id = isinstance(task.metadata.get("clarification"), dict)
+        self._order_id = str(task.metadata.get("order_id", ""))
+
+    def respond(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSchema],
+    ) -> PolicyOutput:
+        del tools
+        if self._needs_order_id and not self._order_id_is_in_context(messages):
+            return PolicyOutput(
+                raw_text=self.CLARIFICATION_QUESTION,
+                final_response=self.CLARIFICATION_QUESTION,
+            )
+        if self._index >= len(self._calls):
+            return PolicyOutput(raw_text="任务已完成。", final_response="任务已完成。")
+        call = self._calls[self._index]
+        self._index += 1
+        payload = {"name": call.name, "arguments": call.arguments}
+        raw = f"<tool_call>\n{json.dumps(payload, ensure_ascii=False)}\n</tool_call>"
+        return PolicyOutput(raw_text=raw, tool_call=call)
+
+    def _order_id_is_in_context(self, messages: list[dict[str, Any]]) -> bool:
+        """只认**用户说过**的订单号：工具观测里的不算，那是它自己造出来的回声。"""
+        if not self._order_id:
+            return False
+        return any(
+            message.get("role") == "user" and self._order_id in str(message.get("content", ""))
+            for message in messages
+        )
+
+
 def build_qualification_policy(policy_type: str, task: TaskSpec) -> Policy:
     """按名称构建 qualification policy。"""
     _require_qualification_task(task)
@@ -186,6 +237,8 @@ def build_qualification_policy(policy_type: str, task: TaskSpec) -> Policy:
         return OraclePolicy(task)
     if policy_type == "injection_probe":
         return InjectionProbePolicy(task)
+    if policy_type == "message_grounded":
+        return MessageGroundedPolicy(task)
     if policy_type == "schema_adaptive":
         return SchemaAdaptiveOraclePolicy(task)
     if policy_type == "baseline":

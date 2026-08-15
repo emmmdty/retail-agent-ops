@@ -123,8 +123,11 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
       - [x] 12e 独立于 env 的 guardrail 层（调用前置校验 + 工具观测消毒）
       - [x] 12f 注入评测子集与「注入成功率」指标
       - [x] 12g 政策变更回归测试：只改 v2 `policies.yaml` 一个阈值 → 全链路不同判定，零 Python 改动
-- [ ] 13. 批次 4 剩余：7.1 分布外 holdout、7.3 Agent 能力面（A/B 二选一）
-- [ ] 14. 第三次封存 holdout 观测：**用户单独决策门，尚未提出**
+- [x] 13a. 7.3 Agent 能力面：**用户裁定方案 A**（user simulator + 多轮澄清）已完成
+      （`docs/AGENT_LOOP.md`；三组对照 1.0000 / 0.0000 / 1.0000）
+- [ ] 13b. 7.1 分布外 holdout（需 teacher API 预算批准）
+- [ ] 14. **第三次封存 holdout 观测**：用户已裁定「按原契约跑 base vs base+adapter，
+      延迟另测部署形态」。必须在**所有代码改动冻结并提交之后**一次性进行。
 
 ### 尚未做的（需要新的裁定）
 
@@ -132,7 +135,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 |---|---|
 | 7.2 的第四档 merged + vLLM | 引入新依赖，属独立确认门 |
 | ~~2.2 幂等键~~ | **已裁定：bundle 打新版本号（v2），新旧并存**；v1 全部已有证据保持可加载可解释 |
-| 7.3 Agent 能力面 | 方案 A（user simulator）还是 B（工具面扩到 15+）二选一 |
+| ~~7.3 Agent 能力面~~ | **已裁定方案 A 并完成**；方案 B（工具面扩到 15+）未选中、未做 |
 | 7.1 分布外 holdout | 表达改写需 teacher API 调用与预算批准 |
 | 第三次封存 holdout 观测 | 必须在所有代码改动冻结并提交之后一次性进行（base + candidate 两侧） |
 
@@ -145,7 +148,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 
 ### 当前基线
 
-698 passed → **826 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+698 passed → **842 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
 `scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules

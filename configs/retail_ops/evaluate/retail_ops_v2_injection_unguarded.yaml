@@ -15,3 +15,5 @@ budget:
   max_steps: 5
 perturb_schema: false
 guardrail: false
+# 多轮澄清开关（确定性规则式模拟用户），没有默认值：它决定 episode 是单轮还是多轮。
+user_simulator: false

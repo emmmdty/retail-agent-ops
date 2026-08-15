@@ -1,0 +1,21 @@
+# 多轮澄清评测（multiturn）：user_simulator = true。
+#
+# policy_type=message_grounded 是**机制探针**：它只用 messages 里**用户说过**的信息
+# 决定动作，看不到订单号就提问。它不度量"模型会不会想到要问"，只度量"问了之后系统
+# 能不能把答案送回来并继续"。真实模型的澄清能力需要 GPU 评测，本组配置不声称。
+#
+# 模拟用户是**规则式**的：本项目的评测契约要求确定性（固定 seed、可重放轨迹、
+# 逐字节可复现的证据）。LLM 模拟用户会让每次运行的用户侧输入都不同，
+# replay_trajectory 直接失效。自然度换可重放性，这个取舍没有第二个答案。
+#
+# 两份配置只差 user_simulator 一个字段，差值就是多轮通道的实测效果。
+bundle_dir: domains/retail_ops/v2
+mode: qualification
+policy_type: message_grounded
+bootstrap_samples: 1000
+parser_id: hermes-single-call-v1
+budget:
+  max_steps: 5
+perturb_schema: false
+guardrail: false
+user_simulator: true

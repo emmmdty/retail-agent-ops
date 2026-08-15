@@ -764,6 +764,9 @@ _R45_CONFIG_NAMES = (
     "retail_ops/build/retail_ops_v2_build_injected.yaml",
     "retail_ops/evaluate/retail_ops_v2_injection_unguarded.yaml",
     "retail_ops/evaluate/retail_ops_v2_injection_guarded.yaml",
+    "retail_ops/build/retail_ops_v2_build_clarify.yaml",
+    "retail_ops/evaluate/retail_ops_v2_clarify_singleturn.yaml",
+    "retail_ops/evaluate/retail_ops_v2_clarify_multiturn.yaml",
 )
 
 
@@ -875,6 +878,34 @@ def test_injection_configs_differ_only_by_the_guardrail_switch() -> None:
     assert {k: v for k, v in unguarded.items() if k != "guardrail"} == {
         k: v for k, v in guarded.items() if k != "guardrail"
     }
+
+
+def test_clarify_configs_differ_only_by_the_simulator_switch() -> None:
+    import yaml
+
+    single = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v2_clarify_singleturn.yaml")
+    )
+    multi = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v2_clarify_multiturn.yaml")
+    )
+
+    assert single["user_simulator"] is False
+    assert multi["user_simulator"] is True
+    assert {k: v for k, v in single.items() if k != "user_simulator"} == {
+        k: v for k, v in multi.items() if k != "user_simulator"
+    }
+
+
+def test_qualification_build_configs_declare_both_variant_switches() -> None:
+    """`inject` 与 `clarify` 都没有默认值：漏写一份配置必须红。"""
+    import yaml
+
+    build_root = ROOT / "configs/retail_ops/build"
+    for path in sorted(build_root.glob("retail_ops_v*_build*.yaml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert set(parsed) == {"bundle_dir", "split", "inject", "clarify"}, path.name
+        assert isinstance(parsed["inject"], bool) and isinstance(parsed["clarify"], bool)
 
 
 def test_merged_model_config_declares_a_derived_revision_not_an_upstream_one() -> None:

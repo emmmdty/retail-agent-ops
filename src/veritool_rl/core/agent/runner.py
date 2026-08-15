@@ -9,6 +9,7 @@ from typing import Any
 
 from veritool_rl.core.agent.guardrail import Guardrail, blocked_observation
 from veritool_rl.core.agent.policy import Policy
+from veritool_rl.core.agent.user_simulator import UserSimulator
 from veritool_rl.core.envs.base import ToolEnv
 from veritool_rl.core.rewards.verifier import compute_reward_breakdown
 from veritool_rl.core.trajectory import (
@@ -45,6 +46,7 @@ def run_episode(
     *,
     system_prompt: str | None = None,
     guardrail: Guardrail | None = None,
+    user_simulator: UserSimulator | None = None,
 ) -> Trajectory:
     """运行单个任务，模型级错误记录在轨迹中而不传播到整批评测。
 
@@ -56,6 +58,10 @@ def run_episode(
     - `guardrail`：与环境政策校验**分层独立**的第二道防线，见
       `core/agent/guardrail.py`。它在调用触达环境之前校验，在观测进入 `messages`
       之前消毒。
+    - `user_simulator`：把 episode 从单轮变成可澄清的多轮。助手发出的"最终答复"
+      若被判定为提问且模拟器给出回复，对话继续；否则照常收尾。
+      **只有真正收尾的那一句才算最终答复**——把一次澄清提问记成最终答复会让
+      INFORM/DENY 类任务凭一句反问就判成功。
     """
     env = env_factory(task)
     tools = env.list_tools()
@@ -134,7 +140,12 @@ def run_episode(
         else:
             messages.append({"role": "assistant", "content": output.final_response or ""})
 
-        if output.final_response is not None:
+        user_reply: str | None = None
+        if output.final_response is not None and user_simulator is not None:
+            user_reply = user_simulator.reply(output.final_response, task)
+            if user_reply is not None:
+                messages.append({"role": "user", "content": user_reply})
+        if output.final_response is not None and user_reply is None:
             env.record_final_response(output.final_response)
         reward = compute_reward_breakdown(env, observation, output.parse_error)
         violations = env.check_policy()
@@ -161,7 +172,7 @@ def run_episode(
         if reward.final_state == 1.0:
             termination = TerminationReason.SUCCESS
             break
-        if output.final_response is not None:
+        if output.final_response is not None and user_reply is None:
             termination = TerminationReason.FINAL_RESPONSE
             break
 
