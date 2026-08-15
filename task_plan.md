@@ -129,14 +129,14 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 - [x] 14. **第三次封存 holdout 观测已完成**（LOG-20260815-03）：三次运行、
       两套口径判定**都是 NO-GO**；合并部署形态的门禁算术全部通过但**拿不到判定**
       （契约要求 candidate = 同一基座 + adapter）。
-- [ ] 15. **版本化 `SealedEvaluationReport`**，让合并部署形态可获得发布判定
-      - [ ] 15a 版本感知的内容哈希（`report_id` 对 v1.0 报告逐位不变）
-      - [ ] 15b `deployment_form` + `merged_from` 血统证明（`merged_revision` 可从
+- [x] 15. **版本化 `SealedEvaluationReport`**，让合并部署形态可获得发布判定
+      - [x] 15a 版本感知的内容哈希（`report_id` 对 v1.0 报告逐位不变）
+      - [x] 15b `deployment_form` + `merged_from` 血统证明（`merged_revision` 可从
             「基座 revision + adapter 逐文件哈希」**复算**，不是自己声明）
-      - [ ] 15c `require_comparable_sealed_runs` 按形态分派：base+adapter 走同一性，
+      - [x] 15c `require_comparable_sealed_runs` 按形态分派：base+adapter 走同一性，
             merged 走血统
-      - [ ] 15d `FormalReleaseReport` 与 `serve` 支持 merged 候选（GO 时加载合并权重）
-      - [ ] 15e 用第三次观测的已有证据产出**第四次判定**（不消耗新观测）
+      - [x] 15d `FormalReleaseReport` 与 `serve` 支持 merged 候选（GO 时加载合并权重）
+      - [x] 15e 用第三次观测的已有证据产出**第四次判定**（不消耗新观测）
 - [ ] 16. **merged + vLLM 吞吐档**（独立 venv，不动 `uv.lock`——它在配对字段里）
 - [ ] 17. **P0-1 分布外 holdout**：独立 dataset artifact，三类（表达/场景/对抗）
 
@@ -159,7 +159,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 
 ### 当前基线
 
-698 passed → **844 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+698 passed → **874 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
 `scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules

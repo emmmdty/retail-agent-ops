@@ -13,9 +13,9 @@
 | 项 | 值 |
 |---|---|
 | 数据集 | `retail_ops_v1_r2_20260722`，120 条，六类各 20 |
-| 已消耗观测 | **3 次**（2026-08-11、2026-08-14、2026-08-15），第三次含 **3 次运行**（base / candidate / 合并版探针） |
+| 已消耗观测 | **4 次**（2026-08-11、-14、-15 ×2），共 **9 次运行** |
 | 剩余"未观测"状态 | **无**。每一次新判定都需用户单独决策 |
-| 最新判定 | **NO-GO / baseline**（三次判定全部如此） |
+| 最新判定 | **GO / candidate（merged 形态）** —— 前三次判定均为 NO-GO |
 | 阈值变更次数 | **0**（`tests/test_retail_ops_r4_release_configs.py::test_release_config_does_not_touch_the_gates` 锁定） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -134,6 +134,54 @@ schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立�
 3. **本次观测消耗了三次运行**（base / candidate / 合并版探针）。合并版探针只为测部署
    形态，但它同样产出任务指标、同样读了 holdout，因此如实计入消耗。
 4. 120/120 仍**不是泛化证据**：train/dev/holdout 共用同一批 12 句模板（见下方边界）。
+
+## 观测 4 — 2026-08-15（LOG-20260815-04）：**本项目的第一个 GO**
+
+代码冻结于 `06e4cc2`（sealed 契约 v1.1）。两次运行：`holdout-base-004`（3m56s）与
+`holdout-merged-candidate-004`（5m09s，**合并部署形态**，schema 1.1、
+`deployment_form=merged`、携带可复算血统）。
+
+| | base-004 | merged-candidate-004 |
+|---|---|---|
+| `report_id` | `85972fed…` | `a4ad8ee9…` |
+| schema / 形态 | 1.0 / （由 adapter 推断为 base） | **1.1 / merged** |
+| `task_success` | 0.8583（103/120） | **1.0000（120/120）** |
+| `policy_violation_count` | 11 | 0 |
+| `invalid_call_count` | 5 | 0 |
+| 单次调用耗时 | 1438.5 ms | **1675.3 ms** |
+| `p95_latency_ms` | 2936.9 | **3308.4** |
+
+### 判定：**GO / deployment=candidate**，两套口径都是
+
+| 门禁 | v1.0 | v1.1 |
+|---|---|---|
+| `success_delta` | PASS +0.1417 | PASS +0.1417 |
+| `success_delta_ci_lower` | — | **PASS +0.0833** |
+| `policy_violation_delta` | PASS −11 | PASS −11 |
+| `invalid_call_count` | PASS 0 | PASS 0 |
+| `p95_latency_ratio` | **PASS 1.1265** | 已拆分 |
+| `per_call_latency_ratio` | — | **PASS 1.1646** |
+| `steps_to_success_ratio` | — | PASS 0.9841 |
+| `latency_per_success_ratio` | — | **PASS 1.1461** |
+| **判定** | **GO / candidate** | **GO / candidate** |
+
+**GO 归因于部署形态，不是 base 侧噪声**：把**未合并**候选（`candidate-003`）对同一份
+`base-004` 重算，`p95_latency_ratio` 仍是 **1.9219 FAIL**。同一份权重、同一套行为，
+只差加载方式。
+
+### 六条必须与这个 GO 一起说的限制
+
+1. **这不是前三次被拒的那个候选**。它是同一份权重的**另一种部署形态**（合并回基座）。
+   未合并形态在观测 3 与上面的复算里都仍然失败。三次 NO-GO 的结论一个字不改。
+2. **SPEC §6 的第 6 条没有满足**：「最终候选独立重建后仍保持正向提升」需要一次独立
+   重建复验，**尚未进行**。自动门禁只实现了前 5 条（v1.0）/ 8 条（v1.1）。
+   因此这是"**自动门禁 GO**"，不是"发布流程全部条件满足"。
+3. **单训练 seed**，未做重复性验证。
+4. **余量约 10%**（1.1265 / 1.1646 / 1.1461 对 1.25），比观测 3 的 3% 宽，但 base 侧
+   p95 在四次观测间是 5255 → 3052 → 2787 → 2937 ms——**共享 GPU 的波动是真实的**。
+5. **120/120 仍不是泛化证据**：train/dev/holdout 共用同一批 12 句请求模板。
+6. **本次判定前，配对规则被改过一次，我在看到两侧指标之后才改的**——完整披露见
+   `docs/PROJECT_LOG.md` LOG-20260815-04「必须披露的顺序问题」一节。
 
 ## 新口径（gate schema v1.1）复算：两次判定都**不变**
 

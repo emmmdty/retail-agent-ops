@@ -249,3 +249,69 @@ def test_base_side_must_be_a_base_form() -> None:
 
     with pytest.raises(ComparisonError, match="base"):
         require_comparable_sealed_runs(merged, merged)
+
+
+# ---------------------------------------------------------------------------
+# 跨 schema 版本的配对
+# ---------------------------------------------------------------------------
+
+
+def test_hashed_field_sets_only_ever_grow() -> None:
+    """**这条是跨版本配对健全性的全部依据。**
+
+    允许 v1.0 的 base 与 v1.1 的候选配对，前提是新版本只**追加**字段、不改变已有
+    字段的含义。这条断言把那个前提变成结构性事实：任何一版若删掉或替换字段，
+    它立刻失败，跨版本配对随之被禁止。
+    """
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import SEALED_HASHED_FIELDS
+
+    ordered = sorted(SEALED_HASHED_FIELDS)
+    for older, newer in zip(ordered, ordered[1:], strict=False):
+        assert SEALED_HASHED_FIELDS[older] < SEALED_HASHED_FIELDS[newer], (older, newer)
+
+
+def test_schema_version_is_not_a_pairing_field() -> None:
+    """报告格式不是实验条件。
+
+    把它当作配对字段会产生一个更糟的性质：每次 schema 升级都要重跑 base 侧——
+    为一次序列化变更烧掉一次封存 holdout 观测。真正保护可比性的那些字段
+    （code_commit / uv_lock / 模型 / 生成参数 / 数据集 / receipt / prompt / 工具）
+    一个都没少。
+    """
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import SEALED_PAIRING_FIELDS
+
+    assert "schema_version" not in SEALED_PAIRING_FIELDS
+    for expected in (
+        "code_commit",
+        "uv_lock_sha256",
+        "system_prompt_sha256",
+        "tool_schema_sha256",
+        "bundle_sha256",
+        "holdout_artifact_sha256",
+        "seed",
+    ):
+        assert expected in SEALED_PAIRING_FIELDS
+
+
+def test_a_v1_0_base_pairs_with_a_v1_1_merged_candidate() -> None:
+    """真实场景：基座是在契约扩展之前跑的，候选是扩展之后跑的。"""
+    base = _report()  # v1.0，无 adapter → 形态由 adapter 推断为 base
+    candidate = _report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.MERGED,
+        adapter=None,
+        merged=True,
+    )
+
+    require_comparable_sealed_runs(base, candidate)
+
+
+def test_an_unknown_schema_version_is_rejected() -> None:
+    from veritool_rl.retail_ops.evaluate import sealed_evaluation
+
+    base = _report()
+    candidate = _report(with_adapter=True)
+    forged = candidate.model_copy(update={"schema_version": "9.9"})
+
+    with pytest.raises(ComparisonError, match="schema_version 未知"):
+        sealed_evaluation.require_comparable_sealed_runs(base, forged)

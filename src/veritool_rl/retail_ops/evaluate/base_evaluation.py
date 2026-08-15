@@ -18,7 +18,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -613,10 +613,25 @@ def _require_records_match_private_artifact(
         raise ValueError(msg)
 
 
+class PinnedRunConfig(Protocol):
+    """`_require_backend_matches_pin` 真正需要的那两个字段。
+
+    抽成 Protocol 而不是绑定 `BaseEvaluationConfig`：分布外评测有自己的配置类型
+    （它的步数预算不是 5，继承会让那个 Literal 变成一句假话），但**必须走同一条
+    后端绑定校验**——那条校验是"证据里写的模型就是真正跑的模型"的唯一执行者。
+    """
+
+    @property
+    def model(self) -> ModelArtifact: ...
+
+    @property
+    def generation(self) -> GenerationSettings: ...
+
+
 def _require_backend_matches_pin(
     backend: GenerationBackend,
     model_dir: Path,
-    config: BaseEvaluationConfig,
+    config: PinnedRunConfig,
     *,
     expected_adapter: Path | None,
 ) -> None:

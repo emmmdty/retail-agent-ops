@@ -722,3 +722,19 @@ v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3
 
 产物已回传，双端 SHA-256 一致（三份私有 `trajectories.jsonl` 逐条核对）。
 逐项读数与四条限制见 `docs/HOLDOUT_LEDGER.md` 观测 3 与 **LOG-20260815-03**。
+
+## 2026-08-15 — R4.5：第四次封存 holdout 观测，**项目的第一个 GO**
+
+- 代码冻结于 `06e4cc2`（sealed 契约 v1.1）。两次运行，同 commit。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | `evaluate …r45b_holdout_base.yaml` | EXIT=0，103/120，p95 2936.9 ms，3m56s |
+| 2026-08-15 | `evaluate …r45b_holdout_merged_candidate.yaml` | EXIT=0，**120/120**，p95 3308.4 ms，5m09s；报告为 **schema 1.1 / form=merged / 带血统** |
+| 2026-08-15 | `release`（v1.0） | **GO / candidate**，`p95_latency_ratio` 1.1265 |
+| 2026-08-15 | `release`（v1.1，含配对证据） | **GO / candidate**，八项全过（CI 下界 +0.0833、per_call 1.1646、每成功成本 1.1461） |
+| 2026-08-15 | 复核：未合并候选 vs base-004 | 仍 **FAIL 1.9219** —— GO 归因于部署形态而非 base 噪声 |
+
+**六条限制与一处顺序披露**见 `docs/HOLDOUT_LEDGER.md` 观测 4 与 **LOG-20260815-04**。
+最重要的两条：这不是前三次被拒的那个候选（是同一权重的另一种部署形态）；
+SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自动门禁 GO"。

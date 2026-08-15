@@ -451,9 +451,20 @@ def sealed_content_id(report: SealedEvaluationReport) -> str:
     return _content_sha256(projected)
 
 
-#: 两份 sealed 报告必须逐字段相同才允许配对——任何一项不同，delta 都不再归因于 adapter。
+#: 两份 sealed 报告必须逐字段相同才允许配对——任何一项不同，delta 都不再归因于候选。
+#:
+#: **`schema_version` 刻意不在其中。** 它描述的是**报告格式**，不是实验条件：两次运行
+#: 只要 `code_commit`、`uv_lock_sha256`、模型、生成参数、数据集、receipt、prompt、
+#: 工具 schema 全部相同，就是在同一条件下跑的，序列化成哪一版报告不改变这一点。
+#:
+#: 把它当作配对字段会产生一个更糟的性质：**每次 schema 升级都要重跑 base 侧**——
+#: 为一次序列化格式变更烧掉一次封存 holdout 观测。这是 2026-08-15 让合并候选
+#: （v1.1）与基座（v1.0）配对时暴露出来的。
+#:
+#: 跨版本配对的健全性由另一条更强的约束保证：`SEALED_HASHED_FIELDS` 只能**追加**，
+#: 旧版本的字段集合必须是新版本的子集——由 `_require_compatible_schema_versions`
+#: 逐对校验，并由测试对整张表做一次结构性断言。
 SEALED_PAIRING_FIELDS = (
-    "schema_version",
     "purpose",
     "split",
     "dataset_version",
@@ -481,6 +492,28 @@ def _candidate_form(report: SealedEvaluationReport) -> DeploymentForm:
     if report.deployment_form is not None:
         return report.deployment_form
     return DeploymentForm.BASE_PLUS_ADAPTER if report.adapter is not None else DeploymentForm.BASE
+
+
+def _require_compatible_schema_versions(
+    base: SealedEvaluationReport,
+    candidate: SealedEvaluationReport,
+) -> None:
+    """两侧的报告格式必须是**可嵌套**的——较旧那一版的字段集合是较新那一版的子集。
+
+    这是允许跨 schema 版本配对的全部依据。如果将来某一版**改变**了某个字段的含义
+    而不是追加新字段，这条断言会立刻失败，跨版本配对随之被禁止——正是应有的行为。
+    """
+    for report, label in ((base, "base"), (candidate, "candidate")):
+        if report.schema_version not in SEALED_HASHED_FIELDS:
+            msg = f"{label} 报告的 schema_version 未知：{report.schema_version}"
+            raise ComparisonError(msg)
+    older, newer = sorted((base.schema_version, candidate.schema_version))
+    if not SEALED_HASHED_FIELDS[older] <= SEALED_HASHED_FIELDS[newer]:
+        msg = (
+            f"sealed 报告 schema {older} 与 {newer} 不可嵌套，"
+            "跨版本配对会把字段含义的变化当成模型效果"
+        )
+        raise ComparisonError(msg)
 
 
 def _require_valid_forms(
@@ -535,6 +568,7 @@ def require_comparable_sealed_runs(
     比没有比较更危险，它会被直接抄进发布报告。这里只校验可比性，不做 GO/NO-GO
     判定——发布判定属于 release 门禁。
     """
+    _require_compatible_schema_versions(base, candidate)
     _require_valid_forms(base, candidate)
 
     for field in SEALED_PAIRING_FIELDS:

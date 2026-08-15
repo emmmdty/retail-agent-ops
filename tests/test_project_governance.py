@@ -1077,5 +1077,6 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
             assert phrase not in text, f"{name}: 过期的观测次数表述 {phrase!r}"
 
     ledger = _read("docs/HOLDOUT_LEDGER.md")
-    assert "已消耗观测 | **3 次**" in ledger
+    assert "已消耗观测 | **4 次**" in ledger
     assert "LOG-20260815-03" in ledger
+    assert "LOG-20260815-04" in ledger
