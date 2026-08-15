@@ -111,9 +111,23 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 - [x] 6. 批次 1.4 `verifier_reward` 降级为诊断量（只改呈现层）
 - [x] 7. 批次 3 发布门禁版本化（v1.0 冻结 + v1.1 新集合，16 项测试，3 次突变验证）
 - [x] 8. P2-13 `perturb_schema` 接入 qualification 轨道（用户裁定）
-- [ ] 9. **外部执行门 1：提交**（`_current_code_commit` 拒绝脏工作树，需用户确认）
-- [ ] 10. 提交后用 v1.1 复算两次已有观测，与旧口径结论并列陈述
-- [ ] 11. 批次 2 / 批次 4：按用户裁定推进
+- [x] 9. 外部执行门 1：提交（`3427c40`），并同步 gpu-5090
+- [x] 10. 用 v1.1 复算两次已有观测；两次仍 NO-GO，无翻转（`docs/GATE_SCHEMA_V11_RECOMPUTE.md`）
+- [x] 11. **批次 4 / 7.2 部署形态对照（P0-3）**：merge 后 dev 重测，单次调用 −46%、
+      能力 60/60 未损伤（`docs/SERVING_FORM_COMPARISON.md`、LOG-20260815-01）
+- [ ] 12. 批次 2（政策外置 / 幂等键 / guardrail）——2.2 有一个必须先裁定的决策点
+- [ ] 13. 批次 4 剩余：7.1 分布外 holdout、7.3 Agent 能力面（A/B 二选一）
+- [ ] 14. 第三次封存 holdout 观测：**用户单独决策门，尚未提出**
+
+### 尚未做的（需要新的裁定）
+
+| 项 | 阻塞点 |
+|---|---|
+| 7.2 的第四档 merged + vLLM | 引入新依赖，属独立确认门 |
+| 2.2 幂等键 | 会让现有 240 条 teacher 轨迹调用参数非法：迁移 / 重采集 / bundle 打新版本号并保留旧证据，三选一 |
+| 7.3 Agent 能力面 | 方案 A（user simulator）还是 B（工具面扩到 15+）二选一 |
+| 7.1 分布外 holdout | 表达改写需 teacher API 调用与预算批准 |
+| 第三次封存 holdout 观测 | 必须在所有代码改动冻结并提交之后一次性进行（base + candidate 两侧） |
 
 ### 用户已裁定（2026-08-15）
 
@@ -124,7 +138,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 
 ### 当前基线
 
-698 passed → **755 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+698 passed → **760 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
 `scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules

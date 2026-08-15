@@ -650,3 +650,22 @@ train/dev/holdout、调用模型或进入训练。
 | 2026-08-15 | `uv lock --check` | Resolved 105 packages，lock 未漂移 |
 | 2026-08-15 | `.venv/bin/python scripts/ci/verify_qualification_chain.py` | 通过（决策与内容哈希等于冻结期望） |
 | 2026-08-15 | qualification schema 对照（clean / perturbed） | 12/12 与 12/12，`schema_perturbed` 落进 metrics |
+
+## 2026-08-15 — R4.5：v1.1 复算 + 部署形态对照（gpu-5090）
+
+- 用户已授权 GPU。**未消耗第三次 holdout 观测**；全部读数为 dev 或已消耗观测的重算。
+- 提交：`3427c40` → `549957a` → `007e506`。远端同步至 `007e506`，工作树干净。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | `release --config …r45_formal_release_v11.yaml`（观测 1，含私有配对证据） | **NO-GO**，失败 4 项：`success_delta` −0.0333、`success_delta_ci_lower` −0.0917、`per_call_latency_ratio` **1.9643**、`latency_per_success_ratio` 1.9818 |
+| 2026-08-15 | 同上（观测 2，无配对证据） | **NO-GO**，`success_delta_ci_lower` = `insufficient_paired_evidence` |
+| 2026-08-15 | 自 gpu-5090 回传观测 2 私有 `trajectories.jsonl`（双端 SHA-256 一致） | base `7724c02a…` / candidate `2082a289…`，各 120 行 |
+| 2026-08-15 | 同上（观测 2，含配对证据） | **NO-GO**，失败 2 项；`success_delta_ci_lower` **+0.0833 PASS**、`steps_to_success_ratio` **0.9841 PASS** |
+| 2026-08-15 | `merge_lora_adapter.py`（gpu-5090，CPU 合并） | 7.6 GB，`merged_revision` `00f51386…`，torch 2.13.0+cu130 / peft 0.19.1 / transformers 5.13.1 |
+| 2026-08-15 | `evaluate --config …r45_merged_dev_base.yaml`（物理 GPU 0） | **60/60**，148.96 s，峰值 2.91 GB，p95 3366.44 ms，吞吐 **50.74 tok/s** |
+
+**对照结论（dev，非发布判定）**：合并版单次调用 1653.7 ms（未合并 3063.9、基座 1356.6），
+v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3130 > 1.25），
+且 `latency_per_success_ratio` 1.2498 对 1.25 只差 2e-4。详见
+`docs/SERVING_FORM_COMPARISON.md` 与 **LOG-20260815-01**。

@@ -9,7 +9,8 @@ LoRA 覆盖、不同的训练数据、不同的 system prompt、不同的失败�
 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)，本卡只做候选侧的解释，不复述台账。
 
 > **产物可得性风险（必须先读）**：`reports/retail_ops/v1/r4/sft-006/`
-> （adapter 权重、训练日志、metrics）**只存在于 gpu-5090**，本地 checkout 没有。
+> （adapter 权重、训练日志、metrics）**只存在于 gpu-5090**，本地 checkout 没有；
+> 2026-08-15 合并产出的 `models/Qwen3-4B-sft-006-merged/`（7.6 GB）同样只在远端。
 > 本卡引用的 7 个文件 SHA-256 来自 `formal-release-002/release.json` 内嵌的 adapter pin，
 > 因此**指纹可验证、权重不可本地复算**。远端目录丢失即候选不可重建。
 
@@ -108,11 +109,32 @@ base 取得的，delta 里混着"没给 base 换 prompt"的免费收益。同 pr
 （7 个投影层每次都要多做低秩矩阵乘），**不是**"候选多做了工具调用"。旁证：观测 1 的
 attention-only adapter（4 投影）p95 比值仅 1.087。
 
-**这个数字是可以工程消除的，而当前部署实现没有做那件事**：`core/agent/qwen.py` 的
-`TransformersBackend` 是 bnb 4-bit 基座 + `PeftModel` **未 merge** + HF `generate` 逐
-episode 串行，全仓没有 `merge_and_unload`、没有 vLLM/SGLang、没有 `torch.compile`。
-把 adapter 合并回基座权重不改变模型数值，只去掉低秩旁路的前向开销。
-**该对照实验尚未进行**，因此本卡不声称"merge 之后就能过门禁"。
+**这个数字大部分是可以工程消除的，而 2026-08-15 之前的部署实现没有做那件事**：
+`core/agent/qwen.py` 的 `TransformersBackend` 是 bnb 4-bit 基座 + `PeftModel`
+**未 merge** + HF `generate` 逐 episode 串行，全仓没有 `merge_and_unload`、
+没有 vLLM/SGLang、没有 `torch.compile`。
+
+**对照实验已完成（dev 60 条，不是发布判定）**，详见
+[`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)：把本 adapter 在 bf16 下
+合并回基座、再按同一份生成参数量化回 NF4，
+
+| | 未合并 | 合并版 |
+|---|---|---|
+| dev `task_success` | 60/60 | **60/60**（能力未损伤） |
+| `average_tool_calls` | 1.5000 | **1.5000**（行为一致） |
+| 单次调用耗时 | 3063.9 ms | **1653.7 ms（−46%）** |
+| 输出吞吐 | 28.38 tok/s | **50.74 tok/s**（略高于基座 48.89） |
+
+**但本卡不声称"merge 之后就能过门禁"**，有四条硬限制：
+(1) 那是 **dev**，不是封存 holdout，且 dev 已被用于选出本候选；
+(2) 旧 v1.0 口径下合并版在 dev 上的 `p95_latency_ratio` 仍是 **1.3130 > 1.25**，
+    仍然失败；
+(3) v1.1 下 `latency_per_success_ratio` = 1.2498 对阈值 1.25，**只差 0.0002**，是擦边
+    而不是稳健通过；
+(4) 同一个 adapter 的延迟比值在 dev 是 2.30、在 holdout 是 1.88，**dev 数不能外推**。
+
+真正的判定需要**第三次**封存 holdout 观测（base + candidate 两侧完整重跑），
+属用户单独决策门，尚未进行。
 
 ## 6. 已知限度（引用本卡时必须一并引用）
 

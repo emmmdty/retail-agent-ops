@@ -88,7 +88,11 @@ p95 比值仅 1.087。
 2. **两次结果都不得反馈进开发**：不得进入训练、调参、checkpoint 选择或 prompt/parser 修改。
 3. **`p95_latency_ratio` 的口径是部署形态而非模型能力**。观测 2 的候选在任务指标上满分，
    被自己的部署实现（未 merge 的 LoRA + 逐 episode 串行 HF `generate`）挡在门外。
-   merge 后重测尚未进行。
+   **merge 后的对照已于 2026-08-15 在 dev 上完成**（见
+   [`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)）：同一份行为下单次调用
+   耗时 −46%、吞吐回到基座水平以上，任务指标 60/60 未损伤。**但那是 dev 不是 holdout**，
+   且旧 v1.0 口径下合并版在 dev 上仍然失败（p95 比值 1.3130 > 1.25）。
+   任何新的发布判定都需要**第三次**封存 holdout 观测，属用户单独决策门。
 
 ## 变更规则
 
