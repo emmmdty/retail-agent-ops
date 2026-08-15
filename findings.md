@@ -1191,3 +1191,19 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
   不是"延迟问题已解决"。
 - **本次观测消耗了三次运行**。合并版探针只为测部署形态，但它同样产出任务指标、
   同样读了 holdout，因此如实计入消耗，不做"只算延迟不算观测"的记账。
+
+## vLLM 第四档的环境约束（2026-08-16，gpu-5090）
+
+- **vLLM 必须装在独立 venv**：`uv_lock_sha256` 在 `SEALED_PAIRING_FIELDS` 内，装进项目
+  环境会让全部已有 sealed 证据不可配对。因此它的读数是**旁证**，不产出 run evidence、
+  不进任何发布判定。已核实：安装后项目仓库 `git status` 干净。
+- **vLLM 0.27.1 需要 Python ≥ 3.12**：3.11 下 `flashinfer/comm/fd_exchange.py` 在模块级
+  用了 `array.array[int]` 注解，而 `array.array` 从 3.12 起才可下标，
+  引擎在 `load_model` 阶段以 `TypeError: type 'array.array' is not subscriptable` 崩溃。
+  换 3.12 后 `vllm 0.27.1 / torch 2.13.0+cu130` 正常导入。
+  这条与项目本身的 Python 3.11 约束**不冲突**——正因为它在独立 venv 里。
+- **基准提示词只用 R1 qualification 的 12 条公开 fixture**（token 数 420–435，
+  与真实评测同量级）。不用 holdout/dev 请求：那些是评测输入，复制进临时基准文件会绕开
+  公开/私有边界的全部治理。
+- **共享卡上的礼貌**：`gpu_memory_utilization=0.35`（约 11 GB）而不是默认 0.9。
+  这会限制 KV cache 从而影响批量吞吐的绝对值——报告时必须带上这个参数。
