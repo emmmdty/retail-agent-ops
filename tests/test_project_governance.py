@@ -759,6 +759,7 @@ _R45_CONFIG_NAMES = (
     "retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml",
     "retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml",
     "retail_ops/release/retail_ops_v1_r45_formal_release_v11.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45_merged_dev_base.yaml",
 )
 
 
@@ -807,6 +808,27 @@ def test_every_qualification_config_declares_the_perturbation_switch() -> None:
         parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "perturb_schema" in parsed, f"{path.name}: 缺少 perturb_schema"
         assert isinstance(parsed["perturb_schema"], bool), path.name
+
+
+def test_merged_model_config_declares_a_derived_revision_not_an_upstream_one() -> None:
+    """合并产物不得冒充上游 pin。
+
+    它的 `revision` 是由「基座 revision + adapter 逐文件哈希」派生的内容标识，
+    `repo` 用 `local/` 前缀表明它不来自任何 Hub 仓库。把基座的 revision 直接抄过来
+    会让"这个权重是官方发布的那一份"变成一句假话。
+    """
+    import yaml
+
+    parsed = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r45_merged_dev_base.yaml")
+    )
+    model = parsed["model"]
+
+    assert model["repo"].startswith("local/")
+    assert model["revision"] != "8cd0101f70cac4f1efcebc979faf483558e39297"
+    assert len(model["revision"]) == 64
+    assert parsed["pipeline"] == "formal_dev_base", "合并后已无 adapter，必须走 base 通道"
+    assert "adapter" not in parsed
 
 
 def test_release_configs_declare_their_gate_schema_version() -> None:
