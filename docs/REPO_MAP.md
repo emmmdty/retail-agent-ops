@@ -23,7 +23,7 @@
 | `domains/retail_ops/v2/` | 活动 | 领域 bundle v2：政策规则**可执行**、`refund_order` 增必填 `idempotency_key`。见 [`DOMAIN_BUNDLE_V2.md`](./DOMAIN_BUNDLE_V2.md)。正式数据集轨道仍只接受 v1 |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
-| `tests/` | 活动 | 842 项测试，含治理契约测试 |
+| `tests/` | 活动 | 885 项测试，含治理契约测试 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
@@ -55,9 +55,9 @@ src/veritool_rl/
 │   ├── generators.py       #   Oracle 成功轨迹生成与 SFT 数据转换
 │   └── reporting.py        #   报告渲染
 ├── retail_ops/             # RetailOps 领域，按四接口分层
-│   ├── domain/             #   领域事实来源：bundle, tasks, policies, policy_rules, policy_card, environment, formal_tasks
-│   ├── build/              #   数据侧：manifests, formal_manifests, teacher_*, dev_sft_export
-│   ├── evaluate/           #   评测侧：evaluation, base_/candidate_/sealed_evaluation
+│   ├── domain/             #   领域事实来源：bundle, tasks, ood_tasks, policies, policy_rules, policy_card, environment, formal_tasks
+│   ├── build/              #   数据侧：manifests, formal_manifests, ood_manifests, teacher_*, dev_sft_export
+│   ├── evaluate/           #   评测侧：evaluation, base_/candidate_/sealed_/ood_evaluation
 │   ├── release/            #   决策侧：release(R1), formal_release(holdout), governance, formal_governance
 │   └── serve/              #   服务侧：service（R1 规则策略 + formal 真实模型两条通道）
 ├── training/sft.py         # 单卡 QLoRA-SFT
@@ -93,6 +93,17 @@ src/veritool_rl/
 集合）与 v1.1（拆分延迟门禁 + 配对统计检验）分开，两个 report 模型按各自
 `schema_version` 断言集合与顺序。就地增删 `GATE_IDS` 会让磁盘上全部已有 release 报告
 无法加载，因此新口径只能走版本化路径；有测试断言旧报告仍能被加载。
+
+**sealed 证据契约同样已版本化**（v1.1）：`SEALED_HASHED_FIELDS` 按 schema 版本投影
+自哈希输入，使"新增字段"与"作废旧证据"解耦——磁盘上七份 v1.0 sealed 报告的
+`report_id` 复算后逐位不变。v1.1 新增 `deployment_form` 与 `merged_from`，让**合并
+部署形态**的候选可以进配对：它靠**可复算的血统**（`merged_revision` 由基座 revision
+与 adapter 逐文件哈希导出）而不是同一性与 base 配对。
+
+**分布外任务集**（`retail_ops_ood_v1_20260815`，60 条）走完全独立的
+build/evaluate 路径：它公开、可反复读、不封存，治理级别与封存 holdout 不同。
+读数见 [`OOD_EVALUATION.md`](./OOD_EVALUATION.md)——**引用第四次那个 GO 时必须
+同时给出它**。
 
 `serve` 的 formal 通道在 2026-08-15 从演示夹具补成服务：`POST /v1/chat` 自由请求、
 `/v1` 全面 Bearer 鉴权（key 只从环境变量读）、请求级 trace_id 与结构化 JSON 日志
