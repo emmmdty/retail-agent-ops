@@ -1,4 +1,4 @@
-# 简历证据（R4 收官：两次 holdout 观测均已消耗）
+# 简历证据（R4.5 收口；holdout 观测次数以 `HOLDOUT_LEDGER.md` 为准）
 
 本文件是简历与面试表述的**唯一取数口径**。规则来自 `docs/CAREER_CONTEXT.md`：
 只写实际运行得到的数字；不写 SOTA；不把内部固定子集说成官方榜单；
@@ -21,7 +21,7 @@
 | QLoRA 训练（attention-only） | 单卡 3 epoch / 75 steps，**212 s**，峰值 **5.55 GB**，adapter **23.6 MB** | `reports/…/r4/sft-004/metrics.json` |
 | QLoRA 训练（全 linear layer） | 同超参，**223 s**，峰值 **5.64 GB**，adapter **66 MB** | `reports/…/r4/sft-003/metrics.json` |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **698** tests passed；Ruff / mypy(65 源文件) / `uv lock --check` / `git diff --check` 全绿 | 每次收口均重跑 |
+| 工程基线 | **844** tests passed；Ruff / mypy(65 源文件) / `uv lock --check` / `git diff --check` 全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -71,7 +71,7 @@ LOG-20260814-01/02/03。
 | **"容量决定训练效果的符号"是一般规律** | **跨规模验证证伪**：1.7B 上 attention-only 是强正作用（44→58）、全 linear 几乎无增益，方向与 4B 相反 | LOG-20260814-05 |
 | **"一句 prompt 解决大半"可跨规模引用** | 新 prompt 对 4B 有效（elig 5/10→9/10），对 1.7B **完全无效**（0/10）——该结论只在 4B 规模成立 | LOG-20260814-05 |
 
-### 1.5 封存 holdout：两次观测与两次发布判定
+### 1.5 封存 holdout：三次观测，三次判定全部 NO-GO
 
 > 观测次数、逐次读数与判定的**唯一事实源**是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
 > 本节是面向面试的摘录；两者出现分歧时以台账为准。
@@ -126,7 +126,14 @@ LOG-20260814-01/02/03。
 换来 task_success +14.2pp（120/120 满分、三项安全指标清零），代价是 p95 延迟接近翻倍，
 发布门禁据此拒绝上线。
 
-**两次观测均已消耗，封存 holdout 不再有"未观测"状态。**
+**三次观测均已消耗，封存 holdout 不再有"未观测"状态。**
+
+**第三次观测（2026-08-15，R4.5 代码冻结后）**：任务指标与第二次**逐位相同**，
+两套门禁口径都仍是 `NO-GO`。同时把候选的 LoRA 合并回基座后重测——同样 120/120、
+调用次数一模一样，单次调用 2946.5 → **1717.7 ms**、p95 比值 2.0250 → **1.2141**。
+**但那不是发布判定**：封存判定的契约要求 candidate = 同一基座 + adapter，合并版
+结构上无法作为候选。余量只剩 1–3%，而 base 侧 p95 在观测间有 9% 波动。
+详见 [`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md) 与 LOG-20260815-03。
 
 ## 2. 明确不可写的表述
 

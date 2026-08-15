@@ -988,3 +988,46 @@ def test_release_configs_declare_their_gate_schema_version() -> None:
         if parsed.get("pipeline") != "formal_release":
             continue
         assert parsed["gate_schema_version"] in {"1.0", "1.1"}, path.name
+
+
+def test_no_active_doc_restates_a_stale_observation_count() -> None:
+    """观测次数只能出现在台账里。
+
+    P2-11 的根因不是"有人忘了改"，而是同一个数字散落在多个文件里。第三次观测之后
+    立刻又冒出四处"两次观测"——证明只靠人工同步是不行的。这条测试把次数表述本身
+    变成受控字符串：活动文档要么引用台账，要么只说"三次"。
+
+    `docs/PROJECT_LOG.md` 与 `docs/archive/`、`docs/handoffs/` 不在此列——它们记录的是
+    当时的事实，按 append-only 协议不得改写。
+    """
+    # 只拦"把总数说成两次"的表述。"前两次观测"这类**相对**指代是合法的——
+    # 它描述的是历史上的某两次，不是当前总数。
+    stale = (
+        "两次观测均已消耗",
+        "已消耗两次观测",
+        "已消耗 **2 次**观测",
+        "封存 holdout 的两次观测",
+        "首次也是",
+        "唯一一次观测",
+    )
+    checked = [
+        "README.md",
+        "SPEC.md",
+        "docs/SYSTEM_CARD.md",
+        "docs/MODEL_CARD.md",
+        "docs/MODEL_CARD_sft-006.md",
+        "docs/DEMO.md",
+        "docs/RESUME_EVIDENCE.md",
+        "docs/REPO_MAP.md",
+        "docs/SERVING_FORM_COMPARISON.md",
+        "docs/AGENT_LOOP.md",
+        "docs/DOMAIN_BUNDLE_V2.md",
+    ]
+    for name in checked:
+        text = _read(name)
+        for phrase in stale:
+            assert phrase not in text, f"{name}: 过期的观测次数表述 {phrase!r}"
+
+    ledger = _read("docs/HOLDOUT_LEDGER.md")
+    assert "已消耗观测 | **3 次**" in ledger
+    assert "LOG-20260815-03" in ledger

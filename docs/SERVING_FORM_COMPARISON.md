@@ -15,7 +15,7 @@ HF `generate` 逐 episode 串行；全仓无 `merge_and_unload`、无 vLLM/SGLan
 `torch.compile`。未合并的 LoRA 每层多两次低秩矩阵乘并走一遍 4bit 反量化路径，
 是**纯实现开销，与模型能力无关**。
 
-`docs/GATE_SCHEMA_V11_RECOMPUTE.md` 已把两次观测的失败精确隔离到这一项：
+`docs/GATE_SCHEMA_V11_RECOMPUTE.md` 已把前两次观测的失败精确隔离到这一项：
 `steps_to_success_ratio` 0.9841 < 1（候选每成功一条任务的调用数比基座**更少**），
 而 `per_call_latency_ratio` 1.9852。**归因之后，那个显而易见的动作一直没有人做。**
 

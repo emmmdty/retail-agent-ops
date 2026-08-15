@@ -108,8 +108,9 @@ episode 超时结构化降级。并发上限仍是 1 且保留 503 语义。
 holdout 的 base/candidate 背靠背评测、首个 formal 发布判定（**NO-GO / baseline**）
 与按该判定回滚基座的服务演示（LOG-20260811-03、-04）；2026-08-14 完成第二次完整观测
 与第二次判定（同样 **NO-GO / baseline**，候选 120/120 但 `p95_latency_ratio`
-1.8774 > 1.25，LOG-20260814-04）。**封存 holdout 的两次观测均已消耗，不再有"未观测"
-状态**；结果不得反馈进开发、调参、prompt/parser 或 checkpoint 选择，任何新判定都是第三次。
+1.8774 > 1.25，LOG-20260814-04）；2026-08-15 完成第三次观测与第三次判定（同样
+**NO-GO / baseline**，LOG-20260815-03）。**不再有"未观测"状态**；结果不得反馈进开发、
+调参、prompt/parser 或 checkpoint 选择。
 逐次读数与判定的唯一事实源是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
 
 **配对可比性的连带约束**（R4 起必须知道）：`code_commit`、`uv_lock_sha256`、

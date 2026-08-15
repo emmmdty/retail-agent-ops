@@ -80,7 +80,7 @@ qualification 轨道走**完全相同的代码路径**，只是策略是确定�
 
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
-.venv/bin/pytest -q          # 期望 698 passed
+.venv/bin/pytest -q          # 期望 844 passed
 
 R=reports/retail_ops/v1/demo
 .venv/bin/retail-agent-ops build    --config configs/retail_ops/build/retail_ops_v1_build.yaml \
