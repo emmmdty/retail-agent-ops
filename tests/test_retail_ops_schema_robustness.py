@@ -148,6 +148,7 @@ def test_evaluation_records_whether_the_schema_was_perturbed(tmp_path: Path) -> 
         "parser_id": "hermes-single-call-v1",
         "budget": {"max_steps": 5},
         "perturb_schema": True,
+        "guardrail": False,
     }
 
     evidence = evaluate_retail_ops(

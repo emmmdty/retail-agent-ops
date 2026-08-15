@@ -27,7 +27,9 @@ class TaskManifest(StrictModel):
 
     schema_version: Literal["1.0"] = "1.0"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0"] = "1.0.0"
+    #: qualification 轨道同时服务 v1 与 v2 bundle；正式数据集轨道仍然只接受 v1
+    #: （`formal_manifests` 显式拒绝其它版本）。
+    bundle_version: Literal["1.0.0", "2.0.0"] = "1.0.0"
     bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     split: Literal["train", "dev", "qualification", "holdout"]
     seed: int
@@ -76,11 +78,22 @@ def _task_digest(task: TaskSpec) -> str:
 
 
 def build_qualification(
-    bundle_dir: Path, seed: int, output_dir: Path
+    bundle_dir: Path,
+    seed: int,
+    output_dir: Path,
+    *,
+    inject: bool = False,
 ) -> TaskManifest:
-    """从冻结 bundle 构建十二条 qualification 任务与不可变 manifest。"""
+    """从冻结 bundle 构建十二条 qualification 任务与不可变 manifest。
+
+    幂等键是否出现在 gold 调用里，由 **bundle 的 `refund_order` schema** 决定而不是
+    由调用方声明：schema 与 gold 序列各说各话是最难查的一类不一致。
+    `inject` 则必须显式声明——注入变体是独立评测子集，不是默认行为。
+    """
     bundle = load_bundle(bundle_dir)
-    tasks = build_qualification_tasks(seed)
+    refund = next(tool for tool in bundle.tools if tool.name == "refund_order")
+    idempotency = "idempotency_key" in refund.parameters.get("required", [])
+    tasks = build_qualification_tasks(seed, idempotency=idempotency, inject=inject)
     category_counts, task_ids, family_ids = _validate_qualification_tasks(tasks, bundle)
 
     create_output_dir(output_dir)

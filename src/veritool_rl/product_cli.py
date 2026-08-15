@@ -189,13 +189,16 @@ def _run_build(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     pipeline = config.get("pipeline")
     if pipeline is None:
-        _require_config_keys(config, {"bundle_dir", "split"})
+        _require_config_keys(config, {"bundle_dir", "split", "inject"})
         if args.input_dir is not None:
             raise ValueError("R1 build（无 pipeline 字段）不接受 --input_dir")
         if config["split"] != "qualification":
             raise ValueError("R1 build 只允许 qualification split")
+        inject = config["inject"]
+        if not isinstance(inject, bool):
+            raise ValueError("inject 必须是 bool")
         bundle_dir = _bundle_dir(config)
-        build_qualification(bundle_dir, args.seed, args.output_dir)
+        build_qualification(bundle_dir, args.seed, args.output_dir, inject=inject)
         return
     if pipeline == "formal_freeze":
         _run_formal_freeze(args, config)
@@ -225,6 +228,7 @@ def _run_evaluate(args: argparse.Namespace) -> None:
                 "parser_id",
                 "budget",
                 "perturb_schema",
+                "guardrail",
             },
         )
         bundle_dir = _bundle_dir(config)

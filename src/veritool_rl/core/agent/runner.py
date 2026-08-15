@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from veritool_rl.core.agent.guardrail import Guardrail, blocked_observation
 from veritool_rl.core.agent.policy import Policy
 from veritool_rl.core.envs.base import ToolEnv
 from veritool_rl.core.rewards.verifier import compute_reward_breakdown
@@ -41,12 +42,26 @@ def run_episode(
     env_factory: EnvFactory,
     policy: Policy,
     seed: int,
+    *,
+    system_prompt: str | None = None,
+    guardrail: Guardrail | None = None,
 ) -> Trajectory:
-    """运行单个任务，模型级错误记录在轨迹中而不传播到整批评测。"""
+    """运行单个任务，模型级错误记录在轨迹中而不传播到整批评测。
+
+    两个新参数都**默认关闭**，不传时行为与 2026-08-15 之前逐字节相同——
+    全部已产出的评测证据都依赖这一点。
+
+    - `system_prompt`：`None` 表示用模块级常量。v2 起由 bundle 渲染政策卡传入，
+      使模型**读**政策而不是**记**政策。
+    - `guardrail`：与环境政策校验**分层独立**的第二道防线，见
+      `core/agent/guardrail.py`。它在调用触达环境之前校验，在观测进入 `messages`
+      之前消毒。
+    """
     env = env_factory(task)
     tools = env.list_tools()
+    prompt = SYSTEM_PROMPT if system_prompt is None else system_prompt
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": task.user_request},
     ]
     steps: list[Step] = []
@@ -72,7 +87,20 @@ def run_episode(
                 ]
             )
         elif output.tool_call is not None:
-            observation = env.execute_tool(output.tool_call.name, output.tool_call.arguments)
+            blocked = (
+                None if guardrail is None else guardrail.check_call(output.tool_call, tools)
+            )
+            if blocked is not None:
+                # 拦截产生结构化观测而不是静默丢弃：静默会让模型以为工具执行了，
+                # 也会让失败 taxonomy 少掉一整类。
+                observation = blocked_observation(blocked)
+            else:
+                observation = env.execute_tool(
+                    output.tool_call.name, output.tool_call.arguments
+                )
+                if guardrail is not None:
+                    guardrail.observe(output.tool_call, observation)
+                    observation = guardrail.sanitize(observation)
             call_id = output.tool_call.call_id or f"call_{index}"
             messages.append(
                 {
@@ -148,7 +176,7 @@ def run_episode(
         metadata={
             "policy": policy.name,
             "seed": seed,
-            "system_prompt": SYSTEM_PROMPT,
+            "system_prompt": prompt,
             "tools": [tool.to_transformers() for tool in tools],
         },
     )

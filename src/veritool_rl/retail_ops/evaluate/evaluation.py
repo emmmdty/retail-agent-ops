@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
+from veritool_rl.core.agent.guardrail import RetailOpsGuardrail
 from veritool_rl.core.agent.runner import run_episode
 from veritool_rl.core.artifacts import (
     canonical_json,
@@ -33,6 +34,7 @@ from veritool_rl.retail_ops.build.manifests import (
 from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
 from veritool_rl.retail_ops.domain.policies import build_qualification_policy
+from veritool_rl.retail_ops.domain.policy_card import build_system_prompt
 
 _ARTIFACT_NAMES = (
     "config.yaml",
@@ -124,6 +126,13 @@ def evaluate_retail_ops(
     perturb_schema = config["perturb_schema"]
     if not isinstance(perturb_schema, bool):
         raise ValueError("perturb_schema 必须是 bool")
+    # guardrail 同样没有默认值：开不开第二道防线是评测条件的一部分，
+    # "忘了写"与"故意关掉"必须在配置层可分辨。
+    if "guardrail" not in config:
+        raise ValueError("配置必须显式声明 guardrail（bool）")
+    use_guardrail = config["guardrail"]
+    if not isinstance(use_guardrail, bool):
+        raise ValueError("guardrail 必须是 bool")
     validate_json_value(config)
 
     tasks_by_id = load_built_tasks(build_dir)
@@ -139,6 +148,14 @@ def evaluate_retail_ops(
             env.perturb_schema(seed)
         return env
 
+    # system prompt 由 bundle 渲染：v1 逐字节返回冻结常量，v2 起附政策卡，
+    # 使模型**读**政策而不是**记**政策。
+    system_prompt = build_system_prompt(bundle)
+
+    def make_guardrail() -> RetailOpsGuardrail:
+        """每条 episode 一个新实例：guardrail 持有会话级作用域，跨任务复用会串权。"""
+        return RetailOpsGuardrail.from_tools(bundle.tools)
+
     trajectories: list[Trajectory] = []
     for task in tasks:
         policy_task = (
@@ -152,10 +169,14 @@ def evaluate_retail_ops(
                 make_env,
                 build_qualification_policy(policy_type, policy_task),
                 seed,
+                system_prompt=system_prompt,
+                guardrail=make_guardrail() if use_guardrail else None,
             )
         )
     replayed = sum(
-        replay_trajectory(trajectory, make_env).matched
+        replay_trajectory(
+            trajectory, make_env, make_guardrail if use_guardrail else None
+        ).matched
         for trajectory in trajectories
     )
     if [trajectory.task.task_id for trajectory in trajectories] != manifest.task_ids:
@@ -166,6 +187,7 @@ def evaluate_retail_ops(
         raise ValueError("bootstrap_samples 必须是整数")
     metrics = compute_metrics(trajectories, bootstrap_samples, seed)
     metrics["schema_perturbed"] = perturb_schema
+    metrics["guardrail_enabled"] = use_guardrail
     metrics["replayable_count"] = replayed
     metrics["replayable_rate"] = replayed / manifest.task_count
     evidence_complete = len(trajectories) == manifest.task_count == replayed and all(

@@ -69,7 +69,7 @@ def test_build_cli_writes_manifest_and_rejects_absolute_config_path(
     assert (tmp_path / "build/manifest.json").is_file()
 
     bad_config = tmp_path / "bad.yaml"
-    bad_config.write_text("bundle_dir: /tmp/retail-ops\nsplit: qualification\n")
+    bad_config.write_text("bundle_dir: /tmp/retail-ops\nsplit: qualification\ninject: false\n")
     with pytest.raises(ValueError, match="bundle_dir 必须是项目相对路径"):
         main(
             [

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from veritool_rl.core.agent.guardrail import Guardrail, blocked_observation
 from veritool_rl.core.envs.base import ToolEnv
 from veritool_rl.core.rewards.verifier import compute_reward_breakdown
 from veritool_rl.core.trajectory.schema import (
@@ -30,13 +31,32 @@ class ReplayResult(StrictModel):
 def replay_trajectory(
     trajectory: Trajectory,
     env_factory: Callable[[TaskSpec], ToolEnv],
+    guardrail_factory: Callable[[], Guardrail] | None = None,
 ) -> ReplayResult:
-    """重放工具调用并核对每个可验证字段。"""
+    """重放工具调用并核对每个可验证字段。
+
+    `guardrail_factory` 必须与产出该轨迹时**同一套** guardrail：guardrail 会消毒观测
+    内容，也会拦下调用，这两件事都写进了轨迹。用不带 guardrail 的环境去重放一条
+    带 guardrail 的轨迹必然不一致——那不是证据损坏，是重放条件没对齐。
+    每次重放构造一个新实例：guardrail 持有会话级作用域状态，复用会把上一次的授权带进来。
+    """
     env = env_factory(trajectory.task)
+    guardrail = None if guardrail_factory is None else guardrail_factory()
     for index, step in enumerate(trajectory.steps):
         _assert_equal(trajectory.task.task_id, index, "index", index, step.index)
         if step.tool_call is not None:
-            observation = env.execute_tool(step.tool_call.name, step.tool_call.arguments)
+            blocked = (
+                None
+                if guardrail is None
+                else guardrail.check_call(step.tool_call, env.list_tools())
+            )
+            if blocked is not None:
+                observation = blocked_observation(blocked)
+            else:
+                observation = env.execute_tool(step.tool_call.name, step.tool_call.arguments)
+                if guardrail is not None:
+                    guardrail.observe(step.tool_call, observation)
+                    observation = guardrail.sanitize(observation)
         elif step.parse_error is not None:
             observation = Observation(
                 ok=False,

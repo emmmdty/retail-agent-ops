@@ -1,0 +1,2 @@
+# v2 qualification 基线任务集（无注入），作为注入变体的对照。
+inject: false

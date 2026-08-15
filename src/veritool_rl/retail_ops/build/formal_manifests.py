@@ -394,6 +394,11 @@ def _write_staged_task_set(
         public_output_dir / "holdout-receipt.json",
         split_evidence[FormalSplit.HOLDOUT].model_dump(mode="json"),
     )
+    # 正式数据集轨道是 v1 专属的：`_require_formal_contract` 已拒绝其它 bundle 版本，
+    # 这里把那条运行期保证收窄成类型事实。v2 的任务集必须作为**独立 dataset artifact**
+    # 存在（自己的 version、自己的 manifest），不能挂在这份冻结 receipt 下。
+    if bundle.bundle.bundle_version != "1.0.0":
+        raise ValueError("正式数据集 receipt 只接受 v1 bundle")
     receipt = FormalDatasetReceipt(
         dataset_version="retail_ops_v1_r2_20260722",
         generator_id="family_sha256_v1",

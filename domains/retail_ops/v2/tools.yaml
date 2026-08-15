@@ -1,0 +1,54 @@
+# RetailOps v2 工具 schema。
+#
+# 相对 v1 的唯一变化：refund_order 增加必填 idempotency_key。
+#
+# 为什么必填而不是可选：refund_recovery 场景整个就是"瞬时失败后重试"，而 v1 的去重
+# 只靠环境内部的 refund_status——客户端重试与"再退一次"在协议层无法区分。可选参数
+# 会让这个缺口继续存在于"模型忘了传"的那条路径上，而那恰好是最需要它的路径。
+schema_version: "2.0"
+tools:
+  - name: get_order
+    description: 查询订单详情与当前状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: refund_order
+    description: 为符合政策的订单办理退款；调用前必须先查询订单。重试时必须复用同一个 idempotency_key。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - damaged
+            - wrong_item
+            - not_as_described
+            - changed_mind
+          description: 退款原因
+        idempotency_key:
+          type: string
+          description: 幂等键；同一笔退款的重试必须复用同一个值，换新值会被判为重复退款
+      required:
+        - order_id
+        - reason
+        - idempotency_key
+      additionalProperties: false
+  - name: get_store_hours
+    description: 查询指定城市门店营业时间，与订单操作无关。
+    parameters:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+      additionalProperties: false

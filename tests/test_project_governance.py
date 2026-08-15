@@ -760,6 +760,10 @@ _R45_CONFIG_NAMES = (
     "retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml",
     "retail_ops/release/retail_ops_v1_r45_formal_release_v11.yaml",
     "retail_ops/evaluate/retail_ops_v1_r45_merged_dev_base.yaml",
+    "retail_ops/build/retail_ops_v2_build.yaml",
+    "retail_ops/build/retail_ops_v2_build_injected.yaml",
+    "retail_ops/evaluate/retail_ops_v2_injection_unguarded.yaml",
+    "retail_ops/evaluate/retail_ops_v2_injection_guarded.yaml",
 )
 
 
@@ -808,6 +812,69 @@ def test_every_qualification_config_declares_the_perturbation_switch() -> None:
         parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "perturb_schema" in parsed, f"{path.name}: 缺少 perturb_schema"
         assert isinstance(parsed["perturb_schema"], bool), path.name
+
+
+def test_v1_domain_bundle_is_byte_identical_to_the_frozen_evidence() -> None:
+    """v1 的四份文件在 `bundle_sha256` 的分量里，而它同时在 dev 与 sealed 的配对字段内。
+
+    v2 的存在不得以"顺手改一下 v1"为代价——那会让全部已有证据不可配对。
+    """
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+
+    assert (
+        load_bundle(ROOT / "domains/retail_ops/v1").bundle_sha256
+        == "8c158a3068731e7015adfde790f9917ddb924fcd5243195a9640c833cca20eeb"
+    )
+
+
+def test_v2_externalises_the_policy_while_v1_keeps_the_frozen_names() -> None:
+    """P0-2 的结构性判据：v2 的 rules 必须是可执行规则，v1 必须仍是六个冻结名字。"""
+    import yaml
+
+    v1 = yaml.safe_load(_read("domains/retail_ops/v1/policies.yaml"))
+    v2 = yaml.safe_load(_read("domains/retail_ops/v2/policies.yaml"))
+
+    assert all(isinstance(rule, str) for rule in v1["rules"])
+    assert all(isinstance(rule, dict) for rule in v2["rules"])
+    for rule in v2["rules"]:
+        assert set(rule) == {"id", "violation", "error", "when"}, rule["id"]
+    v2_tools = yaml.safe_load(_read("domains/retail_ops/v2/tools.yaml"))
+    refund = next(tool for tool in v2_tools["tools"] if tool["name"] == "refund_order")
+    assert "idempotency_key" in refund["parameters"]["required"]
+
+
+def test_v2_release_thresholds_equal_v1() -> None:
+    """新 bundle 版本不是下调门槛的借口：阈值必须逐值相同。"""
+    import yaml
+
+    v1 = yaml.safe_load(_read("domains/retail_ops/v1/release.yaml"))
+    v2 = yaml.safe_load(_read("domains/retail_ops/v2/release.yaml"))
+
+    thresholds = (
+        "success_delta_min",
+        "critical_policy_violation_delta_max",
+        "invalid_call_count_max",
+        "p95_latency_ratio_max",
+        "require_complete_evidence",
+    )
+    assert {key: v1[key] for key in thresholds} == {key: v2[key] for key in thresholds}
+
+
+def test_injection_configs_differ_only_by_the_guardrail_switch() -> None:
+    import yaml
+
+    unguarded = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v2_injection_unguarded.yaml")
+    )
+    guarded = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v2_injection_guarded.yaml")
+    )
+
+    assert unguarded["guardrail"] is False
+    assert guarded["guardrail"] is True
+    assert {k: v for k, v in unguarded.items() if k != "guardrail"} == {
+        k: v for k, v in guarded.items() if k != "guardrail"
+    }
 
 
 def test_merged_model_config_declares_a_derived_revision_not_an_upstream_one() -> None:

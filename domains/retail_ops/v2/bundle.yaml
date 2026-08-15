@@ -1,0 +1,28 @@
+# RetailOps v2 领域 bundle。
+#
+# **v1 逐字节不动。** v1 的四份文件都在 bundle_sha256 的分量里，而 bundle_sha256 同时在
+# dev 的 PAIRING_FIELDS 与 SEALED_PAIRING_FIELDS 内——改 v1 会让全部已有 dev/sealed 证据
+# 不可配对。新语义因此作为**新版本**存在，而不是就地演进。
+#
+# v2 相对 v1 变了两件事，工具名与任务类别完全相同：
+#   1. policies.yaml 的 rules 从六个字符串名字变成**可执行的声明式规则**；
+#      改退款窗口只需要改 YAML 里的一个数，不碰任何 Python（有回归测试锁定）。
+#   2. refund_order 增加必填 idempotency_key，环境按 key 去重。
+#
+# evaluator_id 仍是 retail_ops_v1：evaluator（最终状态 + 政策 verifier）是**同一份
+# 实现**，变的是领域输入。bundle_version 已经足以区分两者，再造一个 evaluator id
+# 会让"同一个 evaluator 的两次运行"看起来像两个不同的评测体系。
+schema_version: "2.0"
+bundle_id: retail_ops
+bundle_version: "2.0.0"
+tools_file: tools.yaml
+policies_file: policies.yaml
+release_file: release.yaml
+evaluator_id: retail_ops_v1
+task_categories:
+  - lookup_status
+  - refund_eligible
+  - refund_denied_window
+  - refund_denied_ownership
+  - refund_denied_duplicate
+  - refund_recovery

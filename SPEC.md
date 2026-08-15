@@ -86,7 +86,13 @@ RetailAgentOps 将零售工具 Agent 的领域定义、轨迹数据、轻量后�
 ## 9. 可靠性与安全
 
 - 工具 schema、参数、状态变更和业务政策必须在执行前后校验。
+- 业务政策必须是**可执行的版本化输入**：改阈值不得需要改代码。自 bundle v2 起由
+  `domain/policy_rules.py` 的声明式规则驱动，并渲染成政策卡注入 prompt。
+- 工具观测进入模型上下文前必须经过与环境校验**分层独立**的 guardrail：调用前置
+  校验（allowlist、参数域、会话作用域）与观测内容消毒（间接 prompt injection）。
 - 外部 API 需要超时、重试上限、幂等和错误分类；不得无限重试。
+  自 bundle v2 起 `refund_order` 有必填 `idempotency_key`，重试上限由 `policies.yaml`
+  的 `max_transient_retries` 驱动（见 `docs/DOMAIN_BUNDLE_V2.md`）。
 - 日志和报告不得包含 API key、原始受限数据或带答案 holdout 样例。
 - 服务必须限制工具 allowlist、请求大小、并发和资源预算，并提供回滚到冻结 base 的路径。
 

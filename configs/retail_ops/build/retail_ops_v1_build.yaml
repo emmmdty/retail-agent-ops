@@ -1,2 +1,4 @@
 bundle_dir: domains/retail_ops/v1
 split: qualification
+# 间接 prompt injection 变体开关，没有默认值：注入变体是独立评测子集，不是默认行为。
+inject: false

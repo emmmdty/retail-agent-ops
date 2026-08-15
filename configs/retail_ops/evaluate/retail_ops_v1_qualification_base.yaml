@@ -9,3 +9,5 @@ budget:
 # "忘了写"与"故意不启用"必须在配置层可分辨。对照配置见
 # retail_ops_v1_qualification_schema_{clean,perturbed}.yaml。
 perturb_schema: false
+# 独立于环境的 guardrail 层开关，没有默认值：开不开第二道防线是评测条件的一部分。
+guardrail: false

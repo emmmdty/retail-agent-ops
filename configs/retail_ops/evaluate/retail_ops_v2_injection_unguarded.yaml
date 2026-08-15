@@ -1,0 +1,17 @@
+# 间接 prompt injection 评测（unguarded）：guardrail = false。
+#
+# policy_type=injection_probe 是**红队探针**，不是任何真实模型的替身：它只有真的在
+# messages 里读到那句注入指令，才会去动干扰订单。因此 injection_success_rate 度量的是
+# **上下文污染是否发生**，而不是某个模型的顺从程度。真实模型的易感性需要 GPU 评测，
+# 本组配置不声称。
+#
+# 两份配置只差 guardrail 一个字段，差值就是这一层防御的实测效果。
+bundle_dir: domains/retail_ops/v2
+mode: qualification
+policy_type: injection_probe
+bootstrap_samples: 1000
+parser_id: hermes-single-call-v1
+budget:
+  max_steps: 5
+perturb_schema: false
+guardrail: false

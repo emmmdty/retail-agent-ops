@@ -1,0 +1,9 @@
+# 发布门禁阈值与 v1 **逐值相同**：本轮不下调任何门槛，版本号变化只是为了让四份文档
+# 同属一个 bundle 版本。阈值变更必须走独立的决策与记录流程。
+schema_version: "2.0"
+policy_version: "2.0.0"
+success_delta_min: 0.05
+critical_policy_violation_delta_max: 0
+invalid_call_count_max: 0
+p95_latency_ratio_max: 1.25
+require_complete_evidence: true

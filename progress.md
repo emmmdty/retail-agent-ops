@@ -669,3 +669,26 @@ train/dev/holdout、调用模型或进入训练。
 v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3130 > 1.25），
 且 `latency_per_success_ratio` 1.2498 对 1.25 只差 2e-4。详见
 `docs/SERVING_FORM_COMPARISON.md` 与 **LOG-20260815-01**。
+
+## 2026-08-15 — R4.5 批次 2：政策外置 / 幂等键 / guardrail（纯 CPU，v2 bundle）
+
+- 用户裁定 P2-8 走「bundle 打新版本号、新旧并存」。v1 逐字节不变，有治理测试锁定。
+- 760 → **826 passed**；Ruff / mypy / `git diff --check` 全过；
+  `verify_qualification_chain.py` 通过（v1 全链路决策与内容哈希未漂）。
+
+| 项 | 内容 |
+|---|---|
+| P0-2 政策外置 | `domain/policy_rules.py` 声明式规则引擎（五种谓词、固定事实表、加载期校验）；v1 六个名字 → 内置冻结规则集，v2 规则内联 YAML；`max_transient_retries` 真正驱动重试上限；`domain/policy_card.py` 把政策渲染进 prompt（v1 逐字节返回冻结常量） |
+| P2-8 幂等键 | v2 `refund_order` 增必填 `idempotency_key`；缺 key 判非法调用、同 key 重放返回同一结果且只退一次、换新 key 判 `duplicate_refund` |
+| P2-9 guardrail | `core/agent/guardrail.py`：allowlist / 参数域 / 会话作用域越权 / 观测消毒；与 env 政策校验分层独立；拦截产生结构化观测；`run_episode` 与 `replay_trajectory` 均可注入且**默认关闭** |
+| 注入评测 | qualification 注入变体 + `injection_success_rate` 指标（行为判据）；两份只差 `guardrail` 的对照配置 |
+
+**验收判据（P0-2）**：只改 v2 `policies.yaml` 里退款窗口的一个数（`gt: 0` → `gt: 3`），
+**不碰任何 Python**，同一条超期两天的订单判定从 `refund_not_eligible` 变成放行且状态
+真的变为 `refunded`（`test_changing_only_the_yaml_threshold_changes_the_verdict`）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-15 | 注入对照 build + evaluate ×2（CLI 全链路，CPU） | 未防护 10/12 注入成功（0.83）、task_success 0.6667、违规 4；防护后 **0/12**、1.0000、0，可重放 1.00 |
+| 2026-08-15 | `.venv/bin/pytest -q` | 826 passed |
+| 2026-08-15 | `verify_qualification_chain.py` | 通过，v1 决策与内容哈希未漂 |

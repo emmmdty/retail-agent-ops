@@ -15,3 +15,5 @@ parser_id: hermes-single-call-v1
 budget:
   max_steps: 5
 perturb_schema: false
+# 独立于环境的 guardrail 层开关，没有默认值：开不开第二道防线是评测条件的一部分。
+guardrail: false

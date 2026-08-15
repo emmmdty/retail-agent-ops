@@ -1,0 +1,11 @@
+# v2 qualification 的**注入变体**：每条任务的主订单 status 字段里埋一句指令，
+# 点名一个同属调用方的干扰订单，要求为它退款。
+#
+# 干扰订单同属调用方，因此环境的归属规则拦不住它——注入成功与否只取决于那句话
+# 有没有进入模型上下文。这正是要度量的东西：`core/agent/runner.py` 把工具返回内容
+# **直接**塞进 messages（评审 P2-9）。
+#
+# 与 retail_ops_v2_build.yaml 只差 inject 一个字段。
+bundle_dir: domains/retail_ops/v2
+split: qualification
+inject: true

@@ -19,10 +19,11 @@
 | 目录 | 状态 | 职责 |
 |---|---|---|
 | `src/veritool_rl/` | 活动 | 全部实现代码（导入名保留，见第 5 节） |
-| `domains/retail_ops/v1/` | 活动 | 领域 bundle：工具 schema、业务政策、发布策略（版本化输入） |
+| `domains/retail_ops/v1/` | 活动（**冻结**） | 领域 bundle v1：工具 schema、业务政策、发布策略。四份文件都在 `bundle_sha256` 的分量里，而它同时在 dev 与 sealed 的配对字段内——**一个字节都不能改**，有测试锁定 |
+| `domains/retail_ops/v2/` | 活动 | 领域 bundle v2：政策规则**可执行**、`refund_order` 增必填 `idempotency_key`。见 [`DOMAIN_BUNDLE_V2.md`](./DOMAIN_BUNDLE_V2.md)。正式数据集轨道仍只接受 v1 |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
-| `tests/` | 活动 | 698 项测试，含治理契约测试 |
+| `tests/` | 活动 | 826 项测试，含治理契约测试 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
@@ -44,7 +45,7 @@ src/veritool_rl/
 ├── cli.py                  # 配置加载
 ├── core/                   # 跨领域基础设施，不含 RetailOps 业务语义
 │   ├── trajectory/         #   轨迹契约与可重放性（schema, replay）
-│   ├── agent/              #   执行层（policy, parser, runner, qwen backend）
+│   ├── agent/              #   执行层（policy, parser, runner, guardrail, qwen backend）
 │   ├── envs/               #   工具环境抽象与 MiniRetail 本地回归环境
 │   ├── rewards/            #   verifier
 │   ├── artifacts.py        #   canonical JSON、内容哈希、不可覆盖输出目录
@@ -53,7 +54,7 @@ src/veritool_rl/
 │   ├── generators.py       #   Oracle 成功轨迹生成与 SFT 数据转换
 │   └── reporting.py        #   报告渲染
 ├── retail_ops/             # RetailOps 领域，按四接口分层
-│   ├── domain/             #   领域事实来源：bundle, tasks, policies, environment, formal_tasks
+│   ├── domain/             #   领域事实来源：bundle, tasks, policies, policy_rules, policy_card, environment, formal_tasks
 │   ├── build/              #   数据侧：manifests, formal_manifests, teacher_*, dev_sft_export
 │   ├── evaluate/           #   评测侧：evaluation, base_/candidate_/sealed_evaluation
 │   ├── release/            #   决策侧：release(R1), formal_release(holdout), governance, formal_governance
@@ -69,8 +70,8 @@ src/veritool_rl/
 
 | 路径 | 消费命令 |
 |---|---|
-| `configs/retail_ops/build/` | `retail-agent-ops build`（含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
-| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate）。qualification 侧有一个**必填**键 `perturb_schema`：它改变评测条件（工具别名 + 参数顺序扰动），"忘了写"与"故意不启用"必须在配置层可分辨；`..._schema_{clean,perturbed}.yaml` 是只差这一个开关的对照 |
+| `configs/retail_ops/build/` | `retail-agent-ops build`（R1 qualification 有**必填**键 `inject`——间接 prompt injection 变体是独立评测子集而非默认行为；另含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
+| `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate）。qualification 侧有一个**必填**键 `perturb_schema`：它改变评测条件（工具别名 + 参数顺序扰动），"忘了写"与"故意不启用"必须在配置层可分辨；`..._schema_{clean,perturbed}.yaml` 是只差这一个开关的对照。另有必填键 `guardrail`：开不开独立于环境的第二道防线同样是评测条件，`retail_ops_v2_injection_{unguarded,guarded}.yaml` 是只差这一个开关的对照 |
 | `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release）。`formal_release` 有一个**必填**键 `gate_schema_version`（`"1.0"` / `"1.1"`）——"这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠"没写就是旧的" |
 | `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
 | `configs/examples/` | 模板 |

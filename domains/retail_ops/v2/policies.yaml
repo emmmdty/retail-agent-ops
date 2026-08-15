@@ -1,0 +1,40 @@
+# RetailOps v2 退款政策——**可执行的声明式规则**。
+#
+# v1 的 rules 是六个字符串名字，在 src/ 里零处引用；真正的语义硬编码在
+# domain/environment.py 的 if 链里。于是"退款窗口从 14 天改成 7 天"这种最普通的业务
+# 变更，答案是"改 Python + 重训模型"。这里把它变成"改这个文件里的一个数"。
+#
+# 规则按**声明顺序**求值，第一条命中的即判定；violation 由规则自己产生，不是代码里的
+# 字符串字面量。可用事实见 domain/policy_rules.REFUND_FACT_NAMES——引用不存在的事实
+# 会在**加载 bundle 时**失败，而不是运行时静默为假。
+#
+# 谓词只有 is / gt / gte / lt / lte 五种，故意不做通用表达式语言：在一条决定退款是否
+# 放行的路径上，"配置错误推迟到运行时"这个交换不划算。
+schema_version: "2.0"
+policy_version: "2.0.0"
+refund_reasons:
+  - damaged
+  - wrong_item
+  - not_as_described
+  - changed_mind
+# 瞬时故障的重试上限。**这个值真正驱动环境行为**：任务声明的注入次数会被它截断。
+max_transient_retries: 1
+rules:
+  - id: refund_requires_lookup
+    violation: refund_without_lookup
+    error: 退款前必须查询订单
+    when: {fact: order_was_read, is: false}
+  - id: customer_must_own_order
+    violation: unauthorized_order
+    error: 无权操作该订单
+    when: {fact: caller_owns_order, is: false}
+  # 退款窗口：已超期天数 > 0 即拒绝。把窗口从"到期即止"改成"宽限 3 天"，
+  # 只需要把下面的 0 改成 3——不需要碰任何 Python，有回归测试锁定这一点。
+  - id: refund_window_must_be_open
+    violation: refund_not_eligible
+    error: 订单已超过退款期限
+    when: {fact: days_past_deadline, gt: 0}
+  - id: duplicate_refund_forbidden
+    violation: duplicate_refund
+    error: 订单已经退款
+    when: {fact: already_refunded, is: true}
