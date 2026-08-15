@@ -1,0 +1,32 @@
+# R4.5 封存 holdout：**合并版 sft-006 的部署形态对照**。
+#
+# **这不是配对发布判定，也不能是。** 合并版没有 adapter、且是不同的 ModelArtifact，
+# `require_comparable_sealed_runs` 会（正确地）拒绝把它当作 candidate。它走
+# formal_holdout_base 通道，产出的是一份独立的 sealed 报告。
+#
+# 它要回答的只有一个问题：**同一份行为在合并部署形态下，延迟与吞吐是多少。**
+# 任务指标会一并产出（无法只测延迟不测任务），因此本次运行同样计入 holdout 的
+# 消耗——见 docs/HOLDOUT_LEDGER.md 的记账。
+#
+# dev 上的同一对照见 docs/SERVING_FORM_COMPARISON.md：单次调用 −46%、
+# 任务指标 60/60 未损伤。**dev 的比值不可外推 holdout**（同一 adapter 在 dev 是 2.30、
+# 在 holdout 是 1.88），这次运行就是为了把 holdout 上的那个数测出来。
+pipeline: formal_holdout_base
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-merged-003
+model:
+  repo: local/Qwen3-4B-sft-006-merged
+  revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
+  local_dir: Qwen3-4B-sft-006-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "fea64487d78d1ff578684b064e4cee6a4b05cbc41a53ef004853b522ecb3b499"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256

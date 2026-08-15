@@ -767,6 +767,9 @@ _R45_CONFIG_NAMES = (
     "retail_ops/build/retail_ops_v2_build_clarify.yaml",
     "retail_ops/evaluate/retail_ops_v2_clarify_singleturn.yaml",
     "retail_ops/evaluate/retail_ops_v2_clarify_multiturn.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45_holdout_base.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45_holdout_candidate.yaml",
+    "retail_ops/evaluate/retail_ops_v1_r45_holdout_merged.yaml",
 )
 
 
@@ -878,6 +881,53 @@ def test_injection_configs_differ_only_by_the_guardrail_switch() -> None:
     assert {k: v for k, v in unguarded.items() if k != "guardrail"} == {
         k: v for k, v in guarded.items() if k != "guardrail"
     }
+
+
+def test_third_observation_uses_fresh_attempt_ids_and_the_same_pins() -> None:
+    """第三次观测：不得复用前两次的 attempt_id，且模型/receipt/生成参数逐字段相同。
+
+    唯一允许变的是 attempt_id——其余任何差异都会让"这次与上次的差值来自哪里"变得
+    无法归因。
+    """
+    import yaml
+
+    root = ROOT / "configs/retail_ops/evaluate"
+    previous = yaml.safe_load(
+        (root / "retail_ops_v1_r4_holdout_base.yaml").read_text(encoding="utf-8")
+    )
+    current = yaml.safe_load(
+        (root / "retail_ops_v1_r45_holdout_base.yaml").read_text(encoding="utf-8")
+    )
+    cand_prev = yaml.safe_load(
+        (root / "retail_ops_v1_r4_holdout_candidate.yaml").read_text(encoding="utf-8")
+    )
+    cand_now = yaml.safe_load(
+        (root / "retail_ops_v1_r45_holdout_candidate.yaml").read_text(encoding="utf-8")
+    )
+
+    assert current["attempt_id"] == "qwen3-4b-holdout-base-003"
+    assert cand_now["attempt_id"] == "qwen3-4b-holdout-candidate-003"
+    assert current["attempt_id"] != previous["attempt_id"]
+    assert cand_now["attempt_id"] != cand_prev["attempt_id"]
+    for key in ("model", "generation", "dataset_version", "holdout_receipt_path", "bundle_dir"):
+        assert current[key] == previous[key], key
+        assert cand_now[key] == cand_prev[key], key
+    assert cand_now["adapter"] == cand_prev["adapter"], "候选必须仍是同一个 sft-006"
+    assert "adapter" not in current
+
+
+def test_the_merged_holdout_probe_is_not_a_paired_candidate() -> None:
+    """合并版走 base 通道且不带 adapter——它结构上不能进配对判定，配置必须体现这一点。"""
+    import yaml
+
+    merged = yaml.safe_load(
+        _read("configs/retail_ops/evaluate/retail_ops_v1_r45_holdout_merged.yaml")
+    )
+
+    assert merged["pipeline"] == "formal_holdout_base"
+    assert "adapter" not in merged
+    assert merged["model"]["repo"].startswith("local/")
+    assert merged["attempt_id"] == "qwen3-4b-holdout-merged-003"
 
 
 def test_clarify_configs_differ_only_by_the_simulator_switch() -> None:
