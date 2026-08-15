@@ -738,3 +738,16 @@ v1.1 门禁 **8/8 全过**，但**旧 v1.0 口径下仍失败**（p95 比值 1.3
 **六条限制与一处顺序披露**见 `docs/HOLDOUT_LEDGER.md` 观测 4 与 **LOG-20260815-04**。
 最重要的两条：这不是前三次被拒的那个候选（是同一权重的另一种部署形态）；
 SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自动门禁 GO"。
+
+## 2026-08-16 — R4.5：分布外评测（gpu-5090）
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-16 | `build --config …ood_v1_build.yaml` | 60 条，三类各 20，manifest `afc41351…` |
+| 2026-08-16 | `evaluate --config …ood_v1_base.yaml` | **13/60（0.2167）**，158.1 s |
+| 2026-08-16 | `evaluate --config …ood_v1_merged_candidate.yaml` | **35/60（0.5833）**，218.3 s |
+
+**同一个候选：封存 holdout 1.0000 → 分布外 0.5833。** 逐类别：`scenario_ood`
+0.00→0.75、`adversarial` 0.35→1.00、**`expression_ood` 0.30→0.00**（`code_switch`
+1.00→0.00）。候选在表达类的 20 条失败全部是 `premature_final_response`。
+详见 `docs/OOD_EVALUATION.md` 与 **LOG-20260816-01**。

@@ -1083,3 +1083,30 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
     assert "已消耗观测 | **4 次**" in ledger
     assert "LOG-20260815-03" in ledger
     assert "LOG-20260815-04" in ledger
+
+
+def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
+    """第四次的 GO 与分布外读数必须成对出现。
+
+    一个通过全部自动门禁的候选，在模板外的表达变化上是 0/20 且比零训练基座还差。
+    只讲 GO 不讲这个数就是误导——而"记得一起讲"靠人是靠不住的，所以做成测试。
+    """
+    for name in (
+        "README.md",
+        "docs/HOLDOUT_LEDGER.md",
+        "docs/MODEL_CARD_sft-006.md",
+        "docs/RESUME_EVIDENCE.md",
+    ):
+        text = _read(name)
+        if "GO" not in text:
+            continue
+        assert "OOD_EVALUATION.md" in text or "0.5833" in text, (
+            f"{name}: 提到 GO 就必须同时给出分布外读数"
+        )
+
+    ood = _read("docs/OOD_EVALUATION.md")
+    for expected in ("0.5833", "0.2167", "expression_ood", "code_switch", "LOG-20260816-01"):
+        assert expected in ood, expected
+    # 边界必须写在文档里，不能只在提交信息里
+    assert "作者手写" in ood
+    assert "不封存" in ood

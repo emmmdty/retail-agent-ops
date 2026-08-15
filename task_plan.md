@@ -138,7 +138,8 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
       - [x] 15d `FormalReleaseReport` 与 `serve` 支持 merged 候选（GO 时加载合并权重）
       - [x] 15e 用第三次观测的已有证据产出**第四次判定**（不消耗新观测）
 - [ ] 16. **merged + vLLM 吞吐档**（独立 venv，不动 `uv.lock`——它在配对字段里）
-- [ ] 17. **P0-1 分布外 holdout**：独立 dataset artifact，三类（表达/场景/对抗）
+- [x] 17. **P0-1 分布外任务集已建成并跑完**（`docs/OOD_EVALUATION.md`、LOG-20260816-01）：
+      候选 1.0000 → **0.5833**；表达类 **0.00**（base 0.30），场景/对抗类大幅变好。
 
 ### 尚未做的（需要新的裁定）
 
@@ -159,7 +160,7 @@ GPU **否**、商业 API **否**、模型下载 **否**、holdout 执行 **否**
 
 ### 当前基线
 
-698 passed → **874 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
+698 passed → **884 passed**；Ruff / mypy / `uv lock --check` / `git diff --check` 全过；
 `scripts/ci/verify_qualification_chain.py` 通过。
 
 ## Task Rules
