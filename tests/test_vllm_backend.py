@@ -301,3 +301,40 @@ def test_the_engine_also_selects_the_hardware_provider(monkeypatch: pytest.Monke
 
     assert isinstance(cli._hardware_provider_for_engine("vllm"), NvmlHardwareProvider)
     assert isinstance(cli._hardware_provider_for_engine("transformers"), CudaHardwareProvider)
+
+
+def test_the_dev_base_channel_also_honours_the_engine_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回归测试：`--engine` 最初只接进了 OOD 通道，dev 通道**静默**回落到 transformers。
+
+    静默回落最坏：产出的证据看起来完全正常，却根本不是那个引擎跑出来的。
+    """
+    import veritool_rl.product_cli as cli
+    from veritool_rl.core.agent.vllm_backend import VllmBackend
+    from veritool_rl.retail_ops.evaluate.base_evaluation import (
+        BaseEvaluationConfig,
+        ModelArtifact,
+    )
+
+    _install_fake_vllm(monkeypatch, {})
+    models_root = tmp_path / "models"
+    (models_root / "Qwen3-4B-merged").mkdir(parents=True)
+    monkeypatch.setattr(cli, "verify_local_model_files", lambda d, h: None)
+    config = BaseEvaluationConfig(
+        dataset_version="retail_ops_v1_r2_20260722",
+        model=ModelArtifact(
+            repo="local/merged",
+            revision="8cd0101f",
+            local_dir="Qwen3-4B-merged",
+            file_sha256={"config.json": "0" * 64},
+        ),
+        generation=GenerationSettings(max_new_tokens=256),
+        code_commit="a" * 40,
+        uv_lock_sha256="b" * 64,
+    )
+
+    backend = cli._generation_backend_for_engine("vllm")(config, models_root)
+
+    assert isinstance(backend, VllmBackend)
+    assert backend.adapter_path is None

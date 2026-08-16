@@ -938,14 +938,37 @@ def _default_generation_backend(
     config: BaseEvaluationConfig, models_root: Path
 ) -> GenerationBackend:
     """生产环境默认工厂：真实单卡 4-bit NF4 Transformers 后端，torch 只在方法内部导入。"""
-    model_dir = models_root / config.model.local_dir
-    return TransformersBackend.from_pretrained(
-        str(model_dir),
-        None,
-        revision=config.model.revision,
-        expected_file_sha256=config.model.file_sha256,
-        settings=config.generation,
-    )
+    return _generation_backend_for_engine("transformers")(config, models_root)
+
+
+def _generation_backend_for_engine(
+    engine: str,
+) -> Callable[[BaseEvaluationConfig, Path], GenerationBackend]:
+    """dev base 通道的引擎选路；与 `_ood_backend_for_engine` 同一套规则。
+
+    **两条通道必须都接上**：只接一条的话，另一条会**静默忽略** `--engine` 并回落到
+    transformers，产出的证据看起来完全正常却根本不是那个引擎跑的。
+    """
+
+    def build(config: BaseEvaluationConfig, models_root: Path) -> GenerationBackend:
+        model_dir = models_root / config.model.local_dir
+        if engine == "vllm":
+            from veritool_rl.core.agent.vllm_backend import VllmBackend
+
+            # vLLM 不走 TransformersBackend.from_pretrained，模型文件校验要显式补。
+            verify_local_model_files(model_dir, config.model.file_sha256)
+            return VllmBackend.from_pretrained(
+                str(model_dir), None, revision=config.model.revision, settings=config.generation
+            )
+        return TransformersBackend.from_pretrained(
+            str(model_dir),
+            None,
+            revision=config.model.revision,
+            expected_file_sha256=config.model.file_sha256,
+            settings=config.generation,
+        )
+
+    return build
 
 
 def _default_hardware_provider() -> HardwareProvider:
@@ -1005,8 +1028,13 @@ def _run_formal_dev_base(
         uv_lock_sha256=_current_uv_lock_sha256(),
     )
 
-    backend = (backend_factory or _default_generation_backend)(base_config, models_root)
-    hardware_provider = (hardware_provider_factory or _default_hardware_provider)()
+    engine = getattr(args, "engine", "transformers")
+    backend = (backend_factory or _generation_backend_for_engine(engine))(
+        base_config, models_root
+    )
+    hardware_provider = (
+        hardware_provider_factory or (lambda: _hardware_provider_for_engine(engine))
+    )()
 
     create_output_dir(args.output_dir)
     public_report_path = args.output_dir / "base-report.json"
