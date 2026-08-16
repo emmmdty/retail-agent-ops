@@ -40,11 +40,17 @@ def main() -> int:
     parser.add_argument("--model_dir", type=Path, required=True, help="用于应用聊天模板的分词器")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bundle_dir", type=Path, default=REPO_ROOT / "domains/retail_ops/v1")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="不同 seed 产出不同订单号，因而是**不同的提示词**——冷启吞吐需要没被缓存过的输入",
+    )
     args = parser.parse_args()
 
     bundle = load_bundle(args.bundle_dir)
     with tempfile.TemporaryDirectory() as tmp:
-        build_qualification(args.bundle_dir, 0, Path(tmp) / "build")
+        build_qualification(args.bundle_dir, args.seed, Path(tmp) / "build")
         tasks = list(load_built_tasks(Path(tmp) / "build").values())
 
     from transformers import AutoTokenizer
