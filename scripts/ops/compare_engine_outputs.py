@@ -74,6 +74,12 @@ def main() -> int:
     parser.add_argument("--vllm_outputs", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bundle_dir", type=Path, default=REPO_ROOT / "domains/retail_ops/v1")
+    parser.add_argument(
+        "--hf_quantization",
+        choices=["nf4", "bf16"],
+        default="nf4",
+        help="nf4 = 正式评测在用的加载方式；bf16 用来把'量化'与'引擎'两个变量拆开",
+    )
     args = parser.parse_args()
 
     rows = [
@@ -92,7 +98,9 @@ def main() -> int:
     bundle = load_bundle(args.bundle_dir)
     tools = [tool.to_transformers() for tool in bundle.tools]
     backend = TransformersBackend.from_pretrained(
-        args.model_dir, settings=GenerationSettings(max_new_tokens=MAX_NEW_TOKENS)
+        args.model_dir,
+        settings=GenerationSettings(max_new_tokens=MAX_NEW_TOKENS),
+        quantization=args.hf_quantization,
     )
 
     disagreements: list[dict[str, Any]] = []
@@ -131,7 +139,7 @@ def main() -> int:
     result = {
         "model_dir": args.model_dir,
         "prompt_count": total,
-        "hf_quantization": "nf4",
+        "hf_quantization": args.hf_quantization,
         "vllm_dtype": "bfloat16",
         "tool_call_agreement": (total - len(disagreements)) / total,
         # 归一化掉特殊标记之后的逐字一致率。这是比工具调用一致率更严的判据：

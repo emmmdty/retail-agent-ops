@@ -411,3 +411,99 @@ def test_transformers_backend_forces_local_files_only(
 
     assert tokenizer_kwargs["local_files_only"] is True
     assert model_kwargs["local_files_only"] is True
+
+
+def _fake_transformers(
+    monkeypatch: pytest.MonkeyPatch, model_kwargs: dict[str, Any]
+) -> None:
+    """把重依赖换成能记录 kwargs 的替身，用来断言"到底以什么精度加载"。"""
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "eos"
+        eos_token_id = 0
+
+    class FakeModel:
+        device = "cpu"
+
+        def eval(self) -> FakeModel:
+            return self
+
+    class FakeAutoTokenizer:
+        @classmethod
+        def from_pretrained(cls, path: Path, **kwargs: Any) -> FakeTokenizer:
+            del cls, path, kwargs
+            return FakeTokenizer()
+
+    class FakeAutoModel:
+        @classmethod
+        def from_pretrained(cls, path: Path, **kwargs: Any) -> FakeModel:
+            del cls, path
+            model_kwargs.clear()
+            model_kwargs.update(kwargs)
+            return FakeModel()
+
+    transformers = ModuleType("transformers")
+    transformers.AutoTokenizer = FakeAutoTokenizer  # type: ignore[attr-defined]
+    transformers.AutoModelForCausalLM = FakeAutoModel  # type: ignore[attr-defined]
+    transformers.BitsAndBytesConfig = lambda **kwargs: {"__bnb__": kwargs}  # type: ignore[attr-defined]
+    torch = ModuleType("torch")
+    torch.bfloat16 = "bf16-sentinel"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+
+def test_the_backend_still_loads_nf4_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """默认精度是全部已有评测证据的加载方式，**不得**因为新增选项而改变。"""
+    from veritool_rl.core.agent.qwen import TransformersBackend
+
+    model_kwargs: dict[str, Any] = {}
+    _fake_transformers(monkeypatch, model_kwargs)
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+
+    TransformersBackend.from_pretrained(str(model_path), None)
+
+    assert model_kwargs["quantization_config"] == {
+        "__bnb__": {
+            "load_in_4bit": True,
+            "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_compute_dtype": "bf16-sentinel",
+            "bnb_4bit_use_double_quant": True,
+        }
+    }
+
+
+def test_the_backend_can_load_unquantized_bf16(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """引擎对照需要把"量化"与"引擎"两个变量拆开，因此要能不带量化加载同一份权重。"""
+    from veritool_rl.core.agent.qwen import TransformersBackend
+
+    model_kwargs: dict[str, Any] = {}
+    _fake_transformers(monkeypatch, model_kwargs)
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+
+    backend = TransformersBackend.from_pretrained(str(model_path), None, quantization="bf16")
+
+    assert "quantization_config" not in model_kwargs
+    assert model_kwargs["dtype"] == "bf16-sentinel"
+    assert backend.quantization == "bf16"
+
+
+def test_an_unknown_quantization_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from veritool_rl.core.agent.qwen import TransformersBackend
+
+    _fake_transformers(monkeypatch, {})
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+
+    with pytest.raises(ValueError, match="quantization"):
+        TransformersBackend.from_pretrained(
+            str(model_path), None, quantization="int8"  # type: ignore[arg-type]
+        )

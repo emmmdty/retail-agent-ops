@@ -9,7 +9,7 @@ import stat
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from pydantic import ConfigDict, Field
 
@@ -23,6 +23,10 @@ from veritool_rl.core.trajectory.schema import StrictModel
 _MODEL_FILE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{7,64}$")
 _HASH_CHUNK_SIZE = 1024 * 1024
+
+
+Quantization = Literal["nf4", "bf16"]
+QUANTIZATIONS: Final[frozenset[str]] = frozenset({"nf4", "bf16"})
 
 
 class GeneratedText(StrictModel):
@@ -278,12 +282,16 @@ class TransformersBackend:
         revision: str | None = None,
         adapter_path: str | None = None,
         settings: GenerationSettings | None = None,
+        quantization: Quantization = "nf4",
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
         self.settings = settings or GenerationSettings()
         self.model_dir = model_dir
         self.revision = revision
+        # 以什么精度加载。默认 nf4 = 全部已有评测证据的加载方式；
+        # bf16 只用于把"量化"与"引擎"两个变量拆开的对照实验。
+        self.quantization = quantization
         # 公开声明本实例真正加载了什么：正式评测据此拒绝与锁定不符的后端。
         # adapter_path 非 None 表示模型被 PEFT 包装过，不再是 base 模型。
         self.adapter_path = adapter_path
@@ -297,8 +305,16 @@ class TransformersBackend:
         revision: str | None = None,
         expected_file_sha256: Mapping[str, str] | None = None,
         settings: GenerationSettings | None = None,
+        quantization: Quantization = "nf4",
     ) -> TransformersBackend:
-        """按固定本地路径加载；给定 revision/文件哈希时先做防篡改校验。"""
+        """按固定本地路径加载；给定 revision/文件哈希时先做防篡改校验。
+
+        `quantization` 默认 `"nf4"`——这是全部已有评测证据的加载方式，改动它会让
+        那些证据不再描述同一个前向路径。`"bf16"` 只供对照实验使用。
+        """
+        if quantization not in QUANTIZATIONS:
+            msg = f"未知的 quantization: {quantization!r}，只支持 {sorted(QUANTIZATIONS)}"
+            raise ValueError(msg)
         model_path = Path(model_name)
         if not model_path.is_dir():
             raise FileNotFoundError(model_path)
@@ -312,19 +328,21 @@ class TransformersBackend:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-        bitsandbytes_config: Any = BitsAndBytesConfig
-        quantization = bitsandbytes_config(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-        )
+        load_kwargs: dict[str, Any] = {}
+        if quantization == "nf4":
+            bitsandbytes_config: Any = BitsAndBytesConfig
+            load_kwargs["quantization_config"] = bitsandbytes_config(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
         tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         model: Any = AutoModelForCausalLM.from_pretrained(
             model_path,
-            quantization_config=quantization,
+            **load_kwargs,
             dtype=torch.bfloat16,
             device_map={"": "cuda:0"},
             low_cpu_mem_usage=True,
@@ -349,6 +367,7 @@ class TransformersBackend:
             revision=revision,
             adapter_path=adapter_path,
             settings=generation,
+            quantization=quantization,
         )
 
     def generate(
