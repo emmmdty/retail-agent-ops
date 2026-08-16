@@ -3,8 +3,14 @@
 **A single-GPU domain-adaptation and release pipeline for retail tool-calling agents.**
 It turns tool schemas, business policies and tasks into executable trajectories, then runs the
 full loop — data QC → QLoRA post-training → execution-based evaluation → GO/NO-GO release
-gates → inference service — on one consumer GPU, with every number traceable to an artifact,
-a commit and a hash.
+gates → inference service — on one consumer GPU.
+
+**What is actually verifiable by you**: the CPU chain reproduces from a fresh clone and asserts
+content hashes (one command, below). The GPU-side numbers (120-task holdout, dev, OOD) trace to
+a run's `run_id`, which is the self-hash of all fields of that evidence — but **the evidence files
+and model weights are not distributed with the repository** (`reports/retail_ops/` and `models/`
+are gitignored; see [`NOTICE.md`](./NOTICE.md)). So: you can run the pipeline and the gates
+yourself; you cannot replay the specific trajectories from my runs.
 
 [中文](./README.md) ｜ [Spec](./SPEC.md) ｜ [Model card](./docs/MODEL_CARD_sft-006.md) ｜
 [System card](./docs/SYSTEM_CARD.md) ｜ [Interview notes](./docs/INTERVIEW_PREP.md)
@@ -17,7 +23,7 @@ a commit and a hash.
 ## The three things worth looking at
 
 **1. It separates the contribution of prompt engineering from that of post-training.**
-A 2×2 paired experiment (prompt changed or not × how many LoRA projections) over six runs,
+A 2×3 paired experiment (2 prompts × 3 capacity levels — none / attention-only / all-linear) over six runs,
 60 frozen tasks per cell, shows the two fix **different failures** with almost no overlap:
 one explicit authorisation sentence moves "correctly judged refundable but afraid to act"
 from 5/10 to 9/10 and leaves "retry after a tool failure" **completely unchanged**;
@@ -172,8 +178,8 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 
 | Item | Value |
 |---|---|
-| Teacher collection pass rate / cost | 238/240 = **99.2%** ／ **$0.055** (519 requests, measured) |
-| QLoRA training (all-linear) | 3 epochs / 75 steps, **242–294 s**, peak **5.6 GB**, adapter **66 MB** |
+| Teacher collection (**two batches — do not mix their figures**) | Batch 1 `teacher-smoke-001`: 519 requests / **$0.055** / 211-240 = **87.9%** (before the environment fix); batch 2 `teacher-full-001`: 526 requests / **$0.0559** / **238/240 = 99.2%** (after the fix; this is the batch the training data comes from). **Total 1045 requests, ≈$0.111** |
+| QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
 | Engineering baseline | **946 tests passed**; Ruff / `ruff format --check` / mypy (80 files) / `uv lock --check` / public-release audit all green |

@@ -1070,6 +1070,10 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         "README.en.md",
         "AGENTS.md",
         "CLAUDE.md",
+        # 2026-08-16 补：唯一事实源此前**不在**这个列表里，只有表头那一行被断言，
+        # 于是正文里"任何新的发布判定都需要第三次观测"一直没被发现。
+        # 唯一事实源恰恰是最该被扫描的文件。
+        "docs/HOLDOUT_LEDGER.md",
         "SPEC.md",
         "docs/SYSTEM_CARD.md",
         "docs/MODEL_CARD.md",
@@ -1103,15 +1107,22 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
     """
     for name in (
         "README.md",
+        "README.en.md",
         "docs/HOLDOUT_LEDGER.md",
         "docs/MODEL_CARD_sft-006.md",
         "docs/RESUME_EVIDENCE.md",
+        "docs/INTERVIEW_PREP.md",
+        "docs/REBUILD_VERIFICATION.md",
     ):
         text = _read(name)
         if "GO" not in text:
             continue
-        assert "OOD_EVALUATION.md" in text or "0.5833" in text, (
-            f"{name}: 提到 GO 就必须同时给出分布外读数"
+        # 2026-08-16 加强：原先「提到 OOD_EVALUATION.md 这个文件名」就算过关，
+        # 而文件名可以出现在文末的索引表里、离 GO 十万八千里。外部审阅指出这一点。
+        # 现在要求**两个具体读数都在场**——它们没法靠一个链接蒙混。
+        assert "0.5833" in text, f"{name}: 提到 GO 就必须给出分布外总分 0.5833"
+        assert "0/20" in text or "0.00" in text, (
+            f"{name}: 提到 GO 就必须给出表达变化类的读数（0/20 或 0.00）"
         )
 
     ood = _read("docs/OOD_EVALUATION.md")

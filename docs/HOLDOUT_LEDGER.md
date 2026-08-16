@@ -3,7 +3,10 @@
 **本文件是封存 holdout 观测次数与状态的唯一事实源。**其它任何文档（`README.md`、
 `docs/SYSTEM_CARD.md`、`docs/MODEL_CARD*.md`、`docs/DEMO.md`、`docs/RESUME_EVIDENCE.md`）
 一律**引用本文件**，不得复述次数或判定——同一个数字在五个文件里各写一遍，必然漂移，
-2026-08-15 的评审就是从这里发现三处文档仍写着"唯一一次观测"的。
+2026-08-15 的评审就是从这里发现三处文档仍把观测次数写成过期值的。
+（本文件自 2026-08-16 起也在 `test_no_active_doc_restates_a_stale_observation_count`
+的扫描范围内——此前它被排除在外，于是"唯一事实源"自己成了漂移最久的那一份。
+因此本文件叙述历史表述时只描述、不逐字复现，否则会触发自己的扫描。）
 
 数字全部来自已落盘产物（`reports/retail_ops/v1/*/formal-release-00*/release.json`），
 不是转述。每份 release 报告的 `report_id` 是全字段自哈希，手改任一字段都会加载失败。
@@ -16,7 +19,7 @@
 | 已消耗观测 | **4 次**（2026-08-11、-14、-15 ×2），共 **9 次运行** |
 | 剩余"未观测"状态 | **无**。每一次新判定都需用户单独决策 |
 | 最新判定 | **GO / candidate（merged 形态）** —— 前三次判定均为 NO-GO |
-| 阈值变更次数 | **0**（`tests/test_retail_ops_r4_release_configs.py::test_release_config_does_not_touch_the_gates` 锁定） |
+| 阈值变更次数 | **0**，由三层保证：① `tests/test_release_gate_schema_v11.py::test_thresholds_come_from_the_untouched_release_yaml` 钉住 `release.yaml` 的字面值（`success_delta_min=0.05`、`p95_latency_ratio_max=1.25`）与键集合；② `invalid_call_count_max: Literal[0]`（`domain/bundle.py:79`）在类型层禁止非零；③ `release.yaml` 是 `bundle_sha256` 的**哈希分量**（`domain/bundle.py:124-133`），改一个阈值就会让磁盘上**每一份**已有 sealed 证据配对失败。（此前本行引用的 `test_release_config_does_not_touch_the_gates` 比较的是两份只含 `pipeline`/`bundle_dir`/`gate_schema_version` 的配置，**并不锁阈值**——2026-08-16 外部审阅指出，已更正。） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
 `SEALED_PAIRING_FIELDS` 内，因此**任何后续提交之后，已有的 sealed base 证据都不再可与
@@ -174,7 +177,8 @@ schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立�
 1. **这不是前三次被拒的那个候选**。它是同一份权重的**另一种部署形态**（合并回基座）。
    未合并形态在观测 3 与上面的复算里都仍然失败。三次 NO-GO 的结论一个字不改。
 2. **SPEC §6 的第 6 条已于 2026-08-16 满足**（`docs/REBUILD_VERIFICATION.md`）：
-   独立重建复验在 **dev** 上做了两次，两次都显著高于零训练基座。
+   独立重建复验在 **dev** 上做了两次，两次都高于零训练基座（58/60、60/60 对 54/60；
+   n=3 给不出置信区间，**不写"显著"**）。
    **该复验没有消耗新的 holdout 观测**；拿重建出来的权重跑封存 holdout 会是第五次观测。
 3. **"120/120"与"60/60"都不是常数**：dev 上同 seed 重跑得到 58/60，训练不可逐位复现。
 4. **余量约 10%**（1.1265 / 1.1646 / 1.1461 对 1.25），比观测 3 的 3% 宽，但 base 侧
@@ -205,19 +209,30 @@ schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立�
 
 ## 判定口径的边界（引用时必须一并引用）
 
-1. **120/120 不是泛化证据。** `domain/formal_tasks.py:_user_request` 只有 6 场景 × 2 变体
-   = 12 句中文模板，train / dev / holdout **共用这 12 句**；跨 split 变化的只有随机
-   order_id、reason 枚举词、deadline margin、distractor 数量与 lookup status。五维指纹
-   保证的是"没有逐字重复"，**不是"没有分布重叠"**。在分布外 holdout（提示词 §7.1）
-   完成之前，不得把 120/120 表述为泛化能力。
-2. **两次结果都不得反馈进开发**：不得进入训练、调参、checkpoint 选择或 prompt/parser 修改。
+1. **120/120 不是泛化证据——这已从"待验证"变成"已证伪"。**
+   `domain/formal_tasks.py:_user_request` 只有 6 场景 × 2 变体 = 12 句中文模板，
+   train / dev / holdout **共用这 12 句**；跨 split 变化的只有随机 order_id、reason 枚举词、
+   deadline margin、distractor 数量与 lookup status。五维指纹保证的是"没有逐字重复"，
+   **不是"没有分布重叠"**。2026-08-16 的分布外任务集给出了实测：同一个拿到 GO 的候选
+   在模板外 60 条上只有 **0.5833**，表达变化一类 **0/20**、**比零训练基座还差**
+   （[`OOD_EVALUATION.md`](./OOD_EVALUATION.md)，LOG-20260816-01）。
+   **引用本表任何一次的 task_success 时必须同时给出这个数。**
+2. **四次结果都不得反馈进开发**：不得进入训练、调参、checkpoint 选择或 prompt/parser 修改。
 3. **`p95_latency_ratio` 的口径是部署形态而非模型能力**。观测 2 的候选在任务指标上满分，
    被自己的部署实现（未 merge 的 LoRA + 逐 episode 串行 HF `generate`）挡在门外。
-   **merge 后的对照已于 2026-08-15 在 dev 上完成**（见
-   [`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)）：同一份行为下单次调用
-   耗时 −46%、吞吐回到基座水平以上，任务指标 60/60 未损伤。**但那是 dev 不是 holdout**，
-   且旧 v1.0 口径下合并版在 dev 上仍然失败（p95 比值 1.3130 > 1.25）。
-   任何新的发布判定都需要**第三次**封存 holdout 观测，属用户单独决策门。
+   这一条已在**观测 4** 上兑现：合并形态在 holdout 上 p95 比值 2.03 → **1.1265**，
+   拿到本项目第一个自动门禁 GO；而未合并形态对同一份 base 重算仍是 **1.9219 FAIL**。
+   **同一份权重、同一套行为，只差加载方式。**
+4. **SPEC §6 第 6 条已于 2026-08-16 满足**（[`REBUILD_VERIFICATION.md`](./REBUILD_VERIFICATION.md)）：
+   独立重建复验在 **dev** 上做了两次，**未消耗新的 holdout 观测**。
+   同时发现 dev 的「60/60」不是常数——同 seed 重跑得到 58/60，训练不可逐位复现。
+5. **下一次判定是第五次。** 拿重建出来的权重跑封存 holdout、或验证"去掉 NF4 能否过延迟门禁"
+   （门禁是比值、base 侧也是 NF4，两侧都要重跑），都会消耗第五次观测，属用户单独决策门。
+
+> **本节 2026-08-16 之前的版本写着"任何新的发布判定都需要第三次封存 holdout 观测"，
+> 且把 merge 对照描述为"那是 dev 不是 holdout"。两句在观测 3 与观测 4 之后就已过期，
+> 却因为本文件当时不在 `test_no_active_doc_restates_a_stale_observation_count` 的扫描
+> 列表里而留了下来——由 2026-08-16 的外部审阅指出。已改，并把本文件纳入扫描。**
 
 ## 变更规则
 
