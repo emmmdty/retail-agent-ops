@@ -60,10 +60,22 @@ def sha256_file(path: Path) -> str:
 
 
 def _installed_distributions() -> Iterable[Any]:
-    """抽成函数是为了可注入——测试要能在不新建 venv 的前提下断言"换环境会变"。"""
+    """**只扫这个解释器的 site-packages，不扫 `sys.path`。**
+
+    `importlib.metadata.distributions()` 默认沿 `sys.path` 搜索，量的是"当前能
+    import 到什么"——那会随 `PYTHONPATH`、cwd、以及任何在运行中改过 `sys.path` 的库
+    而变。同一个 venv 因此可能在一次运行里算出两个不同的摘要，那样这个字段就不是
+    环境身份而是噪声（2026-08-16 实测踩到过：同一 venv 的两次评测记下了不同的值）。
+
+    改成按 `sysconfig` 给出的 purelib/platlib 扫描后，摘要只取决于"装了什么"。
+    抽成函数还为了可注入——测试要能在不新建 venv 的前提下断言"换环境会变"。
+    """
+    import sysconfig
     from importlib.metadata import distributions
 
-    return distributions()
+    paths = sysconfig.get_paths()
+    roots = sorted({paths[key] for key in ("purelib", "platlib") if key in paths})
+    return distributions(path=roots)
 
 
 def current_runtime_env_sha256() -> str:

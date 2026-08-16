@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -119,3 +121,23 @@ def test_new_evidence_records_the_engine_and_the_environment() -> None:
         make_base_evidence(inference_engine="vllm")
     with pytest.raises(ValueError, match="同时记录或同时缺失"):
         make_base_evidence(runtime_env_sha256="d" * 64)
+
+
+def test_the_digest_does_not_depend_on_sys_path() -> None:
+    """同一个解释器在一次运行里必须算出同一个值。
+
+    `importlib.metadata.distributions()` 默认沿 `sys.path` 搜索，量的是"当前能
+    import 到什么"，会随 `PYTHONPATH`、cwd 和运行中改过 `sys.path` 的库而变。
+    2026-08-16 实测踩到过：同一 venv 的 dev 与 OOD 两次评测记下了不同的值，
+    那样这个字段就不是环境身份而是噪声。
+    """
+    import sys
+
+    from veritool_rl.core.artifacts import current_runtime_env_sha256
+
+    before = current_runtime_env_sha256()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        assert current_runtime_env_sha256() == before
+    finally:
+        sys.path.pop(0)
