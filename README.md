@@ -165,9 +165,24 @@ flowchart LR
 | QLoRA 训练（全 linear，`sft-006` 配置的**三次**运行） | 单卡 3 epoch / 75 steps。时长 `sft-006` **293.7 s** / 重建 A **242.3 s** / 重建 B **242.2 s**（差异是共享 GPU 上他人占用，**不是配置差异**）；三次 `cuda_peak_allocated` 均 **5.65 GB**；adapter 三次**逐字节同尺寸** **66,127,776 B（63 MiB）** |
 | 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
 | serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
-| 工程基线 | **1011 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
+| 工程基线 | **1017 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
 
 ---
+
+## 演示
+
+70 秒的终端演示（`docs/media/demo.mp4`）：四个接口、CPU 全链路复现、**门禁真的拒绝了
+一个坏候选**、以及那个 GO 旁边把它打掉一半的分布外读数。
+
+**视频里每一行输出都是真跑出来的**：`scripts/ops/capture_demo_transcript.py` 执行真实命令
+并存下 transcript，`scripts/ops/render_demo_video.py` **只读 transcript、不执行任何命令**
+（有测试断言它只调用一次 ffmpeg）。两步分开就是为了让渲染阶段没有机会往里加东西。
+
+```bash
+.venv/bin/python scripts/ops/capture_demo_transcript.py --output /tmp/demo.json
+# 渲染需要 Pillow，装在独立 venv 即可——项目 uv.lock 一个字节不动
+<demo-venv>/bin/python scripts/ops/render_demo_video.py --transcript /tmp/demo.json --output docs/media/demo.mp4
+```
 
 ## 快速开始
 
