@@ -41,6 +41,16 @@ from veritool_rl.retail_ops.domain.bundle import load_bundle  # noqa: E402
 
 MAX_NEW_TOKENS = 256
 
+# 项目的 HF 后端用 `skip_special_tokens=False` 解码（parser 需要看到结束标记），
+# vLLM 的 `.text` 则已经剥掉了它们。不归一化就会把"两侧完全一致"报成"0% 一致"。
+_SPECIAL_TOKENS = ("<|im_end|>", "<|endoftext|>")
+
+
+def _normalize(text: str) -> str:
+    for token in _SPECIAL_TOKENS:
+        text = text.replace(token, "")
+    return text.strip()
+
 
 def _call_signature(raw_text: str) -> dict[str, Any] | None:
     """解析成"这一步要做什么"。`None` 表示没有工具调用（自然语言回复或解析失败）。"""
@@ -86,7 +96,7 @@ def main() -> int:
             {"role": "user", "content": row["user_request"]},
         ]
         hf_text = backend.generate(messages, tools, MAX_NEW_TOKENS).text
-        if hf_text.strip() == vllm_text.strip():
+        if _normalize(hf_text) == _normalize(vllm_text):
             identical_text += 1
         hf_call = _call_signature(hf_text)
         vllm_call = _call_signature(vllm_text)
@@ -109,6 +119,8 @@ def main() -> int:
         "hf_quantization": "nf4",
         "vllm_dtype": "bfloat16",
         "tool_call_agreement": (total - len(disagreements)) / total,
+        # 归一化掉特殊标记之后的逐字一致率。这是比工具调用一致率更严的判据：
+        # 它连自然语言部分的措辞都要求相同。
         "identical_text_rate": identical_text / total,
         "disagreements": disagreements,
     }
