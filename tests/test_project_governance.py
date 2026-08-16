@@ -1,6 +1,7 @@
 """验证求职工程定位和 Agent 接管文档不会静默漂移。"""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -1186,3 +1187,34 @@ def test_there_is_exactly_one_five_minute_script() -> None:
     # DEMO 保留的是流程
     for kept in ("纯 CPU 全链路演示", "真实模型服务演示", "必须一起讲的失败案例"):
         assert kept in demo, kept
+
+
+def test_the_documented_test_count_matches_reality() -> None:
+    """文档里的测试数是最容易悄悄过期的数字之一。
+
+    这个项目在 R5 之前已经有过 698 / 884 / 885 / 901 / 907 五个版本散落在不同文档里。
+    与其每次手改，不如把它绑到 pytest 实际收集到的数量上：改了测试忘了改文档，这条就红。
+    """
+    collected = subprocess.run(
+        ["python", "-m", "pytest", "--collect-only", "-q"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=300,
+        env={**os.environ, "PATH": f"{ROOT / '.venv' / 'bin'}{os.pathsep}{os.environ['PATH']}"},
+    )
+    match = re.search(r"(\d+) tests collected", collected.stdout)
+    assert match is not None, f"无法从 pytest 输出里解析收集数：{collected.stdout[-500:]}"
+    actual = int(match.group(1))
+
+    for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
+        text = _read(name)
+        documented = re.findall(r"\*\*(\d+)\*\*? tests passed|\*\*(\d+) tests passed\*\*", text)
+        flat = [int(value) for pair in documented for value in pair if value]
+        assert flat, f"{name}: 找不到「N tests passed」形式的工程基线数字"
+        for value in flat:
+            assert value == actual, (
+                f"{name}: 文档写 {value} tests，实际收集 {actual}。"
+                f"改了测试就要同步这个数字（或者别在文档里写死它）。"
+            )

@@ -144,7 +144,7 @@ flowchart LR
 | QLoRA 训练（全 linear） | 单卡 3 epoch / 75 steps，**242–294 s**，峰值 **5.6 GB**，adapter **66 MB** |
 | 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
 | serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
-| 工程基线 | **944 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
+| 工程基线 | **946 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
 
 ---
 

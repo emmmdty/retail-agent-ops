@@ -21,7 +21,7 @@
 | QLoRA 训练（attention-only） | 单卡 3 epoch / 75 steps，**212 s**，峰值 **5.55 GB**，adapter **23.6 MB** | `reports/…/r4/sft-004/metrics.json` |
 | QLoRA 训练（全 linear layer） | 同超参，**223 s**，峰值 **5.64 GB**，adapter **66 MB** | `reports/…/r4/sft-003/metrics.json` |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **944** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **946** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）

@@ -176,7 +176,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear) | 3 epochs / 75 steps, **242–294 s**, peak **5.6 GB**, adapter **66 MB** |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **944 tests passed**; Ruff / `ruff format --check` / mypy (80 files) / `uv lock --check` / public-release audit all green |
+| Engineering baseline | **946 tests passed**; Ruff / `ruff format --check` / mypy (80 files) / `uv lock --check` / public-release audit all green |
 
 ---
 
