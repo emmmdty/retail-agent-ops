@@ -1,0 +1,39 @@
+# 旧候选 sft-006 在 OOD v2 上的评测，**未合并形态**（base + adapter）。
+#
+# 存在的理由只有一个：去掉混淆。`retail_ops_ood_v1_merged_candidate.yaml` 走的是
+# 合并权重，而 R6 新候选走 base + adapter。虽然合并在贪心解码下与未合并输出一致
+# （LOG-20260815-01 在 dev 上验证过 60/60 未损伤），但「两个候选用了不同加载方式」
+# 本身就是个可以被质疑的点。多花 8 分钟把它消掉，比在文档里解释它便宜。
+pipeline: ood_candidate
+bundle_dir: domains/retail_ops/v1
+models_root: models
+model:
+  repo: Qwen/Qwen3-4B
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  local_dir: Qwen3-4B-pinned
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+adapter:
+  run_dir: reports/retail_ops/v1/r4/sft-006
+  file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "74bfa80b728abeb9cb5c627a4098c72b830d8b906b6cb99595bce1b2677ab89f"
+    adapter_model.safetensors: "8a49251fbfc9d1bab23041a97727c65f34d2dd1704c6453ec39e4ec95eefcd95"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "5dbaa8fa3cc5c293c7ffd9ec9764c9a6cfca0a027df04e845d69096378e7b7c4"
+generation:
+  max_new_tokens: 256

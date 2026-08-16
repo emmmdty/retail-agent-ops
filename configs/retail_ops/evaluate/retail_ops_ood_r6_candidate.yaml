@@ -1,0 +1,38 @@
+# R6 候选 sft-007 在 OOD v2 上的评测（base + adapter 形态）。
+#
+# 这条路径走 ood_candidate：与 sft-006 那次走 ood_base（合并权重）不同，
+# 因此**两者的延迟不可直接比**；本轮比的是 final_state_success 与逐场景通过数，
+# 那两项不受加载方式影响（同一份权重，合并与否的输出在贪心解码下一致）。
+pipeline: ood_candidate
+bundle_dir: domains/retail_ops/v1
+models_root: models
+model:
+  repo: Qwen/Qwen3-4B
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  local_dir: Qwen3-4B-pinned
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+adapter:
+  run_dir: reports/retail_ops/v1/r6/sft-007
+  file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "246977d0a78f439bceb566179e608d384c5ac92ff3e3348efc5db0910a33fff5"
+    adapter_model.safetensors: "8e8e8391b1a8b27743bc6532f5dfdd5ba68ba4106b64d12c61ee8b706ad8c4f5"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "d5ac0a033b3c8259538c3d59ea78e049e323790859189a1056d845ce8dff9c18"
+generation:
+  max_new_tokens: 256
