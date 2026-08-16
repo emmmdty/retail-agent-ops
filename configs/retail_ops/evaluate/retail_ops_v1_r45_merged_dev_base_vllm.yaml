@@ -1,6 +1,9 @@
 # 引擎替换对照：与 `retail_ops_v1_r45_merged_dev_base.yaml` **逐字段相同**，
 # 只有 `attempt_id` 不同——因为证据发布拒绝覆盖已有运行（那条保护是对的）。
 #
+# `-002`：`-001` 那次跑在证据还不记录 `inference_engine`/`runtime_env_sha256` 之前，
+# 读数相同但说不出自己跑在哪个环境里。`-001` 的目录保留为那次尝试的记录。
+#
 # 用 `--engine vllm` 跑这份配置。**契约一个字没改**：`GenerationSettings.quantization`
 # 仍是冻结的 nf4，vLLM 侧走 bitsandbytes NF4，因此"引擎"是唯一变量。
 #
@@ -36,7 +39,7 @@ bundle_dir: domains/retail_ops/v1
 dataset_version: retail_ops_v1_r2_20260722
 dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
 models_root: models
-attempt_id: qwen3-4b-merged-sft006-dev-vllm-001
+attempt_id: qwen3-4b-merged-sft006-dev-vllm-002
 model:
   repo: local/Qwen3-4B-sft-006-merged
   revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
