@@ -1,0 +1,52 @@
+# 引擎替换对照：与 `retail_ops_v1_r45_merged_dev_base.yaml` **逐字段相同**，
+# 只有 `attempt_id` 不同——因为证据发布拒绝覆盖已有运行（那条保护是对的）。
+#
+# 用 `--engine vllm` 跑这份配置。**契约一个字没改**：`GenerationSettings.quantization`
+# 仍是冻结的 nf4，vLLM 侧走 bitsandbytes NF4，因此"引擎"是唯一变量。
+#
+# **它回答的是正确性问题不是性能问题**：换一个推理引擎，同一份权重在真实评测任务上
+# 会不会做出不同的决策。`docs/SERVING_FORM_COMPARISON.md` 第四档那份 bf16 读数
+# 回答的是部署形态问题，两者不可混用。
+#
+# P0-3 serving 形态对照：把 sft-006 的 LoRA **合并回基座权重**之后重测。
+#
+# 为什么这条是必要的：`docs/GATE_SCHEMA_V11_RECOMPUTE.md` 已把第二次观测的失败精确
+# 隔离到单次前向开销（per_call_latency_ratio 1.9852，而 steps_to_success_ratio
+# 0.9841 < 1——候选每成功一条任务的调用数比基座还少）。未合并的 LoRA 每层多两次低秩
+# 矩阵乘并走一遍 4bit 反量化路径，是纯实现开销。合并不改变模型要做的事。
+#
+# **走 formal_dev_base 而不是 formal_dev_candidate**：合并之后模型里已经没有 adapter，
+# 它就是一个新的基座权重。用 candidate 通道会要求一个 adapter pin，那是在描述一个
+# 不存在的东西。
+#
+# **不可与 qwen3-4b-dev-base-002 走 compare_dev_runs**：`model` 字段不同，配对校验
+# 会（正确地）拒绝。本条产出的是**部署形态对照**读数，不是配对发布判定；跨形态只比
+# 绝对值，并在报告里显式标注这一点。
+#
+# **数值不等价，因此必须重测任务指标**：合并在 bf16 下进行，这里再按同一份
+# GenerationSettings 量化回 NF4。「基座 NF4 + LoRA」与「合并后再 NF4」不是同一组权重。
+# 如果合并版的 task_success 掉下来，那就是量化路径的代价，必须如实报告，
+# 不得只报延迟改善。
+#
+# revision 是**派生标识**而非上游 revision：由「基座 revision + adapter 逐文件哈希」
+# 确定性导出（见 scripts/ops/merge_lora_adapter.py 与同级 .provenance.json）。
+# repo 写成 local/... 以免看起来像一个 Hub 仓库。
+pipeline: formal_dev_base
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json
+models_root: models
+attempt_id: qwen3-4b-merged-sft006-dev-vllm-001
+model:
+  repo: local/Qwen3-4B-sft-006-merged
+  revision: "00f51386d37fa3ad2700664f329b79e613c6dd1a6042b368e25ee2c6ad9369d4"
+  local_dir: Qwen3-4B-sft-006-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "fea64487d78d1ff578684b064e4cee6a4b05cbc41a53ef004853b522ecb3b499"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
