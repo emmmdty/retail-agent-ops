@@ -1229,3 +1229,40 @@ def test_the_documented_test_count_matches_reality() -> None:
                 f"{name}: 文档写 {value} tests，实际收集 {actual}。"
                 f"改了测试就要同步这个数字（或者别在文档里写死它）。"
             )
+
+
+def test_the_two_teacher_batches_are_never_conflated() -> None:
+    """teacher 有两批付费采集，把它们的数字焊在一起是本项目最贵的一类文档缺陷。
+
+    批次 1 `teacher-smoke-001`：519 次请求 / $0.055 / 211-240 = 87.9%（LOG-20260806-06）
+    批次 2 `teacher-full-001`： 526 次请求 / $0.0559 / 238/240 = 99.2%（LOG-20260806-12）
+
+    2026-08-16 的外部审阅发现 README 把批次 2 的通过率与批次 1 的请求数和成本写在
+    同一格里，而且**没有任何文档给出两批的总计**。修完之后我自己又漏了 5 处——
+    所以这条不靠人工检查，靠断言：凡是出现批次 1 成本的地方，必须同时出现批次 2 的
+    成本或两批总计，否则就是又焊回去了。
+    """
+    batch1_cost = "$0.055"
+    batch2_cost = "$0.0559"
+    total_cost = "$0.111"
+
+    for name in (
+        "README.md",
+        "README.en.md",
+        "docs/RESUME_EVIDENCE.md",
+        "docs/SYSTEM_CARD.md",
+        "docs/INTERVIEW_PREP.md",
+        "docs/EXECUTION_PLAN.md",
+    ):
+        text = _read(name)
+        if batch1_cost not in text:
+            continue
+        assert batch2_cost in text or total_cost in text, (
+            f"{name}: 出现了批次 1 的成本 {batch1_cost} 却没有批次 2 的成本或两批总计——"
+            f"这正是把两批数字焊在一起的形态"
+        )
+
+    # 唯一取数口径必须把两批和总计都写全
+    evidence = _read("docs/RESUME_EVIDENCE.md")
+    for required in (batch1_cost, batch2_cost, total_cost, "519", "526", "1045", "87.9%", "99.2%"):
+        assert required in evidence, f"docs/RESUME_EVIDENCE.md 缺少 teacher 采集的 {required}"

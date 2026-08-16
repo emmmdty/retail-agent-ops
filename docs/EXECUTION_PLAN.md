@@ -241,7 +241,7 @@
 **未做及原因**：
 
 - **跨模型/商业 API 参考上限**：已有的是 Qwen3-1.7B ↔ 4B 的跨规模对照与
-  DeepSeek teacher（238/240、$0.055）。**未新增**第三个模型或 API 参考上限——
+  DeepSeek teacher（正式批次 238/240、526 次请求 / $0.0559；含先行批次合计约 $0.111）。**未新增**第三个模型或 API 参考上限——
   两台机器都没有配置 `TEACHER_LLM_*` 凭据，且新下载模型未获授权。
 - **演示视频**：未录。可复现替代物是 `scripts/ci/verify_qualification_chain.py`
   与 `docs/DEMO.md`。

@@ -86,7 +86,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | holdout 评测（120 条），观测 3 | `holdout-*-003` | **218.4 s**（基座）/ **530.7 s**（未合并候选）/ **309.5 s**（合并版） | 2.929 / 3.046 / 2.910 GB |
 | LoRA 合并（bf16，CPU） | `sft-006` → 合并产物 7.6 GB | 数分钟 | — |
 | 服务冷启动 | R3 演示 | 权重加载约 1–2 s（页缓存热）；冷启动含 13 文件 SHA-256 校验约 15 min | 同评测量级 |
-| teacher 采集（240 条全量） | DeepSeek `deepseek-v4-flash` API | — | 约 $0.055（519 次请求的 smoke 批次实测） |
+| teacher 采集（**两批**） | DeepSeek `deepseek-v4-flash` API | — | 批次 1 `teacher-smoke-001` 519 次 / **$0.055** / 通过率 87.9%（暴露了 `current_day` 环境缺陷）；批次 2 `teacher-full-001` 526 次 / **$0.0559** / 通过率 99.2%（训练数据来源）。**合计 1045 次、约 $0.111** |
 
 吞吐（`hardware.output_tokens_per_second`）：观测 1 基座 45.68 / 候选 32.32 tok/s；
 观测 2 基座 47.02 / 候选 **29.53** tok/s；观测 3 基座 50.66 / 未合并候选 29.78 /

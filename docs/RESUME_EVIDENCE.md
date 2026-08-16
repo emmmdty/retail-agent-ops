@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **946** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **947** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -264,9 +264,9 @@ LOG-20260814-01/02/03。
 
 > **RetailAgentOps｜零售工具 Agent 的领域适配与失败归因**（个人项目，Python/PyTorch/PEFT）
 > - 构建执行式训练数据流水线：商业 API teacher 采集 + replay/最终状态/政策 verifier
->   三重校验，240 条训练轨迹通过率 **99.2%**、成本 **$0.055**；train/dev/holdout
+>   三重校验，240 条训练轨迹通过率 **99.2%**（正式批次 526 次请求 / $0.0559；另有一批 519 次 / $0.055 的先行采集暴露了一个环境缺陷，**两批合计约 $0.111**）；train/dev/holdout
 >   五维指纹隔离防派生泄漏。单卡 Qwen3-4B QLoRA-SFT（4-bit NF4，r=16，3 epoch，
->   **242–294 s**，峰值 **5.6 GB**，adapter **66 MB**），评测推理峰值显存 **3.0 GB**。
+>   发布候选 `sft-006` **293.7 s**、峰值 **5.65 GB**、adapter **66,127,776 B**），评测推理峰值显存 **3.0 GB**。
 > - **以 2×3 配对实验分离提示词工程与后训练的贡献**（2 种 prompt × 3 档 LoRA 容量，六次运行、
 >   每格 60 条冻结任务）：一句显式授权指令使零训练基座的目标类别 **5/10 → 9/10**，
 >   而"失败后重试"类**零变化**；后训练则把重试类 **5/10 → 10/10**、政策违规 **5 → 0**。
