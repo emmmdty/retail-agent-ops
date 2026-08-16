@@ -233,3 +233,71 @@ def test_the_default_engine_is_still_transformers(
     cli._default_ood_backend(config, tmp_path / "models")
 
     assert captured["kwargs"]["expected_file_sha256"] == {"config.json": "0" * 64}
+
+
+# ---------------------------------------------------------------------------
+# 硬件测量：vLLM 的显存在子进程里，父进程的 torch 统计是假数
+# ---------------------------------------------------------------------------
+
+
+def _fake_nvidia_smi(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
+    import veritool_rl.core.agent.vllm_backend as module
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(stdout=stdout, returncode=0),
+    )
+
+
+def test_it_records_the_physical_gpu_that_cuda_visible_devices_selects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """nvidia-smi 报物理索引且不受 CUDA_VISIBLE_DEVICES 影响。
+
+    拿逻辑 ordinal 直接索引它的输出，在 `CUDA_VISIBLE_DEVICES=1` 时会把证据里的
+    GPU 身份写成另一张卡——而 GPU 身份正是硬件溯源的全部意义。
+    """
+    from veritool_rl.core.agent.vllm_backend import NvmlHardwareProvider
+
+    _fake_nvidia_smi(
+        monkeypatch,
+        "0, GPU-aaaaaaaa-1111, NVIDIA A, 100\n1, GPU-bbbbbbbb-2222, NVIDIA B, 2048\n",
+    )
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+
+    measurement = NvmlHardwareProvider(device_ordinal=0).measure()
+
+    assert measurement.gpu_index == 1
+    assert measurement.gpu_uuid == "GPU-bbbbbbbb-2222"
+    assert measurement.gpu_name == "NVIDIA B"
+    assert measurement.peak_memory_bytes == 2048 * 1024 * 1024
+
+
+def test_reset_peak_memory_is_a_no_op_rather_than_a_torch_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """父进程从未初始化 CUDA 上下文，torch 那条路径会直接抛 Invalid device argument。"""
+    from veritool_rl.core.agent.vllm_backend import NvmlHardwareProvider
+
+    assert NvmlHardwareProvider().reset_peak_memory() is None
+
+
+def test_an_absent_physical_gpu_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from veritool_rl.core.agent.vllm_backend import NvmlHardwareProvider
+
+    _fake_nvidia_smi(monkeypatch, "0, GPU-aaaaaaaa-1111, NVIDIA A, 100\n")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+
+    with pytest.raises(ValueError, match="没有报告物理 GPU 3"):
+        NvmlHardwareProvider().measure()
+
+
+def test_the_engine_also_selects_the_hardware_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """后端与硬件测量必须一起换。只换后端的话，证据里会带一个恒为 0 的显存假数。"""
+    import veritool_rl.product_cli as cli
+    from veritool_rl.core.agent.qwen import CudaHardwareProvider
+    from veritool_rl.core.agent.vllm_backend import NvmlHardwareProvider
+
+    assert isinstance(cli._hardware_provider_for_engine("vllm"), NvmlHardwareProvider)
+    assert isinstance(cli._hardware_provider_for_engine("transformers"), CudaHardwareProvider)

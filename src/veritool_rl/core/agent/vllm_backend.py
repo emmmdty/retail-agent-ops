@@ -20,11 +20,13 @@ Python，装了 vLLM 的那个 venv 把仓库放进 `sys.path` 即可。这个�
 
 from __future__ import annotations
 
+import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
-from veritool_rl.core.agent.qwen import GeneratedText, GenerationSettings
+from veritool_rl.core.agent.qwen import GeneratedText, GenerationSettings, GpuMeasurement
 
 # 共享 GPU 上的克制值；限制 KV cache 因而影响批量吞吐，但评测是串行的。
 DEFAULT_GPU_MEMORY_UTILIZATION = 0.35
@@ -128,3 +130,81 @@ class VllmBackend:
             output_tokens=len(completion.token_ids),
             latency_ms=latency_ms,
         )
+
+
+class NvmlHardwareProvider:
+    """vLLM 专用的硬件测量：读 NVML 而不是父进程的 torch CUDA 统计。
+
+    **为什么 `CudaHardwareProvider` 在这里不能用**——两个理由，第二个才是关键：
+
+    1. vLLM 把模型跑在**独立的 EngineCore 子进程**里，父进程从未初始化 CUDA 上下文，
+       `torch.cuda.reset_peak_memory_stats(0)` 直接抛 `Invalid device argument`。
+    2. 就算强行在父进程初始化，`max_memory_allocated` 量到的也是**父进程**的分配量
+       ——对 vLLM 恒等于 0。把它写进证据是**一个假数**，比报错更糟。
+
+    这里报的是 NVML 的整卡已用显存。它同样**不是**"这个模型要多少显存"：
+    vLLM 按 `gpu_memory_utilization` **预先占住**一整块池子，而且这张卡是多人共用的，
+    读数里含别人的进程。因此 `peak_memory_bytes` 在 vLLM 证据里只能读作
+    "测量期间整卡的占用水位"，不能与 HF 那一侧的同名字段做比较。
+    """
+
+    def __init__(self, device_ordinal: int = 0) -> None:
+        if device_ordinal < 0:
+            msg = "device_ordinal 不得为负数"
+            raise ValueError(msg)
+        self._ordinal = device_ordinal
+
+    def reset_peak_memory(self) -> None:
+        """NVML 没有"峰值"概念可重置——不假装有。"""
+        return None
+
+    def measure(self) -> GpuMeasurement:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        index, uuid, name, used_mib = self._query(self._physical_index(visible))
+        return GpuMeasurement(
+            gpu_index=index,
+            gpu_uuid=uuid if uuid.startswith("GPU-") else f"GPU-{uuid}",
+            gpu_name=name,
+            cuda_visible_devices=visible or "unset",
+            cuda_device=f"cuda:{self._ordinal}",
+            peak_memory_bytes=used_mib * 1024 * 1024,
+        )
+
+    def _physical_index(self, visible: str) -> int:
+        """与 `CudaHardwareProvider._physical_index` 同一套映射。
+
+        `nvidia-smi` 报的是**物理**索引且不受 `CUDA_VISIBLE_DEVICES` 影响，
+        所以直接拿逻辑 ordinal 去索引它的输出，在 `CUDA_VISIBLE_DEVICES=1` 时会记错卡
+        ——证据里的 GPU 身份就成了假的。
+        """
+        if not visible:
+            return self._ordinal
+        entries = [entry.strip() for entry in visible.split(",") if entry.strip()]
+        if self._ordinal >= len(entries):
+            msg = "device_ordinal 超出 CUDA_VISIBLE_DEVICES 范围"
+            raise ValueError(msg)
+        entry = entries[self._ordinal]
+        if not entry.isdigit():
+            msg = "CUDA_VISIBLE_DEVICES 必须使用数字物理索引才能记录 GPU 身份"
+            raise ValueError(msg)
+        return int(entry)
+
+    def _query(self, physical_index: int) -> tuple[int, str, str, int]:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,uuid,name,memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in completed.stdout.splitlines():
+            if not line.strip():
+                continue
+            index, uuid, name, used = (part.strip() for part in line.split(","))
+            if int(index) == physical_index:
+                return int(index), uuid, name, int(used)
+        msg = f"nvidia-smi 没有报告物理 GPU {physical_index}"
+        raise ValueError(msg)

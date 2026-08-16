@@ -565,6 +565,19 @@ def _default_ood_backend(
     return _ood_backend_for_engine("transformers")(config, models_root)
 
 
+def _hardware_provider_for_engine(engine: str) -> HardwareProvider:
+    """vLLM 把模型跑在子进程里，父进程的 torch CUDA 统计要么报错要么恒为 0。
+
+    见 `NvmlHardwareProvider` 的文档：那个 0 会被写进证据的 `peak_memory_bytes`，
+    比直接报错更糟——它是一个看起来合法的假数。
+    """
+    if engine == "vllm":
+        from veritool_rl.core.agent.vllm_backend import NvmlHardwareProvider
+
+        return NvmlHardwareProvider()
+    return CudaHardwareProvider()
+
+
 def _ood_backend_for_engine(
     engine: str,
 ) -> Callable[[OodEvaluationConfig, Path], GenerationBackend]:
@@ -612,6 +625,7 @@ def _run_ood_evaluate(
     这条路径**不是**封存 holdout：分布外集合公开、可反复读、可逐类别拆解。
     两者的治理级别不同，因此代码路径也不同——共用的只有环境、verifier 与模型 pin 校验。
     """
+    engine = getattr(args, "engine", "transformers")
     pipeline = config.get("pipeline")
     is_candidate = pipeline == "ood_candidate"
     _require_config_keys(
@@ -633,10 +647,8 @@ def _run_ood_evaluate(
         build_dir=args.input_dir,
         models_root=models_root,
         output_dir=args.output_dir,
-        backend_factory=(
-            backend_factory or _ood_backend_for_engine(getattr(args, "engine", "transformers"))
-        ),
-        hardware_provider=hardware_provider or CudaHardwareProvider(),
+        backend_factory=backend_factory or _ood_backend_for_engine(engine),
+        hardware_provider=hardware_provider or _hardware_provider_for_engine(engine),
     )
 
 
