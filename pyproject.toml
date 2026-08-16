@@ -73,6 +73,7 @@ files = [
   "scripts/ops/merge_lora_adapter.py",
   "scripts/ops/export_benchmark_prompts.py",
   "scripts/ops/benchmark_engines.py",
+  "scripts/ops/compare_engine_outputs.py",
   "scripts/legacy/bfcl/aggregate_bfcl_report.py",
   "scripts/legacy/bfcl/evaluate_bfcl.py",
   "scripts/legacy/bfcl/run_bfcl_official_ast.py",

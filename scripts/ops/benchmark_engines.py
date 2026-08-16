@@ -57,6 +57,18 @@ def main() -> int:
         help="批量冷启用的**另一组**提示词；与 --prompts 复用同一组会把缓存收益算成吞吐",
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--dump_outputs",
+        type=Path,
+        default=None,
+        help="把单流生成的文本写出来，供 compare_engine_outputs.py 与 HF 路径逐条比对",
+    )
+    parser.add_argument(
+        "--enable_prefix_caching",
+        type=lambda v: v.lower() not in {"0", "false", "no"},
+        default=True,
+        help="关掉它跑一遍，才知道 prefix caching 到底值多少",
+    )
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.35)
     parser.add_argument("--max_model_len", type=int, default=4096)
     args = parser.parse_args()
@@ -83,7 +95,7 @@ def main() -> int:
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
         enforce_eager=False,
-        enable_prefix_caching=True,
+        enable_prefix_caching=args.enable_prefix_caching,
     )
 
     # 预热用一条**不属于任何一组**的提示词：第一次请求包含 CUDA graph 捕获与缓存预热，
@@ -92,11 +104,13 @@ def main() -> int:
 
     single: list[float] = []
     single_tokens = 0
+    single_texts: list[str] = []
     for prompt in prompts:
         started = time.perf_counter()
         outputs = llm.generate([prompt], sampling)
         single.append((time.perf_counter() - started) * 1000)
         single_tokens += len(outputs[0].outputs[0].token_ids)
+        single_texts.append(outputs[0].outputs[0].text)
 
     cold_started = time.perf_counter()
     cold_outputs = llm.generate(cold_prompts, sampling)
@@ -114,6 +128,7 @@ def main() -> int:
         "dtype": "bfloat16",
         "prompt_count": len(prompts),
         "max_new_tokens": MAX_NEW_TOKENS,
+        "enable_prefix_caching": args.enable_prefix_caching,
         "single_stream_cold": {
             "mean_latency_ms": statistics.fmean(single),
             "p50_latency_ms": _percentile(single, 0.50),
@@ -134,6 +149,15 @@ def main() -> int:
             "output_tokens_per_second": warm_tokens / warm_seconds,
         },
     }
+    if args.dump_outputs is not None:
+        args.dump_outputs.write_text(
+            "\n".join(
+                json.dumps({"index": index, "text": text}, ensure_ascii=False)
+                for index, text in enumerate(single_texts)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
