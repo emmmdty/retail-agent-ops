@@ -17,6 +17,7 @@ adapter 逐文件哈希」**复算出来**，而不是自己声明。这样"这�
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 from typing import Any
@@ -266,7 +267,7 @@ def test_hashed_field_sets_only_ever_grow() -> None:
     from veritool_rl.retail_ops.evaluate.sealed_evaluation import SEALED_HASHED_FIELDS
 
     ordered = sorted(SEALED_HASHED_FIELDS)
-    for older, newer in zip(ordered, ordered[1:], strict=False):
+    for older, newer in itertools.pairwise(ordered):
         assert SEALED_HASHED_FIELDS[older] < SEALED_HASHED_FIELDS[newer], (older, newer)
 
 

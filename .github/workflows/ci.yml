@@ -36,14 +36,23 @@ jobs:
       - name: pytest
         run: uv run --frozen pytest -q
 
-      - name: ruff
+      - name: ruff lint
         run: uv run --frozen ruff check .
+
+      - name: ruff format
+        # 2026-08-16 起是硬门禁。此前只对每个任务触碰的文件做 targeted format，
+        # 151 个文件里累积了 58 个漂移；一次性统一后由这一步防止回潮。
+        run: uv run --frozen ruff format --check .
 
       - name: mypy
         run: uv run --frozen mypy
 
       - name: uv.lock 未漂移
         run: uv lock --check
+
+      - name: 公开发布审计
+        # LICENSE / 第三方声明 / secret / 模型权重 / holdout 真值 的静态边界扫描。
+        run: uv run --frozen python scripts/ci/audit_public_release.py
 
       - name: CPU qualification 全链路复现
         # build → evaluate ×3 → release ×2，然后断言两份 release.json 的决策、

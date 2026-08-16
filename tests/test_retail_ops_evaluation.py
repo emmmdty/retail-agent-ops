@@ -352,5 +352,5 @@ def test_evaluation_refuses_to_overwrite_run_and_loader_detects_tamper(
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     metrics["task_success"] = 0.0
     metrics_path.write_text(json.dumps(metrics) + "\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="评测证据 SHA-256 不匹配: metrics.json"):
+    with pytest.raises(ValueError, match=r"评测证据 SHA-256 不匹配: metrics\.json"):
         load_run_evidence(output_dir / "run.json")

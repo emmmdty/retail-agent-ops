@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import hashlib
 import json
 import re
@@ -210,16 +211,11 @@ def _decode_qwen_ast(raw_result: Any) -> list[dict[Any, dict[str, Any]]]:
     matches = _TOOL_CALL_PATTERN.findall(raw_result)
     tool_calls: list[Any] = []
     for match in matches:
-        try:
+        with contextlib.suppress(Exception):
             tool_calls.append(json.loads(match))
-        except Exception:  # noqa: BLE001 - official handler skips malformed blocks.
-            pass
     if any(type(item) is not dict for item in tool_calls):
         raise ValueError(f"Model did not return a list of function calls: {raw_result}")
-    return [
-        {call["name"]: {key: value for key, value in call["arguments"].items()}}
-        for call in tool_calls
-    ]
+    return [{call["name"]: dict(call["arguments"])} for call in tool_calls]
 
 
 def _is_function_calling_output(decoded: Any) -> bool:
@@ -246,7 +242,7 @@ def _evaluate_entry(
     ground_truth = possible_answer["ground_truth"]
     try:
         decoded = _decode_qwen_ast(raw_result)
-    except Exception as error:  # noqa: BLE001 - mirrors official decoder boundary.
+    except Exception as error:
         return {
             "id": task_id,
             "model_name": model_name,

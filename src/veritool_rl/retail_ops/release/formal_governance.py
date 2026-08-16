@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import stat
@@ -192,7 +193,5 @@ def _read_trusted_regular_file(
         raise ValueError("formal holdout artifact 安全读取失败") from None
     finally:
         for fd in reversed(opened_fds):
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass

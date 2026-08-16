@@ -99,7 +99,7 @@ def test_transformers_backend_requires_local_model_directory(
 
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(FileNotFoundError, match="models/Qwen3-1.7B"):
+    with pytest.raises(FileNotFoundError, match=r"models/Qwen3-1\.7B"):
         TransformersBackend.from_pretrained("models/Qwen3-1.7B", None)
 
 

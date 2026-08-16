@@ -62,7 +62,7 @@ def test_the_ood_set_is_a_separate_dataset_artifact(workspace: Path) -> None:
     assert manifest.dataset_version != "retail_ops_v1_r2_20260722"
     assert manifest.split == "ood"
     assert manifest.task_count == 60
-    assert manifest.category_counts == {category: 20 for category in sorted(OOD_CATEGORIES)}
+    assert manifest.category_counts == dict.fromkeys(sorted(OOD_CATEGORIES), 20)
 
 
 def test_the_frozen_dataset_quotas_are_untouched() -> None:
@@ -238,7 +238,7 @@ def test_the_ood_evaluation_reports_per_category_and_per_kind_success(
     assert evidence.task_count == 60
     assert set(evidence.category_success) == set(OOD_CATEGORIES)
     assert evidence.metrics["task_success"] == 1.0, "gold 序列必须能被评测管线跑通"
-    assert evidence.category_success == {category: 1.0 for category in OOD_CATEGORIES}
+    assert evidence.category_success == dict.fromkeys(OOD_CATEGORIES, 1.0)
     assert evidence.evidence_complete is True
     assert evidence.replayable_count == 60
     assert (workspace / "out" / "ood-report.json").is_file()

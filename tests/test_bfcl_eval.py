@@ -277,12 +277,12 @@ def test_validate_official_result_ids_rejects_missing_extra_and_duplicates() -> 
 
     validate_official_result_ids(["simple_python_0"], [{"id": "simple_python_0"}])
 
-    with pytest.raises(ValueError, match="缺失.*simple_python_1"):
+    with pytest.raises(ValueError, match=r"缺失.*simple_python_1"):
         validate_official_result_ids(
             ["simple_python_0", "simple_python_1"],
             [{"id": "simple_python_0"}],
         )
-    with pytest.raises(ValueError, match="额外.*simple_python_2"):
+    with pytest.raises(ValueError, match=r"额外.*simple_python_2"):
         validate_official_result_ids(
             ["simple_python_0"],
             [{"id": "simple_python_0"}, {"id": "simple_python_2"}],

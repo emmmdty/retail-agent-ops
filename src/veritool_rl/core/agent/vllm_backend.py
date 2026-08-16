@@ -156,7 +156,7 @@ class NvmlHardwareProvider:
 
     def reset_peak_memory(self) -> None:
         """NVML 没有"峰值"概念可重置——不假装有。"""
-        return None
+        return
 
     def measure(self) -> GpuMeasurement:
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")

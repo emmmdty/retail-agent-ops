@@ -281,10 +281,10 @@ def test_formal_catalog_matches_every_frozen_family_axis() -> None:
         assert len(scenario_records) == 35
         assert Counter(
             record.task.metadata["formal_family"]["state_variant"] for record in scenario_records
-        ) == {index: 5 for index in range(7)}
+        ) == dict.fromkeys(range(7), 5)
         assert Counter(
             record.task.metadata["formal_family"]["context_variant"] for record in scenario_records
-        ) == {index: 7 for index in range(5)}
+        ) == dict.fromkeys(range(5), 7)
 
         reason_counts: Counter[str] = Counter()
         for record in scenario_records:

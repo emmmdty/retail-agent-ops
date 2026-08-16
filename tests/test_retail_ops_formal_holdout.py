@@ -242,7 +242,7 @@ def test_authorization_rejects_symlinked_trusted_root(tmp_path: Path) -> None:
     root_link = tmp_path / "private-link"
     root_link.symlink_to(private_dir, target_is_directory=True)
 
-    with pytest.raises(ValueError, match="trusted_private_root.*符号链接"):
+    with pytest.raises(ValueError, match=r"trusted_private_root.*符号链接"):
         _authorize(dataset, root_link / "holdout.jsonl", root_link)
 
 
@@ -324,7 +324,7 @@ def test_holdout_receipt_rejects_unknown_keys_and_internal_duplicates(
 
     payload.pop("private_path")
     payload["task_fingerprints"][1] = payload["task_fingerprints"][0]
-    with pytest.raises(ValidationError, match="task_fingerprints.*唯一"):
+    with pytest.raises(ValidationError, match=r"task_fingerprints.*唯一"):
         FormalHoldoutReceipt.model_validate(payload)
 
 

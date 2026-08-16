@@ -87,16 +87,14 @@ def test_v1_still_uses_the_two_parameter_refund_schema() -> None:
     refund = next(tool for tool in bundle.tools if tool.name == "refund_order")
 
     assert refund.parameters["required"] == ["order_id", "reason"]
-    assert bundle.policies.rules == list(
-        (
-            "refund_requires_lookup",
-            "customer_must_own_order",
-            "refund_window_must_be_open",
-            "duplicate_refund_forbidden",
-            "transient_retry_is_bounded",
-            "tool_schema_is_strict",
-        )
-    )
+    assert bundle.policies.rules == [
+        "refund_requires_lookup",
+        "customer_must_own_order",
+        "refund_window_must_be_open",
+        "duplicate_refund_forbidden",
+        "transient_retry_is_bounded",
+        "tool_schema_is_strict",
+    ]
 
 
 def test_v1_and_v2_are_different_bundles() -> None:

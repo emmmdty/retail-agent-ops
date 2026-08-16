@@ -399,7 +399,7 @@ def test_public_models_enforce_exact_keys_counts_order_and_file_hashes(
     manifest = load_formal_task_manifest(train_path)
     assert set(manifest.model_dump(mode="json")) == SPLIT_MANIFEST_KEYS
     assert manifest.task_count == 240
-    assert manifest.category_counts == {scenario: 40 for scenario in SCENARIOS}
+    assert manifest.category_counts == dict.fromkeys(SCENARIOS, 40)
     assert manifest.artifact_sha256 == sha256_file(private_dir / "train.jsonl")
     assert len(manifest.task_fingerprints) == 240
     assert len(set(manifest.task_fingerprints)) == 240
@@ -611,9 +611,9 @@ def test_dataset_receipt_binds_exact_public_files_and_rejects_unknown_keys(
     assert set(payload) == DATASET_RECEIPT_KEYS
     assert receipt.split_task_counts == {"train": 240, "dev": 60, "holdout": 120}
     assert receipt.split_category_counts == {
-        "train": {scenario: 40 for scenario in SCENARIOS},
-        "dev": {scenario: 10 for scenario in SCENARIOS},
-        "holdout": {scenario: 20 for scenario in SCENARIOS},
+        "train": dict.fromkeys(SCENARIOS, 40),
+        "dev": dict.fromkeys(SCENARIOS, 10),
+        "holdout": dict.fromkeys(SCENARIOS, 20),
     }
     assert receipt.public_files_sha256 == {
         filename: sha256_file(public_dir / filename)
@@ -633,7 +633,7 @@ def test_dataset_receipt_loader_rejects_changed_public_split_file(tmp_path: Path
     assert load_formal_dataset_receipt(dataset_path).dataset_version == DATASET_VERSION
     train_path.write_text("{}\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="train.json SHA-256 不匹配"):
+    with pytest.raises(ValueError, match=r"train\.json SHA-256 不匹配"):
         load_formal_dataset_receipt(dataset_path)
 
 
@@ -702,5 +702,5 @@ def test_verified_dataset_translates_public_file_os_errors(tmp_path: Path) -> No
     _, public_dir = _write_dataset(tmp_path)
     (public_dir / "dev.json").unlink()
 
-    with pytest.raises(ValueError, match="公开 formal 文件无法读取: dev.json"):
+    with pytest.raises(ValueError, match=r"公开 formal 文件无法读取: dev\.json"):
         load_verified_formal_dataset(public_dir)

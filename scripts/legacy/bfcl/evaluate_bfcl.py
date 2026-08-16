@@ -280,7 +280,7 @@ def _validate_run_scope(
             msg = "smoke 必须只包含 manifest 中一条 simple_python 任务"
             raise ValueError(msg)
         return
-    counts = {category: 0 for category in BFCL_CATEGORIES}
+    counts = dict.fromkeys(BFCL_CATEGORIES, 0)
     for task_id in ids:
         counts[task_id.rsplit("_", 1)[0]] += 1
     if len(ids) != 200 or counts != dict.fromkeys(BFCL_CATEGORIES, 50):

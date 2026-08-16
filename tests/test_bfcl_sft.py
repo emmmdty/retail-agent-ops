@@ -88,7 +88,7 @@ def test_build_bfcl_sft_manifest_freezes_disjoint_exact_splits(tmp_path: Path) -
 
     assert first == second
     assert first.holdout_manifest_sha256 == sha256_file(holdout_path)
-    assert {category: 0 for category in CATEGORIES} == {
+    assert dict.fromkeys(CATEGORIES, 0) == {
         category: sum(item.category == category for item in first.splits.holdout)
         - HOLDOUT_QUOTAS[category]
         for category in CATEGORIES

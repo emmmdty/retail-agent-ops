@@ -29,17 +29,17 @@ from veritool_rl.retail_ops.release.formal_governance import (
 )
 
 __all__ = [
-    "LoadedRetailOpsBundle",
-    "FormalSplit",
+    "AuthorizedFormalHoldout",
     "FormalDatasetReceipt",
     "FormalHoldoutReceipt",
-    "FormalTaskRecord",
+    "FormalSplit",
     "FormalTaskManifest",
+    "FormalTaskRecord",
     "FormalTaskSet",
-    "VerifiedFormalDataset",
+    "LoadedRetailOpsBundle",
     "ReleasePolicyConfig",
     "RetailOpsPolicies",
-    "AuthorizedFormalHoldout",
+    "VerifiedFormalDataset",
     "assert_formal_split_isolation",
     "authorize_formal_holdout",
     "build_formal_task_set",

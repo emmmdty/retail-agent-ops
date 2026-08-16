@@ -721,16 +721,16 @@ def test_write_formal_train_export_is_non_overwrite(tmp_path: Path) -> None:
     private_root, public_root = _train_export_roots(tmp_path)
 
     report = compute_teacher_quality_report([], {})
-    kwargs: dict[str, Any] = dict(
-        private_root=private_root,
-        public_root=public_root,
-        attempt_id=_ATTEMPT_ID,
-        dataset_version=_DATASET_VERSION,
-        report=report,
-        selections=[],
-        train_rows=[],
-        sft_rows=[],
-    )
+    kwargs: dict[str, Any] = {
+        "private_root": private_root,
+        "public_root": public_root,
+        "attempt_id": _ATTEMPT_ID,
+        "dataset_version": _DATASET_VERSION,
+        "report": report,
+        "selections": [],
+        "train_rows": [],
+        "sft_rows": [],
+    }
     write_formal_train_export(**kwargs)
 
     with pytest.raises(FileExistsError):

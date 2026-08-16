@@ -129,7 +129,7 @@ class FormalTaskSet(StrictModel):
             if any(record.task.split != split.value for record in records):
                 raise ValueError(f"{split} 容器与任务 split 不一致")
             scenario_counts = Counter(record.task.scenario for record in records)
-            if scenario_counts != {scenario: expected_count for scenario in _SCENARIOS}:
+            if scenario_counts != dict.fromkeys(_SCENARIOS, expected_count):
                 raise ValueError(f"{split} 类别配额不符合冻结契约")
 
             families: dict[str, list[FormalTaskRecord]] = {}

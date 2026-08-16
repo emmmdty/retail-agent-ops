@@ -238,7 +238,7 @@ def test_aggregate_bfcl_runs_rejects_manifest_changed_after_evaluation(
     tampered_manifest = tmp_path / "tampered-manifest.json"
     tampered_manifest.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="manifest.*哈希"):
+    with pytest.raises(ValueError, match=r"manifest.*哈希"):
         aggregate_bfcl_runs(
             baseline_dir=baseline_dir,
             sft_dir=sft_dir,

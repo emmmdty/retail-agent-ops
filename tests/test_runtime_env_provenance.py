@@ -85,7 +85,7 @@ def test_existing_v1_0_evidence_still_recomputes_bit_identically() -> None:
         _content_id,
     )
 
-    assert RUNTIME_PROVENANCE_FIELDS == {"inference_engine", "runtime_env_sha256"}
+    assert {"inference_engine", "runtime_env_sha256"} == RUNTIME_PROVENANCE_FIELDS
 
     # 一份"2026-08-16 之前"的证据：加载后两个新字段都是 None。
     legacy = make_base_evidence()

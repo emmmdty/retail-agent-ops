@@ -30,7 +30,7 @@ _REQUIRED_METRICS = (
 
 #: v1.1 额外需要的两个量。它们从 R1 起就在 `compute_metrics` 的输出里，因此
 #: 所有已产出的证据都能重算 v1.1 门禁，不需要重跑任何模型。
-_REQUIRED_METRICS_V1_1 = _REQUIRED_METRICS + ("average_latency_ms", "average_tool_calls")
+_REQUIRED_METRICS_V1_1 = (*_REQUIRED_METRICS, "average_latency_ms", "average_tool_calls")
 
 #: **v1.0：磁盘上全部已有 release 报告的冻结契约。一个字都不能改。**
 #: 就地增删这个元组会让 `formal-release-001/002` 与 R1 qualification 的 GO/NO-GO

@@ -118,7 +118,7 @@ def build_sealed_report(
         "failure_violation_counts": {},
         "replayable_count": 120,
         "evidence_complete": True,
-        "private_artifact_sha256": {name: "6" * 64 for name in SEALED_ARTIFACT_NAMES},
+        "private_artifact_sha256": dict.fromkeys(SEALED_ARTIFACT_NAMES, "6" * 64),
         "deployment_form": deployment_form,
         "merged_from": lineage,
     }

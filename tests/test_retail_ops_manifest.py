@@ -61,7 +61,7 @@ def test_load_built_tasks_verifies_manifest_and_task_hashes(tmp_path: Path) -> N
     rows[0] = json.dumps(changed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     (output / "tasks.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="tasks.jsonl 与 manifest SHA-256 不匹配"):
+    with pytest.raises(ValueError, match=r"tasks\.jsonl 与 manifest SHA-256 不匹配"):
         load_built_tasks(output)
 
 

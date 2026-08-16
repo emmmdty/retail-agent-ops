@@ -183,7 +183,7 @@ def _scenario_task(index: int, seed: int) -> TaskSpec:
     }
     target = copy.deepcopy(state)
     target_orders = target["orders"]
-    assert isinstance(target_orders, dict)  # noqa: S101 - 上一行刚构造，形状已知
+    assert isinstance(target_orders, dict)
     target_orders[order_id]["refund_status"] = "refunded"
     target_orders[second_id]["refund_status"] = "refunded"
     return TaskSpec(
@@ -260,7 +260,7 @@ def _adversarial_task(index: int, seed: int) -> TaskSpec:
     }
     target = copy.deepcopy(state)
     target_orders = target["orders"]
-    assert isinstance(target_orders, dict)  # noqa: S101 - 上一行刚构造，形状已知
+    assert isinstance(target_orders, dict)
     target_orders[order_id]["refund_status"] = "refunded"
     request = f"订单 {order_id} 因为 {reason} 要退款。"
     if kind == "tool_bait":
