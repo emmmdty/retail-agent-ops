@@ -2,130 +2,114 @@
 
 ## Goal
 
-在 12 周内交付可公开、可复现、可面试解释的零售工具 Agent 单卡适配与发布流水线，并在前 6 周完成首个工程闭环。
+在 12 周内交付可公开、可复现、可面试解释的零售工具 Agent 单卡适配与发布流水线。
+R0–R5 已完成并封存（tag `v1.0-r5`），R5 收尾摘要见 `progress.md`。
 
 ## Current Phase
 
-**R5 公开交付与求职收口**（`docs/EXECUTION_PLAN.md` 已标为已完成）。R4.5 架构补强 13 条
-已全部收口。起始基线 **907 tests passed**，收口基线 **944 passed**。
-本阶段不产生新的模型改进方案。
+**R6 泛化修复**（用户于 2026-08-16 追加，要求把项目推到 9 分以上）。
 
-## Current Task：R5 收口封存
+外部审阅两轮给到 8.5/10，并明确指出天花板在哪：
+> 「8.5 到 10 的差距不在工程，在**有一个扛得住分布漂移的结果**。」
 
-### 用户本轮追加的三条硬要求（2026-08-16）
+R6 的目标就是那个结果。**不是再补文档、再加测试。**
 
-1. **项目必须拿得出 GO**，不能只有 NO-GO；
-2. **收尾前必须由一个独立「面试官」角色审核通过**，否则不算完成；
-3. **代码整洁性**要做好。
+## Current Task：R6 泛化修复
 
-对应到执行上：
+### 诊断（已完成，这是本轮的出发点）
 
-- 第 1 条不通过"放宽门禁"实现——阈值一个字不改。项目**已有**一个自动门禁 GO
-  （第四次观测，合并部署形态，LOG-20260815-04）。挡在它前面的是 `SPEC.md` §6 第 6 条
-  「最终候选独立重建后仍保持正向提升」**未做**。本轮做掉它，把结论从"自动门禁 GO"
-  升级为"SPEC §6 六条全部满足"。**若重建复验不通过，如实记录并保留原口径**，
-  不修改门禁、不挑选有利 seed。
-- 第 2 条在最终质量门之后执行，reviewer 拿不到本会话上下文，只读仓库。
-- 第 3 条：全仓 formatter 统一 + lint 集扩展 + 死代码清理 + 把它们写进 CI 门禁。
+分布外读数按子类拆开后，机制是清楚的：
+
+| expression 子类 | 零训练基座 | 合并候选 |
+|---|---|---|
+| `code_switch` | **1.0** | **0.0** |
+| `colloquial` | **0.5** | **0.0** |
+| `typo` / `terse` / `greeting_noise` | 0.0 | 0.0 |
+
+**训练把基座本来会做的两类打没了**，20 条失败**全部**是 `premature_final_response`
+（正是 R3 那个"说完就停"）。
+
+**机制**：240 条训练数据全部来自 `formal_tasks._user_request` 的 12 句模板，
+且 12 句**全部**是"请核实 / 请检查 / 请查询…"的书面祈使句。模型学到的是
+**表面形式 → 动作**的触发器，而不是**语义 → 动作**。换一种说法（口语、错别字、
+中英夹杂、极简）触发器不响，模型就退回"用自然语言解释"。
 
 ### 输入
 
-- 基线 `be8f18d`，工作树干净，907 tests passed，Ruff / mypy / uv lock 全绿；
-- 已有全部运行产物：四次封存 holdout 观测、dev 2×2 矩阵、跨规模验证、OOD 60 条、
-  serving 四档、引擎替换对照；
-- 冻结契约：`GATE_IDS` v1.0/v1.1、dev `PAIRING_FIELDS`、`SEALED_PAIRING_FIELDS`、
-  `dataset_version` + 40/10/20 配额、`SealedEvaluationReport` v1.0/v1.1 字段集；
-- 远端 gpu-5090 `/mnt/aidata/tongjiakai/retail-agent-ops` 已同步到同一 commit，
-  模型与私有训练数据齐备。
+- 基线 `bfa5c8d`（`v1.0-r5`），948 tests passed，全部质量门通过；
+- **`.env` 里有可用的 DeepSeek 凭据**（本轮已 smoke 验证 HTTP 200）——
+  这解锁了此前被记为「未做：两台机器都没有 `TEACHER_LLM_*` 凭据」的 LLM 改写路径；
+- 已冻结的四条硬契约（`GATE_IDS`、dev `PAIRING_FIELDS`、`SEALED_PAIRING_FIELDS`、
+  40/10/20 配额 + `dataset_version`）；
+- 240 条已验证 teacher 轨迹（`train-export-004` 的来源）。
 
 ### 输出
 
 | 编号 | 内容 | 资源 |
 |---|---|---|
-| T1 | 代码整洁性：全仓 `ruff format`、lint 集扩展到 `SIM/C4/RET/PIE/RUF`、死代码清理、CI 加 format 门 | CPU |
-| T2 | **独立重建复验**（SPEC §6 第 6 条）：同 config 换训练 seed 重训 + dev 60 配对评测 | **GPU** |
-| T3 | 公开发布审计：`LICENSE`、第三方声明、secret / 权重 / holdout 真值扫描脚本 | CPU |
-| T4 | 故障注入矩阵：把 R5 要求的五类故障逐条映射到测试，补缺口 | CPU |
-| T5 | 对外文档：README 中文重写（第一屏结论 + 架构图）、`README.en.md` 英文版 | CPU |
-| T6 | 求职材料：`RESUME_EVIDENCE.md` 更新与 bullet 定稿、`docs/INTERVIEW_PREP.md` | CPU |
-| T7 | 收口：`EXECUTION_PLAN.md` R5 标完成、`PROJECT_LOG.md` 追加、最终质量门、提交 | CPU |
-| T8 | **独立面试官审核**（用户第 2 条要求），未通过则回到对应任务修复 | CPU |
+| T1 | **措辞池**：LLM 生成 + 双向校验 + 按哈希确定性三分（训练增强 / OOD-dev / OOD-sealed） | API |
+| T2 | 导出侧支持 paraphrase 增强（`sft_paraphrase_*` 两个键，沿用「声明期望哈希」的形状） | CPU / TDD |
+| T3 | **OOD v2 任务集**：复用 v1 的场景与判定逻辑，只把请求文本换成措辞池 | CPU / TDD |
+| T4 | 重训 + 评测：dev 60（回归）、OOD-v2-dev（迭代） | GPU |
+| T5 | **OOD-v2-sealed 一次性判定** + OOD v1 独立迁移检查 | GPU |
+| T6 | 演示视频（终端录制 → 可播放文件） | CPU |
+| T7 | 「数字是否高到可疑」审视：逐个满分/接近满分的读数配上下文与限度 | CPU |
+| T8 | 文档、`PROJECT_LOG`、独立面试官第三轮 | CPU |
 
-### 非目标（硬约束）
+### 方法学守则（本轮成败的关键，违反即结论作废）
 
-- **不下调任何发布门禁阈值**（`test_release_config_does_not_touch_the_gates` 必须通过）；
-- **不消耗第五次封存 holdout 观测**——重建复验只在 **dev** 上做；
-- 不改 `dataset_version`、40/10/20 配额、任何已冻结字段集合；
-- 不重命名 Python 包；
-- 不删除或改写四次观测中任何一次的结论，不删除被证伪的假设记录；
-- 文档不得出现没有产物支撑的数字；
-- 不创建 remote、不推送公开仓库（对外发布是用户的动作，本轮只做到"一条命令即可发布"）。
+1. **措辞池按 `sha256(措辞 + 固定盐)` 确定性三分**，不是人工挑选。
+   训练增强用的措辞与评测用的措辞**互不相交**，且由代码断言。
+2. **OOD-v2-sealed 只观测一次**，在 OOD-v2-dev 上的迭代全部结束、代码冻结并提交之后。
+3. **OOD v1（作者手写那 60 条）本轮不得用于任何选择**——它是**独立迁移检查**，
+   作者不同、生成过程不同，只在最终一次性报告。用它选候选就等于污染它。
+4. **封存 120 条 holdout 默认不碰**。若最终候选在 OOD-sealed 上确实站住，
+   再决定是否消耗第五次观测——那是发布判定，不是调参输入。
+5. **不下调任何门禁阈值**；不改 `dataset_version` / 40/10/20；不改 v1 bundle。
+6. **改写只动 user 的第一条消息**，assistant 的工具调用与最终状态一个字不动——
+   否则改的就不是「说法」而是「任务」。改写后必须过**语义回环校验**
+   （让模型把改写反分类回场景，不一致即丢弃）。
 
 ### 失败模式（实施时主动防御）
 
-1. **为了拿 GO 而挑 seed**：重建的 seed 事先写定（0 与 1）并提交进配置，两次结果无论正负都记录、都进文档，不跑第三个再挑好看的；
-2. **formatter 大 diff 掩盖语义改动**：格式化与逻辑修改分成两次提交，中间各跑一次全量测试；
-3. **文档漂移**：观测次数、测试数、`report_id` 这类数字只在唯一事实源出现，
-   其余文档引用而不复述；新增治理测试锁定；
-4. **英文版与中文版结论不一致**：英文版由中文版逐节翻译，并加治理测试断言关键数字一致；
-5. **审计脚本给假阳性安全感**：扫描规则必须有对应的负测试（故意放一个假 secret 能被抓到）；
-6. **面试官审核走过场**：reviewer 不给本会话上下文，只给仓库和一句岗位设定。
+1. **拿 OOD 集合调参**：这是本轮最容易犯、也最致命的错。用 sealed 分片 + 守则 2/3 挡；
+2. **改写把任务改了**：例如把「退款」写成「换货」、丢掉 order_id、把「重试一次」删掉 →
+   语义回环校验 + 结构校验（必须含 `{order_id}` 占位符）+ 逐场景配额检查；
+3. **增强只是把同一句复制 N 遍**：措辞池内需去重，并断言每条 task 的改写互不相同；
+4. **修好了 OOD 却打坏了 dev**：dev 60 必须同时报告，退化即如实记录；
+5. **API 成本失控**：先跑 smoke 估算 token，再跑全量；两批成本都记账；
+6. **「9 分」变成自我宣布**：最终由不带上下文的外部 reviewer 判定，不由我判定。
 
-### 影响文件（预计）
-
-- T1：全仓 `.py`、`pyproject.toml`、`.github/workflows/ci.yml`；
-- T2：新增 `configs/retail_ops/evaluate/retail_ops_v1_r5_rebuild_seed{0,1}_candidate.yaml`、
-  `docs/REBUILD_VERIFICATION.md`、`tests/test_retail_ops_r5_cli.py`；
-- T3：新增 `LICENSE`、`NOTICE.md`、`scripts/ci/audit_public_release.py`、对应测试；
-- T4：新增 `docs/FAULT_MATRIX.md`、`tests/` 补缺口；
-- T5：`README.md`、新增 `README.en.md`、`tests/test_project_governance.py`；
-- T6：`docs/RESUME_EVIDENCE.md`、新增 `docs/INTERVIEW_PREP.md`；
-- T7：`docs/EXECUTION_PLAN.md`、`docs/PROJECT_LOG.md`、`progress.md`、`findings.md`。
-
-### 验收命令与预期产物
+### 验收命令
 
 ```bash
-.venv/bin/pytest -q                    # 起始 907 passed，只增不减
-.venv/bin/ruff check .
-.venv/bin/ruff format --check .        # 本轮新增为硬门禁
+.venv/bin/pytest -q
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
 .venv/bin/mypy
 env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 git diff --check
 .venv/bin/python scripts/ci/verify_qualification_chain.py
-.venv/bin/python scripts/ci/audit_public_release.py   # 本轮新增
+.venv/bin/python scripts/ci/audit_public_release.py
 ```
-
-另需证明：`formal-release-001/002`、R1 qualification 的 `release.json` 仍能加载；
-48 份已有运行证据的哈希复算不变。
 
 ### 授权状态
 
-GPU **是**（用户 2026-08-16 授权，仅 dev 轨道，不碰封存 holdout）、
-商业 API **否**（两台机器均无 `TEACHER_LLM_*` 凭据）、模型下载 **否**、
-封存 holdout 执行 **否**、公开发布推送 **否**（留给用户）、新运行时依赖 **否**。
+GPU **是**、**商业 API 是**（用户 2026-08-16 授权，`.env` 已有凭据）、
+模型下载 **否**、封存 120 holdout **暂缓**（见守则 4）、公开发布推送 **否**、
+新依赖 **允许**（用户授权；从中国镜像下载）。
 
 ### 进度
 
-- [x] 0. 上下文读取、基线确认（907 passed）、后台 shell 核查（属另一项目，与本仓库无关）
-- [x] 1. `task_plan.md` 重写为 R5
-- [x] 2. **T2 GPU 独立重建复验**：seed 0 与 seed 1 各重训 + dev 配对评测；
-      58/60 与 60/60（base 54/60）→ SPEC §6 第 6 条满足；
-      **同时发现同 seed 不可逐位复现**（LOG-20260816-05）
-- [x] 3. T1 代码整洁性：全仓 format（58 文件）+ lint 集扩展（45 处）+ format 进 CI
-- [x] 4. T3 公开发布审计：`LICENSE` / `NOTICE.md` / `audit_public_release.py` / 19 项测试
-- [x] 5. T4 故障注入矩阵：`FAULT_MATRIX.md` + 文档-测试绑定（已突变验证）；
-      修掉 teacher client 无超时的真缺陷（LOG-20260816-06）
-- [x] 6. T5 对外文档：README 重写 + `README.en.md`，关键数字由治理测试断言一致
-- [x] 7. T6 求职材料：`INTERVIEW_PREP.md` + `RESUME_EVIDENCE.md` bullet 定稿
-- [x] 8. T7 收口：`EXECUTION_PLAN` R5 标完成、`PROJECT_LOG` 两条、接管文档漂移收口、
-      最终门禁 **944 passed** 全绿、三次提交
-- [x] 9. **T8 独立面试官审核已通过**（LOG-20260816-07）。两轮，reviewer 不带本会话上下文、
-      自跑全部门禁、自查数字。第一轮 **PASS 8/10** + 4 条阻塞项（**四条全部属实，
-      且全部落在本项目自己的卖点「数字纪律」上**）；逐条收口后第二轮
-      **PASS，4/4 解除，8 → 8.5/10**。
-      收口过程中我自己又漏了 5 处残留 → 据此把「文档数字绑到可执行校验」变成常设做法。
-- [x] 10. 收尾封存：PROJECT_LOG 三条（-05/-06/-07）、progress 台账、最终门禁、
-      远端同步、`v1.0-r5` 标签
+- [x] 0. 诊断：按子类拆开 OOD 读数，定位机制
+- [x] 1. `.env` 凭据验证（HTTP 200）与 R6 计划
+- [ ] 2. T1 措辞池
+- [ ] 3. T2 导出侧 paraphrase 支持
+- [ ] 4. T3 OOD v2 任务集
+- [ ] 5. T4 重训 + dev/OOD-v2-dev 评测
+- [ ] 6. T5 OOD-v2-sealed 一次性判定 + OOD v1 迁移检查
+- [ ] 7. T6 演示视频
+- [ ] 8. T7 「数字可疑度」审视
+- [ ] 9. T8 文档 + 独立面试官第三轮
 
 ## Task Rules
 
@@ -138,6 +122,7 @@ GPU **是**（用户 2026-08-16 授权，仅 dev 轨道，不碰封存 holdout�
 
 | Date | Error | Resolution |
 |---|---|---|
-| 2026-08-16 | R5 重建复验首次起跑漏了 `--input_dir`，CLI 硬失败退出（未产生任何输出目录） | 私有训练数据根是 `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722`；补参数后重跑，两次失败均未污染产物树 |
+| 2026-08-16 | R5 重建复验首次起跑漏了 `--input_dir`，CLI 硬失败退出 | 私有训练数据根是 `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722`；补参数后重跑 |
+| 2026-08-16 | 按外部审阅修 teacher/训练数字时只改了主表，漏了 5 处 | 手工同步同一组数字必然漏；改为绑到可执行校验（`test_the_two_teacher_batches_are_never_conflated` 等） |
 
-（R0–R4.5 的历史错误台账已归档到 `progress.md`，本表只保留当前阶段。）
+（R0–R4.5 的历史错误台账已归档到 `progress.md`。）

@@ -200,6 +200,7 @@ def _train_export_config(**overrides: Any) -> dict[str, Any]:
         "sft_oversample": {},
         "sft_terminal_response": [],
         "sft_system_prompt_sha256": None,
+        "sft_paraphrase": None,
     }
     values.update(overrides)
     return values

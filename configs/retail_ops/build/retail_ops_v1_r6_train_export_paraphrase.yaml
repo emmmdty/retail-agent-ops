@@ -1,0 +1,48 @@
+# R6 训练增强导出：与 train-export-004（发布候选 sft-006 的数据来源）的
+# **唯一**差别是 sft_paraphrase 从 null 变成启用。其余每一个键逐字段相同，
+# 由 tests/test_retail_ops_r6_cli.py::test_r6_export_changes_exactly_one_variable 断言。
+#
+# 为什么做这件事（诊断，不是猜测）：
+# LOG-20260816-01 的子类拆分显示，拿到 GO 的候选在分布外表达上是 0/20，
+# 而且**把零训练基座本来会做的两类打没了**——code_switch 1.0→0.0、colloquial 0.5→0.0，
+# 20 条失败全部是 premature_final_response（R3 那个「说完就停」）。
+#
+# 机制：240 条 train 全部来自 formal_tasks._user_request 的 12 句模板，
+# 且 12 句全是「请核实 / 请检查 / 请查询…」的书面祈使句。模型学到的是
+# **表面形式 → 动作**的触发器，不是**语义 → 动作**。换个说法触发器不响，
+# 就退回用自然语言解释。
+#
+# 做法：为每条任务额外产出 3 条**只改写了 user 第一句话**的样本，
+# 改写文本取自 LLM 生成的措辞池的 train_aug 分片。
+# assistant 的工具调用、tool 观测与 target_state 一个字不动——
+# 改的是「顾客怎么说」，不是「Agent 该做什么」。
+#
+# 措辞池的三条方法学守则（`build/phrasing_bank.py` 有完整理由）：
+#   1. 分片由 sha256(措辞 + 固定盐) 决定，不是人挑的；
+#   2. train_aug 与 ood_dev / ood_sealed 逐条互斥，由代码断言；
+#   3. 措辞不得透露订单状态（「已经过期了」「不是我的单」），
+#      否则 Agent 不查订单也能猜对，任务从「查证后判断」退化成「读理解」。
+#
+# 连带后果（必须与读数一起说）：sft 行数 400 → 1600，因此在同样 3 epoch 下
+# **梯度步数也从 75 涨到约 300**。这一轮改变的不只是「数据里的说法更多样」，
+# 也包括「训练更久」。两者无法在这个设计里分开，报告时不得只说前者。
+#
+# attempt_id 是新目录：004 不得覆盖。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-006
+sft_oversample:
+  refund_eligible: 3
+  refund_recovery: 3
+sft_terminal_response: []
+sft_system_prompt_sha256: "8ae813c4284246b9700470053ba90339a3f88439d9e57905d5db704ca63283dd"
+
+# bank_sha256 是**声明的期望值**：换了池子却忘了改这里，会静默产出另一份训练集。
+# 与 sft_system_prompt_sha256 同一个形状、同一个理由。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-001/phrasings.jsonl
+  bank_sha256: "a34b25ac6f2b1ae24f9c2a135e3ac11a47ac8b401f676cc50b8c2bce1720b4f6"
+  per_task: 3

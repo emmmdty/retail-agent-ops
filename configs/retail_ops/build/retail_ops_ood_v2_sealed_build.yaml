@@ -1,0 +1,20 @@
+# OOD v2（sealed）：**只换说法**的分布外任务集。
+#
+# 六个冻结场景 × 每场景 10 条，业务语义与 `formal_tasks._scenario_contract` 逐条对应，
+# **唯一的自变量是 user 的第一句话**——它来自 LLM 措辞池的 `ood_sealed` 分片。
+# 因此它与 dev/holdout 是配对的：同样的场景分布、同样的判定逻辑、同样的 verifier。
+#
+# 为什么必须覆盖六个场景：只在 refund_eligible 上测，最省事的「修法」是见谁都退款，
+# 那会在四个拒绝类上崩掉而单场景评测集看不见。六个场景同时在场，这条捷径当场暴露。
+#
+# 这个分片**只观测一次**，在 ood_dev 上的迭代全部结束、代码冻结并提交之后。
+# 它是本轮「扛得住分布漂移」这个声称的唯一判据；反复观测会让它退化成第二个 dev。
+
+# 措辞池的 train_aug 分片用于训练增强，与本文件用的分片**逐条互斥**，
+# 由 `assert_partitions_are_disjoint` 在加载时断言。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v1
+phrasing:
+  bank_relpath: phrasing/phrasing-bank-001/phrasings.jsonl
+  bank_sha256: "a34b25ac6f2b1ae24f9c2a135e3ac11a47ac8b401f676cc50b8c2bce1720b4f6"
+  partition: ood_sealed

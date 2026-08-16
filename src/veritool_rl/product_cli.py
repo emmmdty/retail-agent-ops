@@ -48,7 +48,19 @@ from veritool_rl.retail_ops.build.formal_manifests import (
     write_formal_task_set,
 )
 from veritool_rl.retail_ops.build.manifests import build_qualification
-from veritool_rl.retail_ops.build.ood_manifests import build_ood_task_set, load_ood_manifest
+from veritool_rl.retail_ops.build.ood_manifests import (
+    OodPhrasingSpec,
+    build_ood_task_set,
+    load_ood_manifest,
+)
+from veritool_rl.retail_ops.build.phrasing_bank import (
+    ParaphrasePlan,
+    assert_partitions_are_disjoint,
+    bank_sha256,
+    intent_index,
+    load_paraphrase_plan,
+    load_phrasing_bank,
+)
 from veritool_rl.retail_ops.build.teacher_client import OpenAICompatibleTeacherClient, TeacherClient
 from veritool_rl.retail_ops.build.teacher_data import (
     TeacherAttemptEvidence,
@@ -541,7 +553,7 @@ def _success_by_task(path: Path) -> dict[str, bool]:
 # R4.5 pipeline: 分布外任务集（build + evaluate）
 # ---------------------------------------------------------------------------
 
-_OOD_BUILD_KEYS = {"pipeline", "bundle_dir"}
+_OOD_BUILD_KEYS = {"pipeline", "bundle_dir", "phrasing"}
 _OOD_EVAL_PIPELINES = ("ood_base", "ood_candidate", "ood_merged_candidate")
 _OOD_EVAL_BASE_KEYS = {
     "pipeline",
@@ -556,9 +568,10 @@ _OOD_EVAL_CANDIDATE_KEYS = _OOD_EVAL_BASE_KEYS | {"adapter"}
 def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
     """生成分布外任务集。它是**独立 dataset artifact**，不碰冻结数据集的一个字节。"""
     _require_config_keys(config, _OOD_BUILD_KEYS)
-    if args.input_dir is not None:
-        raise ValueError("ood_build 不接受 --input_dir")
-    build_ood_task_set(_bundle_dir(config), args.seed, args.output_dir)
+    phrasing = _ood_phrasing_spec(config, args.input_dir)
+    if phrasing is None and args.input_dir is not None:
+        raise ValueError("ood_build（v1，phrasing 为 null）不接受 --input_dir")
+    build_ood_task_set(_bundle_dir(config), args.seed, args.output_dir, phrasing=phrasing)
 
 
 def _default_ood_backend(config: OodEvaluationConfig, models_root: Path) -> GenerationBackend:
@@ -829,6 +842,7 @@ _TRAIN_EXPORT_KEYS = {
     "sft_oversample",
     "sft_terminal_response",
     "sft_system_prompt_sha256",
+    "sft_paraphrase",
 }
 
 
@@ -846,6 +860,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
     sft_oversample = _sft_oversample(config)
     sft_terminal_response = _sft_terminal_response(config)
     sft_system_prompt_sha256 = _sft_system_prompt_sha256(config)
+    sft_paraphrase = _sft_paraphrase_plan(config, args.input_dir)
 
     bundle = load_bundle(bundle_dir)
     dataset = load_verified_formal_dataset(public_dir)
@@ -883,6 +898,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         sft_oversample=sft_oversample,
         sft_terminal_response=sft_terminal_response,
         sft_system_prompt_sha256=sft_system_prompt_sha256,
+        sft_paraphrase=sft_paraphrase,
     )
 
     create_output_dir(args.output_dir)
@@ -898,6 +914,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         sft_oversample=sft_oversample,
         sft_terminal_response=sft_terminal_response,
         sft_system_prompt_sha256=sft_system_prompt_sha256,
+        sft_paraphrase=sft_paraphrase,
     )
 
 
@@ -1511,6 +1528,76 @@ def _sft_system_prompt_sha256(config: dict[str, Any]) -> str | None:
     if any(char not in "0123456789abcdef" for char in value):
         raise ValueError("sft_system_prompt_sha256 必须是小写十六进制")
     return value
+
+
+def _ood_phrasing_spec(config: dict[str, Any], private_root: Path | None) -> OodPhrasingSpec | None:
+    """读取 OOD v2 的措辞来源。`null` 表示走 v1（作者手写模板库）。
+
+    `partition` 必须显式写出来，且只能是两个**评测**分片之一：
+    拿 `train_aug` 当评测集，就是在测模型有没有背下训练数据。
+    """
+    value = config.get("phrasing")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("phrasing 必须是 mapping 或 null")
+    missing = {"bank_relpath", "bank_sha256", "partition"} - set(value)
+    if missing:
+        raise ValueError(f"phrasing 缺少必填键: {sorted(missing)}")
+    partition = value["partition"]
+    if partition not in ("ood_dev", "ood_sealed"):
+        raise ValueError(
+            f"OOD 评测集只能用 ood_dev / ood_sealed 分片，收到 {partition!r}——"
+            f"用 train_aug 当评测集测的是有没有背下训练数据"
+        )
+    if private_root is None:
+        raise ValueError("phrasing 非 null 时必须给 --input_dir 指向私有根目录")
+    bank_relpath = value["bank_relpath"]
+    declared = value["bank_sha256"]
+    if not isinstance(bank_relpath, str) or not bank_relpath:
+        raise ValueError("phrasing.bank_relpath 必须是非空字符串")
+    if not isinstance(declared, str) or len(declared) != 64:
+        raise ValueError("phrasing.bank_sha256 必须是 64 位 SHA-256 十六进制串")
+    validate_project_relative_path(bank_relpath, "phrasing.bank_relpath")
+    records = load_phrasing_bank(private_root / bank_relpath)
+    assert_partitions_are_disjoint(records)
+    actual = bank_sha256(records)
+    if actual != declared:
+        raise ValueError(f"措辞池哈希与配置声明不一致: declared={declared}, actual={actual}")
+    return OodPhrasingSpec(
+        index=intent_index(records, partition), partition=partition, bank_sha256=actual
+    )
+
+
+def _sft_paraphrase_plan(config: dict[str, Any], private_root: Path) -> ParaphrasePlan | None:
+    """读取 R6 的措辞增强声明。`null` 表示不做增强。
+
+    三个键都必填而不是给默认值：`bank_relpath` 指哪份池子、`bank_sha256` 声明期望内容、
+    `per_task` 每条任务改写几次。哈希是**声明**而不是读出来的实测值——
+    与 `sft_system_prompt_sha256` 同一个理由：换了池子却忘了改配置，
+    会静默产出另一份训练集，而产物看起来完全正常。
+    """
+    value = config.get("sft_paraphrase")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("sft_paraphrase 必须是 mapping 或 null")
+    missing = {"bank_relpath", "bank_sha256", "per_task"} - set(value)
+    if missing:
+        raise ValueError(f"sft_paraphrase 缺少必填键: {sorted(missing)}")
+    bank_relpath = value["bank_relpath"]
+    if not isinstance(bank_relpath, str) or not bank_relpath:
+        raise ValueError("sft_paraphrase.bank_relpath 必须是非空字符串")
+    declared = value["bank_sha256"]
+    if not isinstance(declared, str) or len(declared) != 64:
+        raise ValueError("sft_paraphrase.bank_sha256 必须是 64 位 SHA-256 十六进制串")
+    per_task = value["per_task"]
+    if not isinstance(per_task, int) or isinstance(per_task, bool) or per_task < 1:
+        raise ValueError("sft_paraphrase.per_task 必须是 >= 1 的整数")
+    validate_project_relative_path(bank_relpath, "sft_paraphrase.bank_relpath")
+    return load_paraphrase_plan(
+        private_root / bank_relpath, declared_sha256=declared, per_task=per_task
+    )
 
 
 def _positive_int(config: dict[str, Any], key: str) -> int:

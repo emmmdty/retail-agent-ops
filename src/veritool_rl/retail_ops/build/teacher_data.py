@@ -23,6 +23,12 @@ from veritool_rl.core.generators import trajectory_to_sft_example
 from veritool_rl.core.trajectory import TaskScenario, TaskSpec, TerminationReason, Trajectory
 from veritool_rl.core.trajectory.replay import ReplayMismatch, replay_trajectory
 from veritool_rl.core.trajectory.schema import StrictModel
+from veritool_rl.retail_ops.build.phrasing_bank import (
+    PHRASING_BANK_VERSION,
+    SCENARIO_INTENTS,
+    ParaphrasePlan,
+    paraphrases_for_task,
+)
 from veritool_rl.retail_ops.build.teacher_client import (
     TeacherClient,
     TeacherClientError,
@@ -653,6 +659,32 @@ def _rewrite_system_prompt(sft_example: dict[str, Any], prompt: str) -> dict[str
     return {**sft_example, "messages": messages}
 
 
+def _task_order_id(task: TaskSpec) -> str:
+    """取任务的主订单号。措辞池里的 `{order_id}` 要填的就是它。"""
+    order_id = task.metadata.get("order_id")
+    if not isinstance(order_id, str) or not order_id:
+        msg = f"任务缺少 order_id，无法填充改写模板: {task.task_id}"
+        raise ValueError(msg)
+    return order_id
+
+
+def _rewrite_user_request(sft_example: dict[str, Any], text: str) -> dict[str, Any]:
+    """只替换首条 user 消息的 content。
+
+    **assistant 的工具调用、tool 观测与最终状态一个字不动**——这是 paraphrase 增强
+    与「换个任务」之间的全部区别。改写只作用于「顾客怎么说」，
+    不作用于「Agent 该做什么」，因此 `target_state` / `expected_calls` 仍然成立。
+    """
+    messages = list(sft_example["messages"])
+    user_positions = [i for i, message in enumerate(messages) if message.get("role") == "user"]
+    if not user_positions:
+        msg = f"sft 样本没有 user 消息，无法改写: {sft_example.get('task_id')}"
+        raise ValueError(msg)
+    first = user_positions[0]
+    messages[first] = {**messages[first], "content": text}
+    return {**sft_example, "messages": messages}
+
+
 def export_formal_train(
     records: Sequence[FormalTaskRecord],
     evidences: Sequence[TeacherAttemptEvidence],
@@ -663,6 +695,7 @@ def export_formal_train(
     sft_oversample: Mapping[str, int] | None = None,
     sft_terminal_response: Sequence[str] | None = None,
     sft_system_prompt_sha256: str | None = None,
+    sft_paraphrase: ParaphrasePlan | None = None,
 ) -> ExportResult:
     """质量门通过后，为每条任务选一条轨迹并独立 replay 全部导出集合。
 
@@ -683,6 +716,12 @@ def export_formal_train(
     同样只作用于 `sft.jsonl`，且都是**纯局部变换**——只读样本自身的消息序列与当前
     `runner.SYSTEM_PROMPT`，不读任务记录、不碰 `target_state`/`expected_calls`。
     三者互相独立，可单独启用；本轮的纪律是每个候选只启用一个。
+
+    `sft_paraphrase`（R6）是第四个、也是唯一改变**输入分布**的变量：为每条任务额外
+    产出 `per_task` 条只改写了 user 第一句话的样本。它存在的理由是 LOG-20260816-01
+    的子类拆分——冻结集合的 12 句模板全是「请核实…」的书面祈使句，模型据此学到
+    「表面形式 → 动作」的触发器，换个说法就退回「说完就停」。
+    改写文本只取自措辞池的 **`train_aug`** 分片，与两个评测分片逐条互斥。
     """
     resolved_oversample = _resolve_sft_oversample(sft_oversample, scenario_by_task_id)
     resolved_terminal = _resolve_terminal_response(sft_terminal_response)
@@ -739,6 +778,15 @@ def export_formal_train(
         if rewrite_prompt is not None:
             sft_example = _rewrite_system_prompt(sft_example, rewrite_prompt)
         sft_rows.extend(sft_example for _ in range(repeat))
+        if sft_paraphrase is not None:
+            for text in paraphrases_for_task(
+                sft_paraphrase.index,
+                intent=SCENARIO_INTENTS[record.task.scenario],
+                task_key=task_id,
+                count=sft_paraphrase.per_task,
+                order_id=_task_order_id(record.task),
+            ):
+                sft_rows.extend(_rewrite_user_request(sft_example, text) for _ in range(repeat))
 
     if len(train_rows) != len(records):
         msg = "formal train 导出数量与输入任务数不一致"
@@ -829,6 +877,7 @@ def write_formal_train_export(
     sft_oversample: Mapping[str, int] | None = None,
     sft_terminal_response: Sequence[str] | None = None,
     sft_system_prompt_sha256: str | None = None,
+    sft_paraphrase: ParaphrasePlan | None = None,
 ) -> dict[str, str]:
     """把完整训练数据写到 private ignored root，公开 root 只留聚合质量报告。
 
@@ -882,8 +931,19 @@ def write_formal_train_export(
                 "affected_sft_rows": len(sft_rows) if sft_system_prompt_sha256 is not None else 0,
             },
         )
+        write_json(
+            staging / "sft_paraphrase.json",
+            {
+                "enabled": sft_paraphrase is not None,
+                "bank_sha256": sft_paraphrase.bank_sha256 if sft_paraphrase else None,
+                "partition": sft_paraphrase.partition if sft_paraphrase else None,
+                "per_task": sft_paraphrase.per_task if sft_paraphrase else 0,
+                "phrasing_bank_version": PHRASING_BANK_VERSION if sft_paraphrase else None,
+            },
+        )
         artifact_hashes = {
             "train.jsonl": sha256_file(staging / "train.jsonl"),
+            "sft_paraphrase.json": sha256_file(staging / "sft_paraphrase.json"),
             "sft.jsonl": sha256_file(staging / "sft.jsonl"),
             "selection.json": sha256_file(staging / "selection.json"),
             "sft_oversample.json": sha256_file(staging / "sft_oversample.json"),

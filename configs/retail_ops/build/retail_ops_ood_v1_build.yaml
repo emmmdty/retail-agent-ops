@@ -8,3 +8,6 @@
 # 封存 holdout 的价值恰恰来自"很少被看"，两者治理级别不同。
 pipeline: ood_build
 bundle_dir: domains/retail_ops/v1
+
+# R6 新增键。`null` = 走 v1 的作者手写模板库，与本文件此前的行为逐字节相同。
+phrasing: null

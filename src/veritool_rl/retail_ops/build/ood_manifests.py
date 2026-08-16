@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -28,6 +30,7 @@ from veritool_rl.core.artifacts import (
 )
 from veritool_rl.core.trajectory import TaskSpec
 from veritool_rl.core.trajectory.schema import StrictModel
+from veritool_rl.retail_ops.build.phrasing_bank import PhrasingRecord
 from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle, load_bundle
 from veritool_rl.retail_ops.domain.ood_tasks import (
     OOD_CATEGORIES,
@@ -36,6 +39,12 @@ from veritool_rl.retail_ops.domain.ood_tasks import (
     OOD_TASKS_PER_CATEGORY,
     build_ood_tasks,
     ood_category,
+)
+from veritool_rl.retail_ops.domain.ood_v2_tasks import (
+    OOD_V2_GENERATOR_ID,
+    OOD_V2_SCENARIOS,
+    OOD_V2_TASKS_PER_SCENARIO,
+    build_ood_v2_tasks,
 )
 
 
@@ -67,7 +76,11 @@ def _task_digest(task: TaskSpec) -> str:
     return hashlib.sha256(canonical_json(task.model_dump(mode="json")).encode("utf-8")).hexdigest()
 
 
-def _validate(tasks: list[TaskSpec], bundle: LoadedRetailOpsBundle) -> None:
+def _validate(
+    tasks: list[TaskSpec],
+    bundle: LoadedRetailOpsBundle,
+    expected_counts: dict[str, int] | None = None,
+) -> None:
     """三类必须各 20 条，且任务只能用 bundle 里真实存在的工具。
 
     第二条是防"任务集自己发明了一个工具"——那会让整份评测测的是别的东西。
@@ -75,8 +88,11 @@ def _validate(tasks: list[TaskSpec], bundle: LoadedRetailOpsBundle) -> None:
     但 gold 调用序列仍然只用真实工具，正确行为就是不上钩。
     """
     counts = Counter(ood_category(task) for task in tasks)
-    if set(counts) != set(OOD_CATEGORIES) or set(counts.values()) != {OOD_TASKS_PER_CATEGORY}:
-        raise ValueError(f"OOD 任务类别分布不符合契约: {dict(counts)}")
+    if expected_counts is None:
+        if set(counts) != set(OOD_CATEGORIES) or set(counts.values()) != {OOD_TASKS_PER_CATEGORY}:
+            raise ValueError(f"OOD 任务类别分布不符合契约: {dict(counts)}")
+    elif dict(counts) != expected_counts:
+        raise ValueError(f"OOD 任务类别分布不符合契约: {dict(counts)} != {expected_counts}")
     allowed = {tool.name for tool in bundle.tools}
     for task in tasks:
         unknown = {call.name for call in task.expected_calls} - allowed
@@ -86,20 +102,50 @@ def _validate(tasks: list[TaskSpec], bundle: LoadedRetailOpsBundle) -> None:
             raise ValueError("OOD 任务必须使用 test split，与冻结三分集合区分开")
 
 
-def build_ood_task_set(bundle_dir: Path, seed: int, output_dir: Path) -> OodTaskManifest:
+@dataclass(frozen=True, slots=True)
+class OodPhrasingSpec:
+    """v2 用哪一份措辞池的哪个分片。`bank_sha256` 是声明值，加载时比对。"""
+
+    index: Mapping[str, Sequence[PhrasingRecord]]
+    partition: str
+    bank_sha256: str
+
+
+def build_ood_task_set(
+    bundle_dir: Path,
+    seed: int,
+    output_dir: Path,
+    *,
+    phrasing: OodPhrasingSpec | None = None,
+) -> OodTaskManifest:
     """生成分布外任务集与其独立 manifest。
 
     任务与真值都写在同一份公开产物里——这个集合**不封存**，没有需要藏起来的答案。
+
+    `phrasing` 为 `None` 时走 v1（作者手写模板库，三类各 20）；给出时走 **v2**
+    （六个冻结场景 × 10，唯一自变量是 user 第一句话的说法，来自 LLM 措辞池的指定分片）。
+    两者是不同的 `dataset_version` 与不同的 `generator_id`，产物互不覆盖。
     """
     bundle = load_bundle(bundle_dir)
-    tasks = build_ood_tasks(seed)
-    _validate(tasks, bundle)
+    if phrasing is None:
+        tasks = build_ood_tasks(seed)
+        generator_id = OOD_GENERATOR_ID
+    else:
+        tasks = build_ood_v2_tasks(phrasing.index, seed)
+        generator_id = OOD_V2_GENERATOR_ID
+    _validate(
+        tasks,
+        bundle,
+        None
+        if phrasing is None
+        else {scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS},
+    )
 
     create_output_dir(output_dir)
     tasks_path = output_dir / "tasks.jsonl"
     write_jsonl(tasks_path, (task.model_dump(mode="json") for task in tasks))
     manifest = OodTaskManifest(
-        generator_id=OOD_GENERATOR_ID,
+        generator_id=generator_id,
         bundle_id=bundle.bundle.bundle_id,
         bundle_version=bundle.bundle.bundle_version,
         bundle_sha256=bundle.bundle_sha256,

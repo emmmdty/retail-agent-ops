@@ -28,3 +28,7 @@ sft_oversample:
   refund_recovery: 3
 sft_terminal_response: []
 sft_system_prompt_sha256: "8ae813c4284246b9700470053ba90339a3f88439d9e57905d5db704ca63283dd"
+
+# R6 新增键。`null` = 不做措辞增强，与本文件此前的行为逐字节相同。
+# 键集合是精确匹配契约，因此这里必须显式声明——「忘了写」是硬错误，不是默认值。
+sft_paraphrase: null

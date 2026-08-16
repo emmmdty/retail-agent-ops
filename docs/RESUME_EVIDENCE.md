@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **948** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **1011** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）

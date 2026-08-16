@@ -33,3 +33,7 @@ sft_oversample:
 sft_terminal_response: [refund_eligible, refund_recovery]
 # 本候选不改 system prompt：C 才是那个变量，且 C 必须在 A/B 评测完成后才能提交。
 sft_system_prompt_sha256: null
+
+# R6 新增键。`null` = 不做措辞增强，与本文件此前的行为逐字节相同。
+# 键集合是精确匹配契约，因此这里必须显式声明——「忘了写」是硬错误，不是默认值。
+sft_paraphrase: null

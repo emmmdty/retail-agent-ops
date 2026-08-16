@@ -246,6 +246,7 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         "sft_oversample": {},
         "sft_terminal_response": [],
         "sft_system_prompt_sha256": None,
+        "sft_paraphrase": None,
     }
     export_args = parser.parse_args(
         [
@@ -294,6 +295,7 @@ def test_teacher_collect_mixed_results_then_export_240_trajectories(
         "sft_oversample": {"refund_eligible": 3, "refund_recovery": 3},
         "sft_terminal_response": [],
         "sft_system_prompt_sha256": None,
+        "sft_paraphrase": None,
     }
     rebalanced_args = parser.parse_args(
         [
