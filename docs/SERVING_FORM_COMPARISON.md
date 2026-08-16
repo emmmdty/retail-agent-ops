@@ -196,9 +196,13 @@ gpu-5090 物理 GPU 0：
 
 ### 这一档**不**声称什么
 
-1. **它没有跑过任何评测任务。** 12 条 fixture 上的输出一致 ≠ 60 条 dev 或 120 条
-   holdout 上行为一致。要那个结论必须让 vLLM 走完整的 `evaluate` 路径，
-   而那需要把 vLLM 引入项目依赖——即上文说的、会让全部 sealed 证据失配的那件事。
+1. ~~**它没有跑过任何评测任务。**~~ **这条已于 2026-08-16 被补上，且当时的理由是错的**
+   ——见 [`ENGINE_SUBSTITUTION.md`](./ENGINE_SUBSTITUTION.md)。我曾以为"跑完整
+   evaluate 路径必须把 vLLM 引入项目依赖"，但 `uv_lock_sha256` 哈希的是仓库里的
+   `uv.lock` 文件而不是实际装了什么包，换 venv 跑它根本发现不了。真正的拦截是
+   `GenerationSettings.quantization: Literal["nf4"]`，让 vLLM 也跑 NF4 即可绕开
+   而无需改任何契约。**结论也随之更细**：dev 与 OOD 上合并候选逐项一致，
+   但**零训练基座不一致**（13/60 → 14/60）——引擎替换不是普遍保行为的。
 2. **"去掉 NF4 就能过延迟门禁"是假设，不是结论。** 门禁是**比值**，base 侧也是 NF4；
    要验证必须跑一次配对的 base/candidate。而按 `SEALED_PAIRING_FIELDS` 的约束，
    那会是封存 holdout 的**第五次**观测，需用户单独决策。本文件不据此推断门禁结果。

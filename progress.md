@@ -765,3 +765,16 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 事故与修复 | triton 缓存跨 venv 污染 | 项目 HF 路径一度全崩；已用 zig cc 重建 + 隔离 `TRITON_CACHE_DIR` 修复并复验 |
 
 产物均在 `/mnt/aidata/tongjiakai/`，**不进 Git**（大运行产物边界）。
+
+## 2026-08-16 引擎替换验证（gpu-5090，物理 GPU 0）
+
+| 运行 | 输出 | HF `run_id` | vLLM `run_id` | 结果 |
+|---|---|---|---|---|
+| dev 60 / 合并候选 | `r45/merged-dev-vllm` | `e4d788ba…` | `531f9ede…` | 1.0000 vs 1.0000，六项指标全同 |
+| OOD 60 / 合并候选 | `ood/merged-vllm` | `023a03b9…` | `baa854ab…` | 0.5833 vs 0.5833，逐类别逐 kind 全同 |
+| OOD 60 / 零训练基座 | `ood/base-vllm` | `8aada609…` | `9431d299…` | 0.2167 vs **0.2333**，`colloquial` 0.50→0.75 |
+
+三组 `replayable_count` 均 60/60。吞吐 ~4.85×（同为 NF4）。
+失败并重跑的中间尝试：缺 `bitsandbytes`（补装 0.49.2 与项目对齐）、
+`CudaHardwareProvider` 在 vLLM 下抛 `Invalid device argument`（换 NVML provider）、
+`--engine` 未接进 dev 通道（静默回落，已修）、证据发布拒绝覆盖同名运行（加 vLLM 专用配置）。
