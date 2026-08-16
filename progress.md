@@ -850,3 +850,27 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-16 | gpu-5090 GPU 0 重建 dev 评测 ×2 | seed1 60/60、seed0 58/60；两侧 `replayable` 均 60/60 |
 | 2026-08-16 | 故障矩阵锁定的突变验证 | 改一个被引用的测试名 → `test_every_fault_class_names_a_real_test` 变红，恢复后通过 |
 | 2026-08-16 | R5 最终全门禁 | **944 passed**；Ruff、`ruff format --check`、mypy 80 files、`uv lock --check`、`git diff --check`、公开发布审计全部通过 |
+
+### R5 独立面试官审核（T8）
+
+两轮外部审阅，reviewer **不带本会话上下文**，只给仓库路径与岗位设定，自跑门禁、自查数字。
+
+| 轮次 | 判定 | 阻塞项 | 备注 |
+|---|---|---|---|
+| 第一轮 | **PASS 8/10** | 4 条 | 四条全部属实，且全部落在「数字纪律」上——正是本项目的卖点 |
+| 第二轮 | **PASS 8.5/10** | **0**（4/4 解除） | reviewer 用审阅**之前**的 commit 里记录的 `run_id` 比对同步回来的文件，并做篡改测试，未采信自述 |
+
+四条阻塞项与收口方式见 LOG-20260816-07。其中最有价值的一条：
+**把一份文件指定为「唯一事实源」却不把它纳入漂移扫描，等于没有事实源**——
+`HOLDOUT_LEDGER.md` 因此是全仓漂移最久的文件。
+
+### R5 最终验证台账（补）
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-16 | R5 证据同步回本地 + SHA-256 核对 | 两份 `candidate-report.json` 与远端逐位一致 |
+| 2026-08-16 | `load_candidate_run_evidence(..., verify_artifacts=True)` | 两份均通过，各校验 4 个私有产物——**这是该机制首次对真实 GPU 运行行使** |
+| 2026-08-16 | 篡改测试：改 `trajectories.jsonl` 最后一个字节 | 加载被拒（`评测证据产物 SHA-256 不匹配`） |
+| 2026-08-16 | `docker build -t retail-agent-ops:cpu .` | 成功，**1.05 GB**（此前注释里的「几十 MB」是从未验证的估计） |
+| 2026-08-16 | `docker run --rm --network none retail-agent-ops:cpu` | **断网**跑通全链路：「决策与内容哈希均与冻结期望一致」 |
+| 2026-08-16 | R5 收口最终全门禁 | **948 passed**；Ruff、`ruff format --check`、mypy 80 files、`uv lock --check`、`git diff --check`、公开发布审计全部通过 |
