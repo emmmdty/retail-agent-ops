@@ -36,12 +36,15 @@
 
 ## 当前状态
 
-- 当前阶段：`R4` 失败驱动优化（三轮已跑完）；R1 产品契约与 v0.1、R2 数据与评测流水线、R3 单卡适配与服务 v1 均已完成。
+- 当前阶段：`R5` 公开交付与求职收口**已完成**（2026-08-16）；R0–R4.5 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
 - R2 已完成方案审批，批准的正式规格与计划位于 `docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
 - 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。
-- **封存 holdout 的两次观测均已消耗**（LOG-20260811-03、LOG-20260814-04），任何新判定都是第三次，需用户决策。
-- 两次 release 判定都是 **NO-GO / baseline**：第一次输在 `success_delta`（−0.0333），第二次候选在 120 条上做到 120/120、`success_delta` +0.1417，但 `p95_latency_ratio` 1.8774 > 1.25 被拒。发布门禁阈值一个字未改，有测试锁定。
+- **封存 holdout 已消耗四次观测**，逐次读数与判定见 `docs/HOLDOUT_LEDGER.md`（唯一事实源）。任何新判定都是**第五次**，需用户单独决策。
+- 四次 release 判定：**前三次 NO-GO / baseline**（第一次输在 `success_delta` −0.0333，第二、三次候选做到 120/120、`success_delta` +0.1417 但输在延迟）；**第四次 `GO` / candidate**，候选是同一份权重的**合并部署形态**（p95 比值 2.03 → 1.13）。发布门禁阈值一个字未改，有测试锁定。
+- **引用那个 GO 必须同时给出分布外读数**：同一候选在模板外 60 条上只有 0.5833、表达变化类 0/20，比零训练基座还差（`docs/OOD_EVALUATION.md`）。120/120 不是泛化，有测试强制两者成对出现。
+- **SPEC §6 六条门禁已全部满足**，第 6 条「独立重建复验」见 `docs/REBUILD_VERIFICATION.md`。同时发现**训练不可逐位复现**：同 seed 重跑得到 58/60，dev 读数须表述为「58–60/60，三次同配置运行」。
 - R4 的两条结论都经过跨规模检验并被限缩，引用时必须带规模条件：**LoRA 容量须与模型规模匹配**（4B 上全 linear 最好，1.7B 上 attention-only 最好、全 linear 让拒绝类由 30/30 崩到 15/30）；**提示词干预是规模依赖的**（对 4B 有效、对 1.7B 完全无效）。见 LOG-20260814-05。
 - 候选结论一律以 dev 或 holdout 口径分别陈述，**不得把 dev 读数写成 release 判定**；dev 已被用于候选选择，带选择偏差。
 - 当前 BFCL Base/SFT 为 163/200 与 167/200，差值置信区间跨 0，不能声称稳定改善。
+- 质量门为 `pytest` / `ruff check` / **`ruff format --check`** / `mypy` / `uv lock --check` / `git diff --check` / `scripts/ci/audit_public_release.py`，全部必须通过。
 - 仓库形态：唯一 `main` 分支、0 remote、对原 `veritool-rl` 工作区零依赖；目录职责见 `docs/REPO_MAP.md`。

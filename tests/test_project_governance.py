@@ -145,13 +145,14 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
         "docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
     )
 
-    assert "当前阶段：`R4` 失败驱动优化" in agents
+    assert "当前阶段：`R5` 公开交付与求职收口**已完成**" in agents
     assert "R2 已完成方案审批" in agents
     assert "正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认" in agents
     # 候选结论必须以 dev / holdout 口径分别陈述，不得被写成 release 判定
     assert "不得把 dev 读数写成 release 判定" in agents
     # 封存 holdout 的消耗状态是不可逆资源，必须在接管文档里显式可见
-    assert "封存 holdout 的两次观测均已消耗" in agents
+    assert "封存 holdout 已消耗四次观测" in agents
+    assert "任何新判定都是**第五次**" in agents
     # R4 的结论已被跨规模检验限缩，接管文档不得留下无条件的一般化表述
     assert "LoRA 容量须与模型规模匹配" in agents
     assert "提示词干预是规模依赖的" in agents
@@ -1054,9 +1055,20 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         "封存 holdout 的两次观测",
         "首次也是",
         "唯一一次观测",
+        # 2026-08-16 补：第四次观测把总数推到 4，"三次"同样是过期表述。
+        # AGENTS.md 此前不在 checked 里，因此"两次"一路留到了 R5 才被发现。
+        "已消耗**三次**观测",
+        "已消耗三次观测",
+        "两次 release 判定",
+        "两次发布判定",
+        # 注意：不拦"前三次判定都是 NO-GO"——那是**相对**指代（历史上的头三次），
+        # 与"两次观测均已消耗"这种**总数**表述不同，且它是正确的。
     )
     checked = [
         "README.md",
+        "README.en.md",
+        "AGENTS.md",
+        "CLAUDE.md",
         "SPEC.md",
         "docs/SYSTEM_CARD.md",
         "docs/MODEL_CARD.md",
@@ -1067,6 +1079,9 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         "docs/SERVING_FORM_COMPARISON.md",
         "docs/AGENT_LOOP.md",
         "docs/DOMAIN_BUNDLE_V2.md",
+        "docs/INTERVIEW_PREP.md",
+        "docs/REBUILD_VERIFICATION.md",
+        "docs/FAULT_MATRIX.md",
     ]
     for name in checked:
         text = _read(name)
