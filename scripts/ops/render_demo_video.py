@@ -123,11 +123,13 @@ def _shell_frame(
     if typed < len(command):
         cursor_x = MARGIN + prompt_width + draw.textlength(command[:typed], font=font)
         draw.rectangle([cursor_x, 100, cursor_x + 9, 100 + 20], fill=DIM)
-    for index, line in enumerate(lines):
-        y = 140 + index * LINE_HEIGHT
-        if y > HEIGHT - 80:
-            break
-        draw.text((MARGIN, y), line, font=font, fill=_line_color(line))
+    # 超出可视区就只显示尾部——真终端就是这么滚的。
+    # 早期版本是直接 break，结果长输出的**结论**（在最后几行）被截掉了，
+    # 而结论恰恰是最该被看见的部分。
+    capacity = (HEIGHT - 80 - 140) // LINE_HEIGHT
+    visible = lines[-capacity:] if len(lines) > capacity else lines
+    for index, line in enumerate(visible):
+        draw.text((MARGIN, 140 + index * LINE_HEIGHT), line, font=font, fill=_line_color(line))
     if footer:
         draw.text((MARGIN, HEIGHT - 46), footer, font=font, fill=DIM)
     return Frame(image, seconds)

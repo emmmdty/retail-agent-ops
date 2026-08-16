@@ -55,8 +55,23 @@ STEPS: tuple[Step, ...] = (
     ),
     Step(
         caption="真实运行证据：一个 GO，和把它打掉一半的那组数",
-        command=[str(VENV_BIN / "python"), "scripts/ops/demo_evidence_summary.py"],
-        max_lines=22,
+        command=[
+            str(VENV_BIN / "python"),
+            "scripts/ops/demo_evidence_summary.py",
+            "--section",
+            "gate",
+        ],
+        max_lines=18,
+    ),
+    Step(
+        caption="然后把它修好了——以及这次修复的账单",
+        command=[
+            str(VENV_BIN / "python"),
+            "scripts/ops/demo_evidence_summary.py",
+            "--section",
+            "fix",
+        ],
+        max_lines=18,
     ),
     Step(
         caption="公开发布审计：LICENSE / 凭据 / 权重 / holdout 真值 / 绝对路径",
