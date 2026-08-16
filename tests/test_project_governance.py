@@ -1286,3 +1286,24 @@ def test_the_container_claim_is_specific_and_reproducible() -> None:
         text = _read(name)
         assert "--network none" in text, f"{name}: 容器验证必须写明是断网跑的"
         assert "1.05 GB" in text, f"{name}: 容器体积必须是实测值"
+
+
+def test_the_numbers_guide_covers_every_suspiciously_perfect_number() -> None:
+    """用户提的一条真问题：满分太多会让人怀疑。
+
+    对策不是把数字改小，而是**每个满分旁边都摆出它不好看的那一半**。
+    这条测试锁住那份指南确实逐个覆盖了它们——漏掉一个，就等于默认它不需要解释。
+    """
+    guide = _read("docs/READING_THE_NUMBERS.md")
+
+    for number in ("120/120", "1.0000", "99.2%", "87.9%", "0.5833", "0/20", "58/60", "0.00"):
+        assert number in guide, f"读数指南没有解释 {number}"
+
+    # 每个高分都必须配一个「旁边那个不好看的数」
+    for pairing in ("旁边那个不好看的数", "不能支持什么", "哪些数字低得可疑"):
+        assert pairing in guide, pairing
+
+    # 不得只解释好消息
+    assert "反过来" in guide
+    for name in ("README.md", "docs/RESUME_EVIDENCE.md"):
+        assert "READING_THE_NUMBERS" in _read(name), f"{name} 未指向读数指南"

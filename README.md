@@ -165,7 +165,7 @@ flowchart LR
 | QLoRA 训练（全 linear，`sft-006` 配置的**三次**运行） | 单卡 3 epoch / 75 steps。时长 `sft-006` **293.7 s** / 重建 A **242.3 s** / 重建 B **242.2 s**（差异是共享 GPU 上他人占用，**不是配置差异**）；三次 `cuda_peak_allocated` 均 **5.65 GB**；adapter 三次**逐字节同尺寸** **66,127,776 B（63 MiB）** |
 | 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
 | serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
-| 工程基线 | **1017 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
+| 工程基线 | **1018 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
 
 ---
 
@@ -284,6 +284,10 @@ domains/retail_ops/{v1,v2}/                          工具 schema、业务政�
   163/200 与 167/200，差值置信区间跨 0，**不是**官方 BFCL 全量或排行榜成绩。
 - 不产出论文，不以 SOTA、ablation 数量或三 seed 作为完成标准。
 
+**如果你觉得这里几个数高得可疑**（120/120、三项指标同时为 0、99.2%），
+那是对的反应——[`docs/READING_THE_NUMBERS.md`](docs/READING_THE_NUMBERS.md)
+逐个说明它们**为什么可能达到**、**旁边那个不好看的数是多少**、以及**不能支持什么结论**。
+
 完整的「不可写表述」清单在 [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md) §2。
 故障覆盖与明确没做的项见 [`docs/FAULT_MATRIX.md`](docs/FAULT_MATRIX.md)。
 
@@ -305,6 +309,7 @@ domains/retail_ops/{v1,v2}/                          工具 schema、业务政�
 | [`docs/AGENT_LOOP.md`](docs/AGENT_LOOP.md) | Agent 循环、user simulator 与多轮澄清 |
 | [`docs/DOMAIN_BUNDLE_V2.md`](docs/DOMAIN_BUNDLE_V2.md) | 政策外置、幂等键、guardrail |
 | [`docs/FAULT_MATRIX.md`](docs/FAULT_MATRIX.md) | 五类故障 → 具体测试的映射 |
+| [`docs/READING_THE_NUMBERS.md`](docs/READING_THE_NUMBERS.md) | 面向怀疑者：每个高分的机制、它旁边不好看的数、它不能支持什么 |
 | [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md) | 简历取数口径与不可写表述 |
 | [`docs/INTERVIEW_PREP.md`](docs/INTERVIEW_PREP.md) | 五分钟讲解、深挖问答、失败案例库 |
 | [`docs/DEMO.md`](docs/DEMO.md) | 演示流程 |

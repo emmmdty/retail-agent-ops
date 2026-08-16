@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **1017** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **1018** tests passed；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -206,6 +206,9 @@ LOG-20260814-01/02/03。
 **面试口径**：这一条比"复验通过"本身更值钱——我做这次复验是为了让一个满分数字站得住，
 结果发现那个满分数字本身在满分附近抖动。所以我把 dev 的表述从"60/60"改成
 "**58–60/60，三次同配置运行**"。
+
+> **面试官很可能第一反应是不信这些数**。逐个数字的机制、它旁边不好看的那一半、
+> 以及它不能支持什么，见 [`READING_THE_NUMBERS.md`](./READING_THE_NUMBERS.md)。
 
 ## 2. 明确不可写的表述
 
