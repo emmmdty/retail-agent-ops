@@ -6,8 +6,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
 def _stop_hook_entries(settings: dict[str, Any]) -> list[Any]:
     return list(settings.get("hooks", {}).get("Stop", []))
+
 
 def test_project_settings_declare_no_stop_hook() -> None:
     """记录协议由 CLAUDE.md 第 7 节承载，不由 Stop hook 强制。

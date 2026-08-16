@@ -36,18 +36,14 @@ def aggregate_bfcl_runs(
         raise ValueError("BFCL 配对比较只允许 seed 0")
     if bootstrap_samples != 10_000:
         raise ValueError("BFCL 配对比较固定使用 10000 次 bootstrap")
-    manifest = BfclManifest.model_validate_json(
-        manifest_path.read_text(encoding="utf-8")
-    )
+    manifest = BfclManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     if manifest.seed != 0 or manifest.quotas != dict.fromkeys(BFCL_CATEGORIES, 50):
         raise ValueError("BFCL 配对 manifest 必须是 seed 0 且四类各 50 条")
     expected_ids = [item.task_id for item in manifest.tasks]
     if len(expected_ids) != 200 or len(set(expected_ids)) != 200:
         raise ValueError("BFCL 配对 manifest 必须恰好包含 200 个唯一 task_id")
     expected_by_category = {
-        category: [
-            item.task_id for item in manifest.tasks if item.category == category
-        ]
+        category: [item.task_id for item in manifest.tasks if item.category == category]
         for category in BFCL_CATEGORIES
     }
     manifest_sha256 = sha256_file(manifest_path)
@@ -242,11 +238,7 @@ def _load_failures(
 
 
 def _failure_ids(scores: dict[str, BfclOfficialScore]) -> set[str]:
-    return {
-        task_id
-        for score in scores.values()
-        for task_id in score.failure_ids
-    }
+    return {task_id for score in scores.values() for task_id in score.failure_ids}
 
 
 def _validate_metrics(
@@ -343,9 +335,7 @@ def _category_comparison(
             "baseline_accuracy": baseline_scores[category].accuracy,
             "sft_correct_count": sft_scores[category].correct_count,
             "sft_accuracy": sft_scores[category].accuracy,
-            "success_delta": (
-                sft_scores[category].accuracy - baseline_scores[category].accuracy
-            ),
+            "success_delta": (sft_scores[category].accuracy - baseline_scores[category].accuracy),
         }
         for category in BFCL_CATEGORIES
     }
@@ -366,9 +356,7 @@ def _build_analysis_rows(
     }
     rows: list[dict[str, Any]] = []
     for task_id in sorted(analysis_ids):
-        detail = copy.deepcopy(
-            sft_failures.get(task_id) or baseline_failures[task_id]
-        )
+        detail = copy.deepcopy(sft_failures.get(task_id) or baseline_failures[task_id])
         detail.update(
             {
                 "task_id": task_id,
@@ -397,12 +385,8 @@ def _render_report(
             f"| {category} | {row['baseline_accuracy']:.6f} | "
             f"{row['sft_accuracy']:.6f} | {row['success_delta']:+.6f} |"
         )
-    improved = [
-        row["task_id"] for row in comparison_rows if row["outcome"] == "improved"
-    ]
-    regressed = [
-        row["task_id"] for row in comparison_rows if row["outcome"] == "regressed"
-    ]
+    improved = [row["task_id"] for row in comparison_rows if row["outcome"] == "improved"]
+    regressed = [row["task_id"] for row in comparison_rows if row["outcome"] == "regressed"]
     ci = summary["paired_success_delta_ci95"]
     return "\n".join(
         [
@@ -412,10 +396,8 @@ def _render_report(
             "",
             CONCLUSION,
             "",
-            f"- Base：{summary['baseline_correct_count']}/200 "
-            f"({summary['baseline_accuracy']:.6f})",
-            f"- SFT：{summary['sft_correct_count']}/200 "
-            f"({summary['sft_accuracy']:.6f})",
+            f"- Base：{summary['baseline_correct_count']}/200 ({summary['baseline_accuracy']:.6f})",
+            f"- SFT：{summary['sft_correct_count']}/200 ({summary['sft_accuracy']:.6f})",
             f"- Success delta：{summary['success_delta']:+.6f}",
             f"- 配对 bootstrap 95% CI：[{ci[0]:.6f}, {ci[1]:.6f}]",
             f"- 改善/退化/不变：{summary['outcomes']}",

@@ -104,16 +104,10 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 def load_bundle(bundle_dir: Path) -> LoadedRetailOpsBundle:
     """加载并校验冻结的 RetailOps v1 领域 bundle。"""
     bundle = RetailOpsBundle.model_validate(_read_yaml(bundle_dir / "bundle.yaml"))
-    tool_document = ToolsDocument.model_validate(
-        _read_yaml(bundle_dir / bundle.tools_file)
-    )
+    tool_document = ToolsDocument.model_validate(_read_yaml(bundle_dir / bundle.tools_file))
     tools = tuple(tool_document.tools)
-    policies = RetailOpsPolicies.model_validate(
-        _read_yaml(bundle_dir / bundle.policies_file)
-    )
-    release = ReleasePolicyConfig.model_validate(
-        _read_yaml(bundle_dir / bundle.release_file)
-    )
+    policies = RetailOpsPolicies.model_validate(_read_yaml(bundle_dir / bundle.policies_file))
+    release = ReleasePolicyConfig.model_validate(_read_yaml(bundle_dir / bundle.release_file))
     if bundle.bundle_version not in _SUPPORTED_BUNDLE_VERSIONS:
         raise ValueError(f"未知 bundle 版本: {bundle.bundle_version}")
     if (
@@ -136,9 +130,7 @@ def load_bundle(bundle_dir: Path) -> LoadedRetailOpsBundle:
             bundle.release_file,
         )
     }
-    bundle_hash = hashlib.sha256(
-        canonical_json(component_hashes).encode("utf-8")
-    ).hexdigest()
+    bundle_hash = hashlib.sha256(canonical_json(component_hashes).encode("utf-8")).hexdigest()
     return LoadedRetailOpsBundle(
         bundle=bundle,
         tools=tools,

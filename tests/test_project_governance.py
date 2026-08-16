@@ -376,9 +376,9 @@ def test_r3_candidate_config_pins_model_and_adapter() -> None:
         for digest in digests.values():
             assert len(digest) == 64, key
     # 候选必须与 base 跑同一份基座模型，否则 delta 不能归因于 adapter。
-    base = yaml.safe_load(
-        _read("configs/retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml")
-    )["model"]
+    base = yaml.safe_load(_read("configs/retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml"))[
+        "model"
+    ]
     assert parsed["model"] == base
 
 
@@ -562,11 +562,7 @@ def test_every_r4_config_is_enrolled_in_the_governance_scan() -> None:
     漏登记一份配置，那份配置就完全不受 secret / 绝对路径 / 私有根 / BFCL / holdout
     检查约束，且没有任何信号。这条测试把"下一个人记得加"换成"忘了加就红"。
     """
-    enrolled = (
-        set(_R4_CONFIG_NAMES)
-        | set(_R4_ROUND2_CONFIG_NAMES)
-        | set(_R4_RELEASE_CONFIG_NAMES)
-    )
+    enrolled = set(_R4_CONFIG_NAMES) | set(_R4_ROUND2_CONFIG_NAMES) | set(_R4_RELEASE_CONFIG_NAMES)
     on_disk = {
         f"retail_ops/{path.relative_to(ROOT / 'configs/retail_ops')}"
         for path in (ROOT / "configs/retail_ops").rglob("*.yaml")
@@ -936,9 +932,7 @@ def test_the_merged_candidate_lineage_is_recomputable_from_the_config() -> None:
     )
     lineage = parsed["merged_from"]
 
-    recomputed = derive_merged_revision(
-        lineage["base_revision"], lineage["adapter_file_sha256"]
-    )
+    recomputed = derive_merged_revision(lineage["base_revision"], lineage["adapter_file_sha256"])
 
     assert recomputed == lineage["merged_revision"]
     assert parsed["model"]["revision"] == recomputed
@@ -1031,7 +1025,7 @@ def test_merged_model_config_declares_a_derived_revision_not_an_upstream_one() -
 
 
 def test_release_configs_declare_their_gate_schema_version() -> None:
-    """"这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠默认值。"""
+    """ "这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠默认值。"""
     import yaml
 
     for path in sorted((ROOT / "configs/retail_ops/release").glob("*.yaml")):

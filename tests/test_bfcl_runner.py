@@ -49,10 +49,7 @@ def test_generate_bfcl_records_passes_raw_schema_and_preserves_output() -> None:
         ) -> GeneratedText:
             self.requests.append((messages, tools, max_new_tokens))
             return GeneratedText(
-                text=(
-                    '<tool_call>\n{"name":"lookup","arguments":{"value":1}}\n'
-                    "</tool_call>"
-                ),
+                text=('<tool_call>\n{"name":"lookup","arguments":{"value":1}}\n</tool_call>'),
                 input_tokens=21,
                 output_tokens=9,
                 latency_ms=12.5,
@@ -199,10 +196,7 @@ def test_finalize_bfcl_artifacts_writes_metrics_and_real_failure(
         ) -> GeneratedText:
             del messages, tools, max_new_tokens
             return GeneratedText(
-                text=(
-                    '<tool_call>\n{"name":"wrong","arguments":{"value":1}}\n'
-                    "</tool_call>"
-                ),
+                text=('<tool_call>\n{"name":"wrong","arguments":{"value":1}}\n</tool_call>'),
                 latency_ms=5.0,
             )
 
@@ -211,10 +205,7 @@ def test_finalize_bfcl_artifacts_writes_metrics_and_real_failure(
         BfclGroundTruth.model_validate(_answer("simple_python_2")),
     )
     records = generate_bfcl_records([pair], WrongBackend(), max_new_tokens=32)
-    score_dir = (
-        tmp_path
-        / "official_scores/Qwen_Qwen3-1.7B-FC/non_live"
-    )
+    score_dir = tmp_path / "official_scores/Qwen_Qwen3-1.7B-FC/non_live"
     score_dir.mkdir(parents=True)
     score_rows = [
         {"accuracy": 0.0, "correct_count": 0, "total_count": 1},
@@ -315,9 +306,7 @@ def test_bfcl_eval_config_accepts_only_project_relative_adapter_path() -> None:
     config = yaml.safe_load(
         Path("configs/legacy/bfcl_v4_single_turn_seed0.yaml").read_text(encoding="utf-8")
     )
-    config["policy"]["adapter_path"] = (
-        "reports/legacy/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
-    )
+    config["policy"]["adapter_path"] = "reports/legacy/bfcl/qwen3-1.7b-sft-seed0/training/adapter"
 
     parsed = _validate_config(config, seed=0)
 

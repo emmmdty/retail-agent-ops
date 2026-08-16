@@ -502,9 +502,7 @@ def test_dev_base_rejects_unverified_or_reordered_records(
     tmp_path: Path,
 ) -> None:
     records = list(_dev_records(formal))
-    train_records = load_formal_split(
-        formal.dataset, "train", formal.private_dir / "train.jsonl"
-    )
+    train_records = load_formal_split(formal.dataset, "train", formal.private_dir / "train.jsonl")
 
     with pytest.raises(ValueError, match="数量"):
         _evaluate(formal, bundle, config, models_root, tmp_path, records=records[:-1])

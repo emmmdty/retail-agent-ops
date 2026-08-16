@@ -61,8 +61,7 @@ def test_fault_policy_produces_invalid_calls_without_batch_crash() -> None:
     assert not any(trajectory.success for trajectory in trajectories)
     assert all(
         any(
-            step.observation is not None
-            and step.observation.error_code == "unknown_tool"
+            step.observation is not None and step.observation.error_code == "unknown_tool"
             for step in trajectory.steps
         )
         for trajectory in trajectories

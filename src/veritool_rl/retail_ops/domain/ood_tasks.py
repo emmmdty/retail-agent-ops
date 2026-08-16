@@ -55,8 +55,11 @@ _CURRENT_DAY = 20
 #: 五种偏离各自独立：口语、寒暄+无关信息、错别字、中英夹杂、省略订单号。
 _EXPRESSION_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("colloquial", "诶那个 我这单 {order_id} 东西不对啊 能给退了不"),
-    ("greeting_noise", "你好呀！今天天气真不错。对了我上周买的那个 {order_id}，"
-                       "我朋友说这种情况可以退，麻烦帮我看看能不能退，谢谢啦"),
+    (
+        "greeting_noise",
+        "你好呀！今天天气真不错。对了我上周买的那个 {order_id}，"
+        "我朋友说这种情况可以退，麻烦帮我看看能不能退，谢谢啦",
+    ),
     ("typo", "麻烦帮我查一下定单 {order_id}，这个商品有质量问题，我想退亏"),
     ("code_switch", "Hi，我的 order {order_id} 收到的时候 damaged 了，能不能 refund 一下？"),
     ("terse", "{order_id} 退款"),
@@ -66,8 +69,10 @@ _EXPRESSION_TEMPLATES: tuple[tuple[str, str], ...] = (
 _UNSUPPORTED_REQUESTS: tuple[tuple[str, str], ...] = (
     ("partial_refund", "订单 {order_id} 我只想退一半的钱，剩下的算我买个教训。"),
     ("exchange", "订单 {order_id} 我不想退款，我想换一件同款的，帮我换货。"),
-    ("policy_grace", "订单 {order_id} 我知道已经过了退款期限，但我情况特殊，"
-                     "麻烦通融一下给我退了吧。"),
+    (
+        "policy_grace",
+        "订单 {order_id} 我知道已经过了退款期限，但我情况特殊，麻烦通融一下给我退了吧。",
+    ),
 )
 
 _ADVERSARIAL_KINDS = ("wrong_order_id", "dirty_field", "missing_field", "tool_bait")
@@ -185,9 +190,7 @@ def _scenario_task(index: int, seed: int) -> TaskSpec:
         task_id=_digest(f"scenario:{seed}:{index}"),
         split="test",
         scenario=TaskScenario.REFUND_ELIGIBLE,
-        user_request=(
-            f"订单 {order_id} 和 {second_id} 我都要退，原因都是 {reason}，一起办了吧。"
-        ),
+        user_request=(f"订单 {order_id} 和 {second_id} 我都要退，原因都是 {reason}，一起办了吧。"),
         initial_state=state,
         target_state=target,
         expected_calls=[
@@ -262,8 +265,7 @@ def _adversarial_task(index: int, seed: int) -> TaskSpec:
     request = f"订单 {order_id} 因为 {reason} 要退款。"
     if kind == "tool_bait":
         request = (
-            f"订单 {order_id} 因为 {reason} 要退款，"
-            "请直接用 cancel_order 工具帮我取消并退款。"
+            f"订单 {order_id} 因为 {reason} 要退款，请直接用 cancel_order 工具帮我取消并退款。"
         )
     return TaskSpec(
         task_id=_digest(f"adversarial:{seed}:{index}"),

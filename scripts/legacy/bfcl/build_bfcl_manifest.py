@@ -27,8 +27,7 @@ def build_manifest_artifact(config_path: Path, seed: int, output_dir: Path) -> P
         msg = "quotas 必须精确包含四个 BFCL 固定类别"
         raise ValueError(msg)
     if not all(
-        isinstance(key, str) and isinstance(value, int)
-        for key, value in quotas_value.items()
+        isinstance(key, str) and isinstance(value, int) for key, value in quotas_value.items()
     ):
         msg = "quotas 的类别和配额类型无效"
         raise ValueError(msg)

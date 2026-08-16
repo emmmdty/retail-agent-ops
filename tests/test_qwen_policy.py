@@ -413,9 +413,7 @@ def test_transformers_backend_forces_local_files_only(
     assert model_kwargs["local_files_only"] is True
 
 
-def _fake_transformers(
-    monkeypatch: pytest.MonkeyPatch, model_kwargs: dict[str, Any]
-) -> None:
+def _fake_transformers(monkeypatch: pytest.MonkeyPatch, model_kwargs: dict[str, Any]) -> None:
     """把重依赖换成能记录 kwargs 的替身，用来断言"到底以什么精度加载"。"""
 
     class FakeTokenizer:
@@ -505,5 +503,7 @@ def test_an_unknown_quantization_is_rejected(
 
     with pytest.raises(ValueError, match="quantization"):
         TransformersBackend.from_pretrained(
-            str(model_path), None, quantization="int8"  # type: ignore[arg-type]
+            str(model_path),
+            None,
+            quantization="int8",  # type: ignore[arg-type]
         )

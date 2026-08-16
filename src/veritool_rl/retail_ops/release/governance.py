@@ -55,10 +55,7 @@ class HoldoutReceipt(StrictModel):
 
         if set(self.task_sha256) != set(self.task_ids):
             raise ValueError("task_sha256 key 必须与 task_ids 一致")
-        if any(
-            _SHA256_PATTERN.fullmatch(digest) is None
-            for digest in self.task_sha256.values()
-        ):
+        if any(_SHA256_PATTERN.fullmatch(digest) is None for digest in self.task_sha256.values()):
             raise ValueError("task_sha256 必须是小写 64 位十六进制")
         return self
 
@@ -114,9 +111,7 @@ def authorize_holdout(
     try:
         relative_path = logical_path.relative_to(_PRIVATE_RETAIL_OPS_ROOT)
     except ValueError:
-        raise ValueError(
-            "sealed artifact 路径必须位于 data/private/retail_ops/v1/"
-        ) from None
+        raise ValueError("sealed artifact 路径必须位于 data/private/retail_ops/v1/") from None
     if relative_path == Path("."):
         raise ValueError("sealed artifact 路径必须指向 private 根目录下的文件")
 

@@ -21,10 +21,7 @@ def test_generated_task_splits_are_deterministic_balanced_and_disjoint() -> None
         assert set(Counter(task.scenario for task in tasks).values()) == {len(tasks) // 4}
 
     identifiers = {
-        split: {
-            (task.metadata["customer_id"], task.metadata["order_id"])
-            for task in tasks
-        }
+        split: {(task.metadata["customer_id"], task.metadata["order_id"]) for task in tasks}
         for split, tasks in first.items()
     }
     assert identifiers["train"].isdisjoint(identifiers["dev"])

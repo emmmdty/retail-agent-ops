@@ -154,9 +154,7 @@ def evaluate_refund_rules(
     """
     for rule in rules:
         if rule.when.holds(facts):
-            return PolicyDecision(
-                rule_id=rule.rule_id, violation=rule.violation, error=rule.error
-            )
+            return PolicyDecision(rule_id=rule.rule_id, violation=rule.violation, error=rule.error)
     return None
 
 

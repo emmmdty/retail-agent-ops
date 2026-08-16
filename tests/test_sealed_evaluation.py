@@ -155,9 +155,7 @@ def _sealed_config(formal: FormalFixture) -> SealedEvaluationConfig:
             repo="Qwen/Qwen3-1.7B",
             revision=REVISION,
             local_dir=MODEL_DIR_NAME,
-            file_sha256=hash_local_model_files(
-                formal.models_root / MODEL_DIR_NAME, MODEL_FILES
-            ),
+            file_sha256=hash_local_model_files(formal.models_root / MODEL_DIR_NAME, MODEL_FILES),
         ),
         generation=GenerationSettings(max_new_tokens=256),
         code_commit="1" * 40,

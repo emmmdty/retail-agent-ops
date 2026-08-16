@@ -55,20 +55,14 @@ def _make_task(
     reason = _REASONS[(seed + index) % len(_REASONS)]
 
     owner_id = (
-        other_customer_id
-        if scenario is TaskScenario.REFUND_DENIED_OWNERSHIP
-        else customer_id
+        other_customer_id if scenario is TaskScenario.REFUND_DENIED_OWNERSHIP else customer_id
     )
     order = {
         "customer_id": owner_id,
         "status": "shipped" if scenario is TaskScenario.LOOKUP_STATUS else "delivered",
-        "refund_deadline": (
-            10 if scenario is TaskScenario.REFUND_DENIED_WINDOW else 30
-        ),
+        "refund_deadline": (10 if scenario is TaskScenario.REFUND_DENIED_WINDOW else 30),
         "refund_status": (
-            "refunded"
-            if scenario is TaskScenario.REFUND_DENIED_DUPLICATE
-            else "none"
+            "refunded" if scenario is TaskScenario.REFUND_DENIED_DUPLICATE else "none"
         ),
     }
     initial_state: dict[str, Any] = {

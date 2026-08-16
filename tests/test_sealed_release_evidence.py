@@ -113,9 +113,7 @@ def _adapter_artifact(workspace: Path) -> Any:
 
     return AdapterArtifact(
         run_dir=ADAPTER_RUN_DIR,
-        file_sha256=hash_local_model_files(
-            workspace / ADAPTER_RUN_DIR / "adapter", ADAPTER_FILES
-        ),
+        file_sha256=hash_local_model_files(workspace / ADAPTER_RUN_DIR / "adapter", ADAPTER_FILES),
     )
 
 
@@ -885,10 +883,10 @@ def test_release_cli_rejects_a_bundle_that_differs_from_the_sealed_evidence(
     config_path.write_text(
         yaml.safe_dump(
             {
-                    "pipeline": "formal_release",
-                    "bundle_dir": "other-bundle",
-                    "gate_schema_version": "1.0",
-                },
+                "pipeline": "formal_release",
+                "bundle_dir": "other-bundle",
+                "gate_schema_version": "1.0",
+            },
             allow_unicode=True,
         ),
         encoding="utf-8",

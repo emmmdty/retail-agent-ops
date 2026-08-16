@@ -39,7 +39,7 @@ BFCL_SFT_TRAIN_QUOTAS = {
 }
 BFCL_HOLDOUT_QUOTAS = dict.fromkeys(BFCL_CATEGORIES, 50)
 BFCL_SFT_SELECTION_ALGORITHM = (
-    'exclude every task_id in the fixed holdout manifest; sort each category by '
+    "exclude every task_id in the fixed holdout manifest; sort each category by "
     'sha256(f"bfcl-sft-dev:0:{task_id}".encode()) ascending; take dev quotas '
     "simple_python=35, multiple=15, parallel=15, parallel_multiple=15; assign "
     "the ordered remainder to train"
@@ -53,8 +53,7 @@ class ChatTemplateTokenizer(Protocol):
         self,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class BfclSftSplitTask(StrictModel):
@@ -119,9 +118,7 @@ def build_bfcl_sft_manifest(
         msg = "BFCL SFT 必须使用 seed 0 且四类各 50 条的固定 holdout"
         raise ValueError(msg)
     holdout_by_category = {
-        category: {
-            item.task_id for item in holdout.tasks if item.category == category
-        }
+        category: {item.task_id for item in holdout.tasks if item.category == category}
         for category in BFCL_CATEGORIES
     }
 
@@ -131,10 +128,7 @@ def build_bfcl_sft_manifest(
     for category in BFCL_CATEGORIES:
         tasks, _ = load_bfcl_category(data_root, category)
         if len(tasks) != BFCL_SOURCE_COUNTS[category]:
-            msg = (
-                f"{category} 源任务数必须为 {BFCL_SOURCE_COUNTS[category]}，"
-                f"实际 {len(tasks)}"
-            )
+            msg = f"{category} 源任务数必须为 {BFCL_SOURCE_COUNTS[category]}，实际 {len(tasks)}"
             raise ValueError(msg)
         holdout_ids = holdout_by_category[category]
         if len(holdout_ids) != BFCL_HOLDOUT_QUOTAS[category]:
@@ -146,12 +140,10 @@ def build_bfcl_sft_manifest(
         )
         dev_count = BFCL_SFT_DEV_QUOTAS[category]
         dev.extend(
-            BfclSftSplitTask(task_id=task.id, category=category)
-            for task in candidates[:dev_count]
+            BfclSftSplitTask(task_id=task.id, category=category) for task in candidates[:dev_count]
         )
         train.extend(
-            BfclSftSplitTask(task_id=task.id, category=category)
-            for task in candidates[dev_count:]
+            BfclSftSplitTask(task_id=task.id, category=category) for task in candidates[dev_count:]
         )
         prompt_path = data_root / f"BFCL_v4_{category}.json"
         answer_path = data_root / "possible_answer" / f"BFCL_v4_{category}.json"
@@ -164,8 +156,7 @@ def build_bfcl_sft_manifest(
         )
 
     holdout_tasks = [
-        BfclSftSplitTask(task_id=item.task_id, category=item.category)
-        for item in holdout.tasks
+        BfclSftSplitTask(task_id=item.task_id, category=item.category) for item in holdout.tasks
     ]
     _validate_sft_splits(train, dev, holdout_tasks)
     return BfclSftManifest(
@@ -228,18 +219,12 @@ def resolve_bfcl_sft_task_answers(
     tasks_by_id: dict[str, BfclTask] = {}
     answers_by_id: dict[str, BfclGroundTruth] = {}
     for category in BFCL_CATEGORIES:
-        category_ids = {
-            item.task_id for item in references if item.category == category
-        }
+        category_ids = {item.task_id for item in references if item.category == category}
         if not category_ids:
             continue
         tasks, answers = load_bfcl_category(data_root, category)
-        tasks_by_id.update(
-            (task.id, task) for task in tasks if task.id in category_ids
-        )
-        answers_by_id.update(
-            (answer.id, answer) for answer in answers if answer.id in category_ids
-        )
+        tasks_by_id.update((task.id, task) for task in tasks if task.id in category_ids)
+        answers_by_id.update((answer.id, answer) for answer in answers if answer.id in category_ids)
     expected_ids = [item.task_id for item in references]
     if set(tasks_by_id) != set(expected_ids) or set(answers_by_id) != set(expected_ids):
         msg = f"BFCL SFT {split} 的 task/answer ID 与 provenance 不一致"
@@ -344,8 +329,7 @@ def _choose_possible_value(possible_values: list[Any], schema: Any) -> Any:
         and items.get("type") == "dict"
     ):
         return [
-            _choose_dict_value(item, items) if isinstance(item, dict) else item
-            for item in selected
+            _choose_dict_value(item, items) if isinstance(item, dict) else item for item in selected
         ]
     return selected
 
@@ -377,11 +361,7 @@ def _token_ids(encoded: Any, task_id: str) -> list[int]:
     except (KeyError, TypeError) as error:
         msg = f"{task_id} tokenizer 未返回 input_ids"
         raise ValueError(msg) from error
-    if (
-        not isinstance(value, list)
-        or not value
-        or not all(isinstance(item, int) for item in value)
-    ):
+    if not isinstance(value, list) or not value or not all(isinstance(item, int) for item in value):
         msg = f"{task_id} tokenizer input_ids 必须是非空整数列表"
         raise ValueError(msg)
     return value
@@ -411,13 +391,9 @@ def _validate_sft_splits(
     if (len(train), len(dev), len(holdout)) != expected_counts:
         msg = f"BFCL SFT split 数量必须为 {expected_counts}"
         raise ValueError(msg)
-    id_sets = [
-        {item.task_id for item in split}
-        for split in (train, dev, holdout)
-    ]
+    id_sets = [{item.task_id for item in split} for split in (train, dev, holdout)]
     if any(
-        len(ids) != len(split)
-        for ids, split in zip(id_sets, (train, dev, holdout), strict=True)
+        len(ids) != len(split) for ids, split in zip(id_sets, (train, dev, holdout), strict=True)
     ):
         msg = "BFCL SFT split 内存在重复 task_id"
         raise ValueError(msg)
@@ -425,12 +401,10 @@ def _validate_sft_splits(
         msg = "BFCL SFT train/dev/holdout 存在 task_id 泄漏"
         raise ValueError(msg)
     train_counts = {
-        category: sum(item.category == category for item in train)
-        for category in BFCL_CATEGORIES
+        category: sum(item.category == category for item in train) for category in BFCL_CATEGORIES
     }
     dev_counts = {
-        category: sum(item.category == category for item in dev)
-        for category in BFCL_CATEGORIES
+        category: sum(item.category == category for item in dev) for category in BFCL_CATEGORIES
     }
     if train_counts != BFCL_SFT_TRAIN_QUOTAS or dev_counts != BFCL_SFT_DEV_QUOTAS:
         msg = "BFCL SFT train/dev 分类配额不一致"

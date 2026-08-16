@@ -17,9 +17,7 @@ from veritool_rl.retail_ops.release.governance import (
     authorize_holdout,
 )
 
-PRIVATE_HOLDOUT_PATH = Path(
-    "data/private/retail_ops/v1/holdout/tasks.jsonl"
-)
+PRIVATE_HOLDOUT_PATH = Path("data/private/retail_ops/v1/holdout/tasks.jsonl")
 
 
 def _manifest(

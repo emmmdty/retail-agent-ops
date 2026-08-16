@@ -65,9 +65,7 @@ def parse_bfcl_tool_calls(raw_text: str) -> ParsedBfclOutput:
     """解析一个响应中的全部 Hermes ``tool_call`` 标签。"""
     blocks = _TOOL_CALL_PATTERN.findall(raw_text)
     if not blocks:
-        error = (
-            "invalid_tool_call_format" if "<tool_call>" in raw_text else "missing_tool_call"
-        )
+        error = "invalid_tool_call_format" if "<tool_call>" in raw_text else "missing_tool_call"
         return ParsedBfclOutput(parse_error=error)
     calls: list[BfclToolCall] = []
     for block in blocks:
@@ -126,9 +124,7 @@ def diagnose_bfcl_generation(
     schema_error_count = unknown_schema_functions + missing + extra + type_errors
     category = task.id.rsplit("_", 1)[0]
     structure_error = category in {"multiple", "parallel", "parallel_multiple"} and (
-        parsed.parse_error is not None
-        or call_count_error
-        or function_name_structure_error
+        parsed.parse_error is not None or call_count_error or function_name_structure_error
     )
     return BfclDiagnostic(
         parseable=parsed.parse_error is None,
@@ -250,9 +246,7 @@ def load_official_scores(
         ):
             msg = f"官方 score 失败 ID 与冻结任务不一致: {path}"
             raise ValueError(msg)
-        error_types = Counter(
-            str(row.get("error_type", "unknown")) for row in failure_rows
-        )
+        error_types = Counter(str(row.get("error_type", "unknown")) for row in failure_rows)
         scores[category] = BfclOfficialScore(
             category=category,
             accuracy=float(accuracy),
@@ -287,9 +281,7 @@ def compute_bfcl_metrics(
     total_generation_seconds = sum(generation_latency_ms) / 1000
     return {
         "task_count": task_count,
-        "category_counts": {
-            category: score.total_count for category, score in scores.items()
-        },
+        "category_counts": {category: score.total_count for category, score in scores.items()},
         "official_ast_accuracy": correct_count / task_count if task_count else 0.0,
         "official_ast_accuracy_by_category": {
             category: score.accuracy for category, score in scores.items()
@@ -300,32 +292,21 @@ def compute_bfcl_metrics(
         },
         "official_error_count": task_count - correct_count,
         "official_error_count_by_category": {
-            category: score.total_count - score.correct_count
-            for category, score in scores.items()
+            category: score.total_count - score.correct_count for category, score in scores.items()
         },
         "official_error_type_counts": dict(sorted(error_type_counts.items())),
         "parseable_count": parseable_count,
         "parseable_rate": parseable_count / task_count if task_count else 0.0,
         "schema_valid_count": schema_valid_count,
         "schema_valid_rate": schema_valid_count / task_count if task_count else 0.0,
-        "wrong_function_name_count": sum(
-            item.wrong_function_name_count for item in diagnostics
-        ),
-        "missing_parameter_count": sum(
-            item.missing_parameter_count for item in diagnostics
-        ),
-        "extra_parameter_count": sum(
-            item.extra_parameter_count for item in diagnostics
-        ),
-        "type_error_parameter_count": sum(
-            item.type_error_parameter_count for item in diagnostics
-        ),
+        "wrong_function_name_count": sum(item.wrong_function_name_count for item in diagnostics),
+        "missing_parameter_count": sum(item.missing_parameter_count for item in diagnostics),
+        "extra_parameter_count": sum(item.extra_parameter_count for item in diagnostics),
+        "type_error_parameter_count": sum(item.type_error_parameter_count for item in diagnostics),
         "call_count_error_count": sum(item.call_count_error for item in diagnostics),
         "structure_error_count": sum(item.structure_error for item in diagnostics),
         "wall_time_seconds": wall_time_seconds,
-        "average_task_wall_time_seconds": (
-            wall_time_seconds / task_count if task_count else 0.0
-        ),
+        "average_task_wall_time_seconds": (wall_time_seconds / task_count if task_count else 0.0),
         "generation_latency_seconds": total_generation_seconds,
         "average_generation_latency_seconds": (
             total_generation_seconds / task_count if task_count else 0.0

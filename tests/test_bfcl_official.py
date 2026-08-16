@@ -25,8 +25,7 @@ def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
         {
             "id": "simple_python_1",
             "result": (
-                '<tool_call>\n{"name":"math.factorial","arguments":{"number":6}}'
-                "\n</tool_call>"
+                '<tool_call>\n{"name":"math.factorial","arguments":{"number":6}}\n</tool_call>'
             ),
         },
     ]
@@ -75,13 +74,8 @@ def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
         text=True,
     )
 
-    score_path = (
-        tmp_path
-        / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
-    )
-    score_rows = [
-        json.loads(line) for line in score_path.read_text(encoding="utf-8").splitlines()
-    ]
+    score_path = tmp_path / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
+    score_rows = [json.loads(line) for line in score_path.read_text(encoding="utf-8").splitlines()]
     assert score_rows[0] == {"accuracy": 0.5, "correct_count": 1, "total_count": 2}
     assert score_rows[1]["id"] == "simple_python_1"
     assert score_rows[1]["model_name"] == "Qwen_Qwen3-1.7B-FC"
@@ -117,8 +111,7 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
         {
             "id": "simple_python_1",
             "result": (
-                '<tool_call>\n{"name":"math.factorial","arguments":{"number":5}}'
-                "\n</tool_call>"
+                '<tool_call>\n{"name":"math.factorial","arguments":{"number":5}}\n</tool_call>'
             ),
         },
     ]
@@ -135,15 +128,9 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
                 "selection_algorithm": "fixed",
                 "sources": [],
                 "splits": {
-                    "train": [
-                        {"category": "simple_python", "task_id": "simple_python_0"}
-                    ],
-                    "dev": [
-                        {"category": "simple_python", "task_id": "simple_python_1"}
-                    ],
-                    "holdout": [
-                        {"category": "simple_python", "task_id": "simple_python_2"}
-                    ],
+                    "train": [{"category": "simple_python", "task_id": "simple_python_0"}],
+                    "dev": [{"category": "simple_python", "task_id": "simple_python_1"}],
+                    "holdout": [{"category": "simple_python", "task_id": "simple_python_2"}],
                 },
             }
         ),
@@ -171,9 +158,6 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
     completed = subprocess.run(command, check=False, capture_output=True, text=True)
 
     assert completed.returncode == 0, completed.stderr
-    score_path = (
-        tmp_path
-        / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
-    )
+    score_path = tmp_path / "scores/Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_simple_python_score.json"
     summary = json.loads(score_path.read_text(encoding="utf-8").splitlines()[0])
     assert summary == {"accuracy": 1.0, "correct_count": 2, "total_count": 2}

@@ -73,9 +73,7 @@ def main() -> int:
         )
         # 同时留下 `user_request`：`compare_engine_outputs.py` 要用它重建 messages
         # 走项目自己的 HF 后端，而后端吃的是 messages 不是渲染好的字符串。
-        rows.append(
-            {"task_id": task.task_id, "prompt": text, "user_request": task.user_request}
-        )
+        rows.append({"task_id": task.task_id, "prompt": text, "user_request": task.user_request})
 
     args.output.write_text(
         "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",

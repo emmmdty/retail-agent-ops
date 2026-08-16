@@ -219,9 +219,7 @@ def _run_build(args: argparse.Namespace) -> None:
         if not isinstance(inject, bool) or not isinstance(clarify, bool):
             raise ValueError("inject 与 clarify 必须是 bool")
         bundle_dir = _bundle_dir(config)
-        build_qualification(
-            bundle_dir, args.seed, args.output_dir, inject=inject, clarify=clarify
-        )
+        build_qualification(bundle_dir, args.seed, args.output_dir, inject=inject, clarify=clarify)
         return
     if pipeline == "ood_build":
         _run_ood_build(args, config)
@@ -501,9 +499,7 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
 def _gate_schema_version(config: dict[str, Any]) -> GateSchemaVersion:
     value = config["gate_schema_version"]
     if value not in GATE_IDS_BY_SCHEMA:
-        raise ValueError(
-            f"未知 gate_schema_version: {value!r}，可选 {sorted(GATE_IDS_BY_SCHEMA)}"
-        )
+        raise ValueError(f"未知 gate_schema_version: {value!r}，可选 {sorted(GATE_IDS_BY_SCHEMA)}")
     return cast(GateSchemaVersion, value)
 
 
@@ -565,9 +561,7 @@ def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
     build_ood_task_set(_bundle_dir(config), args.seed, args.output_dir)
 
 
-def _default_ood_backend(
-    config: OodEvaluationConfig, models_root: Path
-) -> GenerationBackend:
+def _default_ood_backend(config: OodEvaluationConfig, models_root: Path) -> GenerationBackend:
     return _ood_backend_for_engine("transformers")(config, models_root)
 
 
@@ -649,9 +643,7 @@ def _run_ood_evaluate(
     engine = _engine_from(args)
     pipeline = config.get("pipeline")
     is_candidate = pipeline == "ood_candidate"
-    _require_config_keys(
-        config, _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS
-    )
+    _require_config_keys(config, _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS)
     bundle = load_bundle(_bundle_dir(config))
     models_root = _project_relative_path(config, "models_root")
     manifest = load_ood_manifest(args.input_dir / "manifest.json")
@@ -1052,9 +1044,7 @@ def _run_formal_dev_base(
     )
 
     engine = _engine_from(args)
-    backend = (backend_factory or _generation_backend_for_engine(engine))(
-        base_config, models_root
-    )
+    backend = (backend_factory or _generation_backend_for_engine(engine))(base_config, models_root)
     hardware_provider = (
         hardware_provider_factory or (lambda: _hardware_provider_for_engine(engine))
     )()
@@ -1209,9 +1199,7 @@ _PRIVATE_R2_LOGICAL_ROOT = Path("data/private/retail_ops/v1/r2")
 _HOLDOUT_ARTIFACT_NAME = "holdout.jsonl"
 
 
-def _default_sealed_backend(
-    config: SealedEvaluationConfig, models_root: Path
-) -> GenerationBackend:
+def _default_sealed_backend(config: SealedEvaluationConfig, models_root: Path) -> GenerationBackend:
     """生产环境默认工厂：真实 4-bit NF4 后端，候选侧另挂锁定的 adapter 目录。"""
     model_dir = models_root / config.model.local_dir
     adapter_dir = None if config.adapter is None else str(config.adapter.adapter_dir)

@@ -134,9 +134,7 @@ class FormalTaskSet(StrictModel):
 
             families: dict[str, list[FormalTaskRecord]] = {}
             for record in records:
-                expected = FormalTaskRecord.from_task(
-                    record.task, record.variant_index
-                )
+                expected = FormalTaskRecord.from_task(record.task, record.variant_index)
                 if any(
                     getattr(record, field) != getattr(expected, field)
                     for field in _FINGERPRINT_FIELDS
@@ -463,9 +461,7 @@ def _derivation_payload(task: TaskSpec, primary_order_id: str) -> dict[str, Any]
     }
 
 
-def _normalized_policy_state(
-    state: dict[str, Any], primary_order_id: str
-) -> dict[str, Any]:
+def _normalized_policy_state(state: dict[str, Any], primary_order_id: str) -> dict[str, Any]:
     customer_id = state.get("customer_id")
     current_day = state.get("current_day")
     orders = state.get("orders")
@@ -482,16 +478,12 @@ def _normalized_policy_state(
         if order_id != primary_order_id
     ]
     return {
-        "primary_order": _normalized_order(
-            primary_order, customer_id, current_day
-        ),
+        "primary_order": _normalized_order(primary_order, customer_id, current_day),
         "distractor_orders": sorted(distractors, key=canonical_json),
     }
 
 
-def _normalized_order(
-    order: Any, customer_id: str, current_day: int
-) -> dict[str, Any]:
+def _normalized_order(order: Any, customer_id: str, current_day: int) -> dict[str, Any]:
     if not isinstance(order, dict):
         raise ValueError("正式任务 order 必须是 object")
     refund_deadline = order.get("refund_deadline")

@@ -93,17 +93,13 @@ def run_episode(
                 ]
             )
         elif output.tool_call is not None:
-            blocked = (
-                None if guardrail is None else guardrail.check_call(output.tool_call, tools)
-            )
+            blocked = None if guardrail is None else guardrail.check_call(output.tool_call, tools)
             if blocked is not None:
                 # 拦截产生结构化观测而不是静默丢弃：静默会让模型以为工具执行了，
                 # 也会让失败 taxonomy 少掉一整类。
                 observation = blocked_observation(blocked)
             else:
-                observation = env.execute_tool(
-                    output.tool_call.name, output.tool_call.arguments
-                )
+                observation = env.execute_tool(output.tool_call.name, output.tool_call.arguments)
                 if guardrail is not None:
                     guardrail.observe(output.tool_call, observation)
                     observation = guardrail.sanitize(observation)

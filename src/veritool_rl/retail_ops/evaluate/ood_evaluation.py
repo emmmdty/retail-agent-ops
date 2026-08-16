@@ -160,9 +160,7 @@ def evaluate_ood(
     measurement = hardware_provider.measure()
 
     replayed = sum(
-        replay_trajectory(
-            trajectory, lambda current: RetailOpsEnv(current, bundle)
-        ).matched
+        replay_trajectory(trajectory, lambda current: RetailOpsEnv(current, bundle)).matched
         for trajectory in trajectories
     )
     metrics = compute_metrics(trajectories, config.bootstrap_samples, manifest.seed)
@@ -205,11 +203,7 @@ def evaluate_ood(
             ),
             kind_success=_group_success(trajectories, _ood_kind),
             failure_kind_counts=dict(
-                sorted(
-                    Counter(
-                        _ood_kind(t.task) for t in trajectories if not t.success
-                    ).items()
-                )
+                sorted(Counter(_ood_kind(t.task) for t in trajectories if not t.success).items())
             ),
             replayable_count=replayed,
             evidence_complete=replayed == len(trajectories),

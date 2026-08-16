@@ -597,9 +597,7 @@ def test_export_rejects_teacher_evidence_whose_trajectory_belongs_to_another_tas
     scenarios = {record.task.task_id: record.task.scenario.value for record in all_records}
 
     with pytest.raises(ValueError, match="证据"):
-        export_formal_train(
-            all_records, all_evidences, _env_factory, config, scenarios, seed=0
-        )
+        export_formal_train(all_records, all_evidences, _env_factory, config, scenarios, seed=0)
 
 
 def test_export_rejects_teacher_evidence_from_another_governance_context() -> None:
@@ -921,9 +919,7 @@ def _multi_step_fixture(
     return records, evidences, scenarios
 
 
-def _export_sft(
-    scenario: TaskScenario, **kwargs: Any
-) -> list[dict[str, Any]]:
+def _export_sft(scenario: TaskScenario, **kwargs: Any) -> list[dict[str, Any]]:
     records, evidences, scenarios = _multi_step_fixture(scenario)
     _, _, _, sft_rows = export_formal_train(
         records, evidences, _env_factory, _config(), scenarios, seed=0, **kwargs
@@ -1003,9 +999,7 @@ def test_export_terminal_response_uses_the_last_successful_refund() -> None:
             for index, message in enumerate(messages)
             if message["role"] == "tool"
             and index > 0
-            and (messages[index - 1].get("tool_calls") or [{}])[0]
-            .get("function", {})
-            .get("name")
+            and (messages[index - 1].get("tool_calls") or [{}])[0].get("function", {}).get("name")
             == "refund_order"
         ]
         # fixture 前提：确实存在一次失败 + 一次成功。
@@ -1083,9 +1077,7 @@ def test_export_terminal_response_preserves_the_decision_point_shape() -> None:
         return shapes
 
     before = _export_sft(TaskScenario.REFUND_ELIGIBLE)
-    after = _export_sft(
-        TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"]
-    )
+    after = _export_sft(TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"])
 
     assert decision_shape(before) == decision_shape(after)
     assert set(decision_shape(after)) == {"tool_call"}
@@ -1094,9 +1086,7 @@ def test_export_terminal_response_preserves_the_decision_point_shape() -> None:
 def test_export_terminal_response_touches_nothing_but_the_appended_message() -> None:
     """除末尾新增的一条消息外，样本必须逐字段不变——B 是纯局部变换。"""
     before = _export_sft(TaskScenario.REFUND_ELIGIBLE)
-    after = _export_sft(
-        TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"]
-    )
+    after = _export_sft(TaskScenario.REFUND_ELIGIBLE, sft_terminal_response=["refund_eligible"])
 
     assert len(before) == len(after)
     for old, new in zip(before, after, strict=True):

@@ -14,12 +14,8 @@ def test_build_writes_stable_qualification_manifest(tmp_path: Path) -> None:
     first_dir = tmp_path / "first"
     second_dir = tmp_path / "second"
 
-    first = build_qualification(
-        Path("domains/retail_ops/v1"), seed=0, output_dir=first_dir
-    )
-    second = build_qualification(
-        Path("domains/retail_ops/v1"), seed=0, output_dir=second_dir
-    )
+    first = build_qualification(Path("domains/retail_ops/v1"), seed=0, output_dir=first_dir)
+    second = build_qualification(Path("domains/retail_ops/v1"), seed=0, output_dir=second_dir)
 
     assert first == second
     assert first.split == "qualification"
@@ -30,12 +26,8 @@ def test_build_writes_stable_qualification_manifest(tmp_path: Path) -> None:
         "tasks.jsonl",
         "manifest.json",
     }
-    assert (first_dir / "tasks.jsonl").read_bytes() == (
-        second_dir / "tasks.jsonl"
-    ).read_bytes()
-    assert (first_dir / "manifest.json").read_bytes() == (
-        second_dir / "manifest.json"
-    ).read_bytes()
+    assert (first_dir / "tasks.jsonl").read_bytes() == (second_dir / "tasks.jsonl").read_bytes()
+    assert (first_dir / "manifest.json").read_bytes() == (second_dir / "manifest.json").read_bytes()
 
 
 def test_build_rejects_existing_output_directory(tmp_path: Path) -> None:

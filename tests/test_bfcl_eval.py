@@ -241,10 +241,7 @@ def test_diagnose_rejects_parameter_outside_schema_enum() -> None:
         "simple_python",
         [{"lookup": {"value": [1], "label": ["a"]}}],
     )
-    raw = (
-        '<tool_call>\n{"name":"lookup","arguments":{"value":1,"label":"c"}}\n'
-        "</tool_call>"
-    )
+    raw = '<tool_call>\n{"name":"lookup","arguments":{"value":1,"label":"c"}}\n</tool_call>'
 
     diagnostic = diagnose_bfcl_generation(task, truth, raw)
 
@@ -323,10 +320,9 @@ def test_write_official_result_files_groups_and_sorts_by_source_index(tmp_path: 
     ]
     parallel_rows = [
         json.loads(line)
-        for line in (
-            tmp_path
-            / "Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_parallel_result.json"
-        ).read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "Qwen_Qwen3-1.7B-FC/non_live/BFCL_v4_parallel_result.json")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     assert [row["id"] for row in parallel_rows] == ["parallel_3", "parallel_10"]
 
@@ -367,9 +363,7 @@ def test_load_official_scores_validates_counts_and_failure_ids(tmp_path: Path) -
         {"accuracy": 0.5, "correct_count": 1, "total_count": 2},
         {"id": "multiple_9", "valid": False, "error_type": "bad"},
     ]
-    bad_path.write_text(
-        "".join(json.dumps(row) + "\n" for row in bad_rows), encoding="utf-8"
-    )
+    bad_path.write_text("".join(json.dumps(row) + "\n" for row in bad_rows), encoding="utf-8")
     with pytest.raises(ValueError, match="失败 ID"):
         load_official_scores(
             tmp_path,

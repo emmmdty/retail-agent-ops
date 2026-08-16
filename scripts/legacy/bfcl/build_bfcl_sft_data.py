@@ -177,9 +177,7 @@ def _run_official_target_validation(
     if not python.is_file():
         raise FileNotFoundError(python)
     expected_by_category = {
-        category: [
-            example.task_id for example in examples if example.category == category
-        ]
+        category: [example.task_id for example in examples if example.category == category]
         for category in BFCL_CATEGORIES
     }
     result_root = output_dir / "results"
@@ -231,9 +229,7 @@ def _run_official_target_validation(
             f"official_error={failure.get('error')}"
         )
         raise RuntimeError(msg)
-    checker_path = (
-        bfcl_repo / "bfcl_eval/eval_checker/ast_eval/ast_checker.py"
-    )
+    checker_path = bfcl_repo / "bfcl_eval/eval_checker/ast_eval/ast_checker.py"
     return {
         "checked_count": checked_count,
         "correct_count": correct_count,
@@ -278,23 +274,14 @@ def _build_audit(
         },
         "max_seq_len": max_seq_len,
         "token_lengths": {
-            "prompt": _length_summary(
-                [example.prompt_token_count for example in all_examples]
-            ),
-            "target": _length_summary(
-                [example.target_token_count for example in all_examples]
-            ),
-            "full": _length_summary(
-                [example.full_token_count for example in all_examples]
-            ),
+            "prompt": _length_summary([example.prompt_token_count for example in all_examples]),
+            "target": _length_summary([example.target_token_count for example in all_examples]),
+            "full": _length_summary([example.full_token_count for example in all_examples]),
         },
-        "truncation_count": sum(
-            example.full_token_count > max_seq_len for example in all_examples
-        ),
+        "truncation_count": sum(example.full_token_count > max_seq_len for example in all_examples),
         "target_validation": target_validation,
         "data_sha256": {
-            split: sha256_file(output_dir / f"{split}.jsonl")
-            for split in ("train", "dev")
+            split: sha256_file(output_dir / f"{split}.jsonl") for split in ("train", "dev")
         },
     }
 

@@ -117,9 +117,9 @@ class TaskSpec(StrictModel):
     max_steps: int = Field(default=4, ge=1, le=32)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    _validate_json_fields = field_validator(
-        "initial_state", "target_state", "metadata"
-    )(validate_json_value)
+    _validate_json_fields = field_validator("initial_state", "target_state", "metadata")(
+        validate_json_value
+    )
 
     @field_validator("transient_failures")
     @classmethod

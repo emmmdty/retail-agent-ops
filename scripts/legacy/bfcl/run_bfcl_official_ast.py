@@ -76,9 +76,7 @@ def _read_model_underscore_to_dot(model_config_path: Path, model_name: str) -> b
             if not isinstance(value, ast.Call):
                 raise ValueError(f"Invalid BFCL model config entry for {model_name}")
             for keyword in value.keywords:
-                if keyword.arg == "underscore_to_dot" and isinstance(
-                    keyword.value, ast.Constant
-                ):
+                if keyword.arg == "underscore_to_dot" and isinstance(keyword.value, ast.Constant):
                     flag = keyword.value.value
                     if not isinstance(flag, bool):
                         raise ValueError(
@@ -228,9 +226,7 @@ def _is_function_calling_output(decoded: Any) -> bool:
     if type(decoded) is not list:
         return False
     return all(
-        type(item) is dict
-        and len(item) == 1
-        and type(next(iter(item.values()))) is dict
+        type(item) is dict and len(item) == 1 and type(next(iter(item.values()))) is dict
         for item in decoded
     )
 
@@ -325,12 +321,7 @@ def _score_category(
     data_root = repo / "bfcl_eval/data"
     prompt_path = data_root / f"BFCL_v4_{category}.json"
     answer_path = data_root / "possible_answer" / f"BFCL_v4_{category}.json"
-    result_path = (
-        result_root
-        / escaped_model
-        / "non_live"
-        / f"BFCL_v4_{category}_result.json"
-    )
+    result_path = result_root / escaped_model / "non_live" / f"BFCL_v4_{category}_result.json"
     prompts = _index_unique(_read_jsonl(prompt_path), prompt_path)
     answers = _index_unique(_read_jsonl(answer_path), answer_path)
     results = _read_jsonl(result_path)
@@ -370,12 +361,7 @@ def _score_category(
         "correct_count": correct_count,
         "total_count": len(results),
     }
-    score_path = (
-        score_root
-        / escaped_model
-        / "non_live"
-        / f"BFCL_v4_{category}_score.json"
-    )
+    score_path = score_root / escaped_model / "non_live" / f"BFCL_v4_{category}_score.json"
     _write_jsonl(score_path, [header, *failures])
     return header
 

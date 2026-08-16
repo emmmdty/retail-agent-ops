@@ -89,7 +89,6 @@ def current_runtime_env_sha256() -> str:
     否则同一个环境两次算出的值会不同，这个字段就没法用来判定"是不是同一个环境"。
     """
     seen = {
-        (str(dist.metadata["Name"] or ""), str(dist.version))
-        for dist in _installed_distributions()
+        (str(dist.metadata["Name"] or ""), str(dist.version)) for dist in _installed_distributions()
     }
     return hashlib.sha256(canonical_json(sorted(seen)).encode("utf-8")).hexdigest()

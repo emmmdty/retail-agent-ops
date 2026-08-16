@@ -36,9 +36,7 @@ def _load(path: Path) -> dict[str, Any]:
     return dict(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-@pytest.mark.parametrize(
-    ("small", "large"), [(_17B_ATTN, _4B_ATTN), (_17B_FULL, _4B_FULL)]
-)
+@pytest.mark.parametrize(("small", "large"), [(_17B_ATTN, _4B_ATTN), (_17B_FULL, _4B_FULL)])
 def test_cross_scale_pairs_differ_only_by_model(small: Path, large: Path) -> None:
     """1.7B 与 4B 的对应候选**只能差 model 段**。
 
@@ -83,9 +81,9 @@ def test_all_four_arms_train_on_the_same_new_prompt_export() -> None:
     对照了旧 prompt 的 base 才需要补第三轮实验，这里不重犯。
     """
     for path in (_17B_ATTN, _17B_FULL, _4B_ATTN, _4B_FULL):
-        assert (
-            _load(path)["data"]["train_relpath"] == "train-export/train-export-004/sft.jsonl"
-        ), path.name
+        assert _load(path)["data"]["train_relpath"] == "train-export/train-export-004/sft.jsonl", (
+            path.name
+        )
 
 
 def test_1p7b_base_rerun_differs_from_the_original_only_by_attempt_id() -> None:

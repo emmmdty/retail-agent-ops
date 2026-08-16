@@ -76,9 +76,7 @@ GATE_IDS_BY_SCHEMA: dict[str, tuple[str, ...]] = {
 
 #: 三个比值门禁共用的说明片段。`reason` 是给人读的字段，"失败任务提前终止反而更快"
 #: 这个偏置正是应该写在那里的东西。
-_EARLY_TERMINATION_NOTE = (
-    "注意偏置：失败任务往往提前终止，因此**更差的模型可能看起来更快**。"
-)
+_EARLY_TERMINATION_NOTE = "注意偏置：失败任务往往提前终止，因此**更差的模型可能看起来更快**。"
 
 
 class ReleaseDecision(StrEnum):
@@ -270,8 +268,7 @@ def _gates_v1_1(
             threshold=policy.p95_latency_ratio_max,
             reason=(
                 "单次工具调用平均耗时的比值，衡量**部署速度**而非规划质量："
-                "它对「候选多做了一步」免疫，只对前向变慢敏感。"
-                + _EARLY_TERMINATION_NOTE
+                "它对「候选多做了一步」免疫，只对前向变慢敏感。" + _EARLY_TERMINATION_NOTE
             ),
         ),
         GateResult(

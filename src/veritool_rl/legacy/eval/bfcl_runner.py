@@ -347,9 +347,7 @@ def finalize_bfcl_artifacts(
     )
     generation_seconds = metrics["generation_latency_seconds"]
     metrics["generation_output_tokens_per_second"] = (
-        metrics["output_token_count"] / generation_seconds
-        if generation_seconds
-        else 0.0
+        metrics["output_token_count"] / generation_seconds if generation_seconds else 0.0
     )
     write_json(output_dir / "metrics.json", metrics)
     write_jsonl(output_dir / "failures.jsonl", failures)
@@ -422,10 +420,7 @@ def _render_bfcl_report(
             "ToolSandbox、tau2、偏好优化或 GRPO。"
         )
     else:
-        title = (
-            f"Qwen3-1.7B 在 BFCL V4 固定 {task_count} 条单轮 AST 子集上的"
-            "零样本结果"
-        )
+        title = f"Qwen3-1.7B 在 BFCL V4 固定 {task_count} 条单轮 AST 子集上的零样本结果"
         scope = (
             "结果仅适用于提交 manifest 冻结的 BFCL V4 单轮 AST 子集、seed 0、"
             "Qwen3-1.7B 4-bit NF4 零样本设置；不能外推到 BFCL 全量、官方排行榜、"
@@ -476,8 +471,7 @@ def _render_bfcl_report(
             f"- GPU 峰值 allocated：{metrics['cuda_peak_allocated_bytes']} bytes",
             f"- GPU 峰值 reserved：{metrics['cuda_peak_reserved_bytes']} bytes",
             f"- 任务吞吐量：{metrics['throughput_tasks_per_second']:.6f} tasks/s",
-            "- 生成输出吞吐量："
-            f"{metrics['generation_output_tokens_per_second']:.6f} tokens/s",
+            f"- 生成输出吞吐量：{metrics['generation_output_tokens_per_second']:.6f} tokens/s",
             "",
             "## 失败分析",
             "",
@@ -485,9 +479,7 @@ def _render_bfcl_report(
     )
     if failures:
         analyzed = failures[: max(20, len(failures))]
-        lines.append(
-            f"`failures.jsonl` 包含全部 {len(failures)} 条真实官方失败及逐条根因。"
-        )
+        lines.append(f"`failures.jsonl` 包含全部 {len(failures)} 条真实官方失败及逐条根因。")
         lines.append("")
         for failure in analyzed[:20]:
             lines.append(

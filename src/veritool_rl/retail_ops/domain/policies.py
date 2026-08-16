@@ -104,11 +104,7 @@ class SchemaAdaptiveOraclePolicy:
 def _resolve_tool_name(call: ToolCall, tools: list[ToolSchema]) -> str:
     """按参数键集合唯一匹配当前工具；不唯一或无匹配时回落到 gold 名字。"""
     wanted = set(call.arguments)
-    matches = [
-        tool.name
-        for tool in tools
-        if set(tool.parameters.get("properties", {})) == wanted
-    ]
+    matches = [tool.name for tool in tools if set(tool.parameters.get("properties", {})) == wanted]
     if len(matches) == 1:
         return matches[0]
     return call.name

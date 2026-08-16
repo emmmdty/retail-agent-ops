@@ -152,17 +152,13 @@ def test_derivation_fingerprint_tracks_real_policy_and_answer_state() -> None:
 
     records = build_formal_task_set(DATASET_VERSION, seed=0).records("train")
     eligible = next(
-        record
-        for record in records
-        if record.task.scenario is TaskScenario.REFUND_ELIGIBLE
+        record for record in records if record.task.scenario is TaskScenario.REFUND_ELIGIBLE
     )
     lookup = next(
         record
         for record in records
         if record.task.scenario is TaskScenario.LOOKUP_STATUS
-        and record.task.initial_state["orders"][record.task.metadata["order_id"]][
-            "status"
-        ]
+        and record.task.initial_state["orders"][record.task.metadata["order_id"]]["status"]
         != "delivered"
     )
     current_day = eligible.task.initial_state["current_day"]
@@ -194,9 +190,7 @@ def test_derivation_fingerprint_tracks_real_policy_and_answer_state() -> None:
         assert changed.derivation_fingerprint != eligible.derivation_fingerprint
     lookup_changed = FormalTaskRecord.from_task(changed_tasks[3], lookup.variant_index)
     assert lookup_changed.derivation_fingerprint != lookup.derivation_fingerprint
-    target_changed = FormalTaskRecord.from_task(
-        changed_tasks[4], eligible.variant_index
-    )
+    target_changed = FormalTaskRecord.from_task(changed_tasks[4], eligible.variant_index)
     assert target_changed.derivation_fingerprint != eligible.derivation_fingerprint
 
     metadata_payload = copy.deepcopy(eligible.task.model_dump(mode="python"))
@@ -218,14 +212,10 @@ def test_exact_quotas_reject_duplicate_variants_and_fingerprint_tampering() -> N
     train = list(task_set.train)
     first_family = train[0].family_fingerprint
     family_positions = [
-        index
-        for index, record in enumerate(train)
-        if record.family_fingerprint == first_family
+        index for index, record in enumerate(train) if record.family_fingerprint == first_family
     ]
     duplicate_train = train.copy()
-    duplicate_train[family_positions[1]] = train[family_positions[0]].model_copy(
-        deep=True
-    )
+    duplicate_train[family_positions[1]] = train[family_positions[0]].model_copy(deep=True)
     duplicate_set = task_set.model_copy(update={"train": tuple(duplicate_train)})
 
     with pytest.raises(ValueError, match="variant"):
@@ -233,9 +223,7 @@ def test_exact_quotas_reject_duplicate_variants_and_fingerprint_tampering() -> N
 
     tampered_train = train.copy()
     replacement = "0" * 64 if train[0].task_fingerprint != "0" * 64 else "1" * 64
-    tampered_train[0] = train[0].model_copy(
-        update={"task_fingerprint": replacement}
-    )
+    tampered_train[0] = train[0].model_copy(update={"task_fingerprint": replacement})
     tampered_set = task_set.model_copy(update={"train": tuple(tampered_train)})
 
     with pytest.raises(ValueError, match="指纹"):
@@ -292,12 +280,10 @@ def test_formal_catalog_matches_every_frozen_family_axis() -> None:
         ]
         assert len(scenario_records) == 35
         assert Counter(
-            record.task.metadata["formal_family"]["state_variant"]
-            for record in scenario_records
+            record.task.metadata["formal_family"]["state_variant"] for record in scenario_records
         ) == {index: 5 for index in range(7)}
         assert Counter(
-            record.task.metadata["formal_family"]["context_variant"]
-            for record in scenario_records
+            record.task.metadata["formal_family"]["context_variant"] for record in scenario_records
         ) == {index: 7 for index in range(5)}
 
         reason_counts: Counter[str] = Counter()
@@ -309,9 +295,7 @@ def test_formal_catalog_matches_every_frozen_family_axis() -> None:
             order_id = task.metadata["order_id"]
             order = task.initial_state["orders"][order_id]
             distractor_count = len(task.initial_state["orders"]) - 1
-            reason = _REASONS[
-                (scenario_index + state_variant * 5 + context_variant) % 4
-            ]
+            reason = _REASONS[(scenario_index + state_variant * 5 + context_variant) % 4]
 
             assert distractor_count == context_variant
             assert family["distractor_count"] == context_variant
@@ -324,18 +308,14 @@ def test_formal_catalog_matches_every_frozen_family_axis() -> None:
                 for call in task.expected_calls[1:]
             )
             assert task.transient_failures == (
-                {"refund_order": 1}
-                if scenario is TaskScenario.REFUND_RECOVERY
-                else {}
+                {"refund_order": 1} if scenario is TaskScenario.REFUND_RECOVERY else {}
             )
             reason_counts[reason] += 1
 
             if scenario is TaskScenario.LOOKUP_STATUS:
                 assert order["status"] == lookup_statuses[state_variant]
             else:
-                actual_margin = (
-                    order["refund_deadline"] - task.initial_state["current_day"]
-                )
+                actual_margin = order["refund_deadline"] - task.initial_state["current_day"]
                 expected_margin = (
                     -margins[state_variant]
                     if scenario is TaskScenario.REFUND_DENIED_WINDOW

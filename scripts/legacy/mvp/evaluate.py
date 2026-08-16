@@ -42,6 +42,7 @@ def main() -> None:
 def _build_policy_factory(config: dict[str, Any]) -> Callable[[TaskSpec], Policy]:
     policy_type = config.get("type")
     if policy_type == "oracle":
+
         def factory(task: TaskSpec) -> Policy:
             return OraclePolicy(task)
 

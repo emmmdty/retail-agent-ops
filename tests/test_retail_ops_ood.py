@@ -144,9 +144,7 @@ def test_unsupported_requests_expect_no_state_change() -> None:
 
 def test_expression_variants_keep_the_business_semantics() -> None:
     """表达类只改表面形式：目标状态与 gold 调用序列与原场景相同。"""
-    tasks = [
-        task for task in build_ood_tasks(0) if ood_category(task) == "expression_ood"
-    ]
+    tasks = [task for task in build_ood_tasks(0) if ood_category(task) == "expression_ood"]
 
     kinds = {task.metadata["ood_kind"] for task in tasks}
     assert kinds == {"colloquial", "greeting_noise", "typo", "code_switch", "terse"}

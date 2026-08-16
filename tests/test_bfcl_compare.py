@@ -15,9 +15,7 @@ CATEGORIES = ("simple_python", "multiple", "parallel", "parallel_multiple")
 
 
 def _load_manifest() -> dict[str, Any]:
-    return json.loads(
-        Path("manifests/bfcl_v4_single_turn_seed0.json").read_text(encoding="utf-8")
-    )
+    return json.loads(Path("manifests/bfcl_v4_single_turn_seed0.json").read_text(encoding="utf-8"))
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -48,11 +46,7 @@ def _prepare_run(
         ],
     )
     for category in CATEGORIES:
-        ids = [
-            item["task_id"]
-            for item in manifest["tasks"]
-            if item["category"] == category
-        ]
+        ids = [item["task_id"] for item in manifest["tasks"] if item["category"] == category]
         failures = [task_id for task_id in ids if task_id == failure_id]
         rows = [
             {
@@ -71,10 +65,7 @@ def _prepare_run(
             ],
         ]
         _write_jsonl(
-            root
-            / "official_scores"
-            / MODEL_DIR
-            / f"BFCL_v4_{category}_score.json",
+            root / "official_scores" / MODEL_DIR / f"BFCL_v4_{category}_score.json",
             rows,
         )
     _write_jsonl(
@@ -106,9 +97,7 @@ def _prepare_run(
                 "seed": 0,
                 "bfcl_checkout": {"commit": manifest["bfcl_commit"]},
                 "frozen_manifest": manifest,
-                "frozen_manifest_sha256": hashlib.sha256(
-                    manifest_path.read_bytes()
-                ).hexdigest(),
+                "frozen_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
                 "selected_task_ids": task_ids,
                 "official_evaluator": {"commit": manifest["bfcl_commit"]},
             }

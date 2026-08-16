@@ -31,9 +31,7 @@ def test_the_runtime_env_digest_changes_with_the_installed_packages(
             self.metadata = {"Name": name}
             self.version = version
 
-    monkeypatch.setattr(
-        artifacts, "_installed_distributions", lambda: [_Dist("torch", "2.13.0")]
-    )
+    monkeypatch.setattr(artifacts, "_installed_distributions", lambda: [_Dist("torch", "2.13.0")])
     first = artifacts.current_runtime_env_sha256()
     monkeypatch.setattr(
         artifacts,
@@ -100,9 +98,13 @@ def test_existing_v1_0_evidence_still_recomputes_bit_identically() -> None:
 
     assert _content_id(annotated, "run_id") != before
     # 而把它们清回 None 必须回到原值：这正是旧证据仍能复算通过的机制。
-    assert _content_id(annotated.model_copy(
-        update={"inference_engine": None, "runtime_env_sha256": None}
-    ), "run_id") == before
+    assert (
+        _content_id(
+            annotated.model_copy(update={"inference_engine": None, "runtime_env_sha256": None}),
+            "run_id",
+        )
+        == before
+    )
 
 
 def test_new_evidence_records_the_engine_and_the_environment() -> None:

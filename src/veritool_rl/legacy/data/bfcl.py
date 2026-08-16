@@ -217,9 +217,7 @@ def build_bfcl_manifest(
 def load_bfcl_manifest(manifest_path: Path, data_root: Path) -> BfclManifest:
     """加载 manifest，并从固定源数据完整重算 provenance。"""
     try:
-        manifest = BfclManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
+        manifest = BfclManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
         rebuilt = build_bfcl_manifest(
             data_root=data_root,
             bfcl_commit=manifest.bfcl_commit,

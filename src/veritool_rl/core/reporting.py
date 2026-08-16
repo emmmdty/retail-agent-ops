@@ -123,9 +123,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return loaded
 
 
-def _validate_fair_configs(
-    baseline_config: dict[str, Any], adapter_config: dict[str, Any]
-) -> None:
+def _validate_fair_configs(baseline_config: dict[str, Any], adapter_config: dict[str, Any]) -> None:
     baseline = copy.deepcopy(baseline_config)
     adapter = copy.deepcopy(adapter_config)
     baseline_policy = baseline.get("policy")

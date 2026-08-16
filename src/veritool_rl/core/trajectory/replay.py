@@ -76,9 +76,7 @@ def replay_trajectory(
 
         if step.final_response is not None:
             replied = (
-                None
-                if simulator is None
-                else simulator.reply(step.final_response, trajectory.task)
+                None if simulator is None else simulator.reply(step.final_response, trajectory.task)
             )
             if replied is None:
                 env.record_final_response(step.final_response)

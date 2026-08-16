@@ -3,6 +3,7 @@
 统一约定 (见 AGENTS.md): 所有训练/评测/汇总/绘图脚本必须支持
 ``--config`` / ``--seed`` / ``--output_dir``。
 """
+
 from __future__ import annotations
 
 import argparse

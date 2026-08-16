@@ -5,6 +5,7 @@
 未通过则降级为 rejection sampling + 离线偏好优化。
 在线 RL 只使用确定性 final-state/policy reward, 不用通用 LLM judge 作核心奖励。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -178,9 +178,7 @@ def evaluate_retail_ops(
                 seed,
                 system_prompt=system_prompt,
                 guardrail=make_guardrail() if use_guardrail else None,
-                user_simulator=(
-                    ScriptedRetailUserSimulator() if use_user_simulator else None
-                ),
+                user_simulator=(ScriptedRetailUserSimulator() if use_user_simulator else None),
             )
         )
     replayed = sum(

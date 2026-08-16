@@ -113,8 +113,7 @@ def test_round2_a_adds_the_mlp_projections() -> None:
 def test_round2_a_reuses_the_round1_export() -> None:
     """A 不产生新数据：读回 train-export-002，与参照点用同一份训练集。"""
     assert (
-        _load(_A_SFT_CONFIG)["data"]["train_relpath"]
-        == "train-export/train-export-002/sft.jsonl"
+        _load(_A_SFT_CONFIG)["data"]["train_relpath"] == "train-export/train-export-002/sft.jsonl"
     )
 
 

@@ -4,6 +4,7 @@
     python scripts/legacy/mvp/train_sft.py
     --config configs/examples/sft.example.yaml --seed 0 --output_dir reports/sft/run0
 """
+
 from __future__ import annotations
 
 from veritool_rl.cli import build_arg_parser, load_config

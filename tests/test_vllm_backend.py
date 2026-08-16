@@ -183,9 +183,7 @@ def test_the_vllm_branch_still_verifies_the_model_files(
     models_root = tmp_path / "models"
     (models_root / "Qwen3-4B-merged").mkdir(parents=True)
     verified: list[tuple[Path, dict[str, str]]] = []
-    monkeypatch.setattr(
-        cli, "verify_local_model_files", lambda d, h: verified.append((d, dict(h)))
-    )
+    monkeypatch.setattr(cli, "verify_local_model_files", lambda d, h: verified.append((d, dict(h))))
     config = OodEvaluationConfig(
         model=ModelArtifact(
             repo="local/merged",

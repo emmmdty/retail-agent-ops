@@ -46,8 +46,7 @@ class GenerationBackend(Protocol):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         max_new_tokens: int,
-    ) -> GeneratedText:
-        ...
+    ) -> GeneratedText: ...
 
 
 class GenerationSettings(StrictModel):
@@ -77,11 +76,9 @@ class GpuMeasurement(StrictModel):
 class HardwareProvider(Protocol):
     """可注入的硬件测量边界；CPU 测试用 fake 实现替换。"""
 
-    def reset_peak_memory(self) -> None:
-        ...
+    def reset_peak_memory(self) -> None: ...
 
-    def measure(self) -> GpuMeasurement:
-        ...
+    def measure(self) -> GpuMeasurement: ...
 
 
 class CudaHardwareProvider:

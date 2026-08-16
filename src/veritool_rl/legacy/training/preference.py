@@ -3,6 +3,7 @@
 H2: 用「最终状态正确、无违规、调用更短」构造偏好对, 做 DPO/SimPO,
 以降低 invalid call、policy violation 与重复循环。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

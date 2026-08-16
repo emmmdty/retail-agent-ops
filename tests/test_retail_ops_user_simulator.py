@@ -104,9 +104,7 @@ def test_the_simulator_is_deterministic() -> None:
     """同一句提问必须永远得到同一句回答，否则多轮轨迹无法逐字节重放。"""
     task = _task()
 
-    replies = [
-        ScriptedRetailUserSimulator().reply("请问是哪一个订单？", task) for _ in range(3)
-    ]
+    replies = [ScriptedRetailUserSimulator().reply("请问是哪一个订单？", task) for _ in range(3)]
 
     assert len(set(replies)) == 1
 

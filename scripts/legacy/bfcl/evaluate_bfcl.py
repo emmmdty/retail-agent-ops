@@ -68,10 +68,7 @@ def run_bfcl_evaluation(config_path: Path, seed: int, output_dir: Path) -> dict[
         "title": (
             "Qwen3-1.7B BFCL QLoRA-SFT 固定 holdout 结果"
             if is_sft
-            else (
-                f"Qwen3-1.7B 在 BFCL V4 固定 {len(task_answers)} 条单轮 AST "
-                "子集上的零样本结果"
-            )
+            else (f"Qwen3-1.7B 在 BFCL V4 固定 {len(task_answers)} 条单轮 AST 子集上的零样本结果")
         ),
         "started_at_utc": started_at,
         "seed": seed,
