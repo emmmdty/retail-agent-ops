@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,12 @@ def _normalize(text: str) -> str:
     for token in _SPECIAL_TOKENS:
         text = text.replace(token, "")
     return text.strip()
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, round(quantile * len(ordered) + 0.5) - 1))
+    return ordered[index]
 
 
 def _call_signature(raw_text: str) -> dict[str, Any] | None:
@@ -90,12 +97,20 @@ def main() -> int:
 
     disagreements: list[dict[str, Any]] = []
     identical_text = 0
+    # 顺带把 HF 侧的单流延迟测下来。**这才是与 vLLM 逐条对齐的对照**：
+    # 同一批提示词、同一份权重、同一套生成契约，只有引擎与量化不同。
+    # 拿 holdout 的 HF 读数去比 vLLM 是不成立的——两边的输入长度与输出长度都不一样。
+    latencies: list[float] = []
+    hf_output_tokens = 0
     for index, (row, vllm_text) in enumerate(zip(rows, vllm_texts, strict=True)):
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": row["user_request"]},
         ]
-        hf_text = backend.generate(messages, tools, MAX_NEW_TOKENS).text
+        generated = backend.generate(messages, tools, MAX_NEW_TOKENS)
+        hf_text = generated.text
+        latencies.append(generated.latency_ms)
+        hf_output_tokens += generated.output_tokens
         if _normalize(hf_text) == _normalize(vllm_text):
             identical_text += 1
         hf_call = _call_signature(hf_text)
@@ -122,6 +137,13 @@ def main() -> int:
         # 归一化掉特殊标记之后的逐字一致率。这是比工具调用一致率更严的判据：
         # 它连自然语言部分的措辞都要求相同。
         "identical_text_rate": identical_text / total,
+        "hf_single_stream": {
+            "mean_latency_ms": statistics.fmean(latencies),
+            "p50_latency_ms": _percentile(latencies, 0.50),
+            "p95_latency_ms": _percentile(latencies, 0.95),
+            "output_tokens": hf_output_tokens,
+            "output_tokens_per_second": hf_output_tokens / (sum(latencies) / 1000),
+        },
         "disagreements": disagreements,
     }
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
