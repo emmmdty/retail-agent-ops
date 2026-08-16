@@ -28,6 +28,7 @@ from veritool_rl.core.agent.qwen import (
     GenerationSettings,
     HardwareProvider,
     TransformersBackend,
+    verify_local_model_files,
 )
 from veritool_rl.core.artifacts import canonical_json, create_output_dir, sha256_file, write_json
 from veritool_rl.core.paths import validate_project_relative_path
@@ -125,6 +126,16 @@ def build_product_parser() -> argparse.ArgumentParser:
     )
     _add_common_arguments(evaluate)
     evaluate.add_argument("--input_dir", type=Path, required=True, help="build 产物目录")
+    evaluate.add_argument(
+        "--engine",
+        choices=["transformers", "vllm"],
+        default="transformers",
+        help=(
+            "推理引擎。transformers = 全部已有证据的路径。vllm 需要一个另装了 vLLM 的 "
+            "venv（项目 uv.lock 不变），且只支持已合并的模型；两者都跑 NF4，"
+            "因此引擎是唯一变量"
+        ),
+    )
 
     release = subparsers.add_parser("release", help="执行配对发布门禁")
     _add_common_arguments(release)
@@ -551,15 +562,41 @@ def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
 def _default_ood_backend(
     config: OodEvaluationConfig, models_root: Path
 ) -> GenerationBackend:
-    model_dir = models_root / config.model.local_dir
-    adapter_dir = None if config.adapter is None else str(config.adapter.adapter_dir)
-    return TransformersBackend.from_pretrained(
-        str(model_dir),
-        adapter_dir,
-        revision=config.model.revision,
-        expected_file_sha256=config.model.file_sha256,
-        settings=config.generation,
-    )
+    return _ood_backend_for_engine("transformers")(config, models_root)
+
+
+def _ood_backend_for_engine(
+    engine: str,
+) -> Callable[[OodEvaluationConfig, Path], GenerationBackend]:
+    """按引擎选后端。两者都跑 NF4，因此换的只有引擎这一个变量。
+
+    vLLM 分支**不做**模型文件哈希校验：`verify_local_model_files` 是
+    `TransformersBackend.from_pretrained` 的一部分，这里显式先调它，
+    否则 vLLM 路径会绕过"证据里写的模型就是磁盘上那份"的校验。
+    """
+
+    def build(config: OodEvaluationConfig, models_root: Path) -> GenerationBackend:
+        model_dir = models_root / config.model.local_dir
+        adapter_dir = None if config.adapter is None else str(config.adapter.adapter_dir)
+        if engine == "vllm":
+            from veritool_rl.core.agent.vllm_backend import VllmBackend
+
+            verify_local_model_files(model_dir, config.model.file_sha256)
+            return VllmBackend.from_pretrained(
+                str(model_dir),
+                adapter_dir,
+                revision=config.model.revision,
+                settings=config.generation,
+            )
+        return TransformersBackend.from_pretrained(
+            str(model_dir),
+            adapter_dir,
+            revision=config.model.revision,
+            expected_file_sha256=config.model.file_sha256,
+            settings=config.generation,
+        )
+
+    return build
 
 
 def _run_ood_evaluate(
@@ -596,7 +633,9 @@ def _run_ood_evaluate(
         build_dir=args.input_dir,
         models_root=models_root,
         output_dir=args.output_dir,
-        backend_factory=backend_factory or _default_ood_backend,
+        backend_factory=(
+            backend_factory or _ood_backend_for_engine(getattr(args, "engine", "transformers"))
+        ),
         hardware_provider=hardware_provider or CudaHardwareProvider(),
     )
 
