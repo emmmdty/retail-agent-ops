@@ -670,6 +670,8 @@ def _run_ood_evaluate(
         output_dir=args.output_dir,
         backend_factory=backend_factory or _ood_backend_for_engine(engine),
         hardware_provider=hardware_provider or _hardware_provider_for_engine(engine),
+        inference_engine=engine,
+        runtime_env_sha256=current_runtime_env_sha256(),
     )
 
 

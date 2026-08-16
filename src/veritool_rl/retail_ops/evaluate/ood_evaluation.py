@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from veritool_rl.core.agent.qwen import (
     GenerationBackend,
@@ -101,6 +101,18 @@ class OodRunEvidence(StrictModel):
     failure_kind_counts: dict[str, int]
     replayable_count: int = Field(ge=0)
     evidence_complete: bool
+    #: 与 `BaseRunEvidence` 同义：缺失读作"未记录"，不是 "transformers"。
+    #: 取值为 None 时不参与内容哈希，因此已有 OOD 证据复算逐位不变。
+    inference_engine: Literal["transformers", "vllm"] | None = None
+    runtime_env_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _runtime_provenance_is_all_or_nothing(self) -> OodRunEvidence:
+        recorded = [self.inference_engine is not None, self.runtime_env_sha256 is not None]
+        if any(recorded) and not all(recorded):
+            msg = "inference_engine 与 runtime_env_sha256 必须同时记录或同时缺失"
+            raise ValueError(msg)
+        return self
 
     _validate_metrics = field_validator("metrics")(validate_json_value)
 
@@ -115,6 +127,8 @@ def evaluate_ood(
     output_dir: Path,
     backend_factory: Any,
     hardware_provider: HardwareProvider,
+    inference_engine: Literal["transformers", "vllm"] | None = None,
+    runtime_env_sha256: str | None = None,
 ) -> OodRunEvidence:
     """在分布外集合上跑一次评测并写出证据。"""
     if manifest.bundle_sha256 != bundle.bundle_sha256:
@@ -156,6 +170,8 @@ def evaluate_ood(
     evidence = _finalize_evidence(
         OodRunEvidence(
             run_id=_ID_PLACEHOLDER,
+            inference_engine=inference_engine,
+            runtime_env_sha256=runtime_env_sha256,
             dataset_version=manifest.dataset_version,
             generator_id=manifest.generator_id,
             bundle_sha256=bundle.bundle_sha256,
