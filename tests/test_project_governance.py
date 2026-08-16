@@ -1242,7 +1242,9 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
     所以这条不靠人工检查，靠断言：凡是出现批次 1 成本的地方，必须同时出现批次 2 的
     成本或两批总计，否则就是又焊回去了。
     """
-    batch1_cost = "$0.055"
+    # `$0.055` 是 `$0.0559` 的子串，直接用 `in` 会让「只写了批次 2」的文件也被判为
+    # 「提到了批次 1」。用正则要求 `$0.055` 后面**不是**数字，才是真的批次 1 成本。
+    batch1_cost = re.compile(r"\$0\.055(?![0-9])")
     batch2_cost = "$0.0559"
     total_cost = "$0.111"
 
@@ -1255,14 +1257,32 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
         "docs/EXECUTION_PLAN.md",
     ):
         text = _read(name)
-        if batch1_cost not in text:
+        if not batch1_cost.search(text):
             continue
         assert batch2_cost in text or total_cost in text, (
-            f"{name}: 出现了批次 1 的成本 {batch1_cost} 却没有批次 2 的成本或两批总计——"
+            f"{name}: 出现了批次 1 的成本 $0.055 却没有批次 2 的成本或两批总计——"
             f"这正是把两批数字焊在一起的形态"
         )
 
     # 唯一取数口径必须把两批和总计都写全
     evidence = _read("docs/RESUME_EVIDENCE.md")
-    for required in (batch1_cost, batch2_cost, total_cost, "519", "526", "1045", "87.9%", "99.2%"):
+    assert batch1_cost.search(evidence), "docs/RESUME_EVIDENCE.md 缺少批次 1 的成本 $0.055"
+    for required in (batch2_cost, total_cost, "519", "526", "1045", "87.9%", "99.2%"):
         assert required in evidence, f"docs/RESUME_EVIDENCE.md 缺少 teacher 采集的 {required}"
+
+
+def test_the_container_claim_is_specific_and_reproducible() -> None:
+    """容器这条声明必须带可复核的细节，而不是"我们有个 Dockerfile"。
+
+    2026-08-16 之前 `Dockerfile` 的注释写着镜像是"几十 MB"——那是个从未构建过的估计，
+    实测 1.05 GB，差一个数量级。凡是文档里的数字都得是量出来的，容器不例外。
+    """
+    dockerfile = _read("Dockerfile")
+    assert "1.05 GB" in dockerfile, "Dockerfile 必须记录实测镜像体积"
+    assert "--network none" in dockerfile, "必须记录它是在断网下验证的"
+    assert "几十 MB" not in dockerfile.split("已更正")[-1], "旧的未验证估计不得留在结论里"
+
+    for name in ("README.md", "README.en.md"):
+        text = _read(name)
+        assert "--network none" in text, f"{name}: 容器验证必须写明是断网跑的"
+        assert "1.05 GB" in text, f"{name}: 容器体积必须是实测值"

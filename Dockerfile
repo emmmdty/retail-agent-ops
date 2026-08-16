@@ -6,10 +6,16 @@
 # 与 formal serve 的装配路径。把 GPU 依赖塞进来只会让镜像从几十 MB 涨到几 GB，
 # 却不会多跑通任何一条命令。
 #
+# **2026-08-16 首次实际构建并验证**：镜像 **1.05 GB**，在 `--network none`（完全离线）
+# 下跑通 `verify_qualification_chain.py`，输出"决策与内容哈希均与冻结期望一致"。
+# 此前本注释写的是"几十 MB"——那是个从未验证过的估计，与实测差一个数量级，已更正。
+# 1.05 GB 里绝大部分是 `--extra dev`（pytest/ruff/mypy）与 numpy/pydantic 的 wheel；
+# 装上 `train` extra（torch + CUDA runtime）会再涨到 ~7 GB 量级，那才是不装它的理由。
+#
 # 构建：
 #   docker build -t retail-agent-ops:cpu .
-# 跑一次全链路复现校验（与 CI 同一条命令）：
-#   docker run --rm retail-agent-ops:cpu python scripts/ci/verify_qualification_chain.py
+# 跑一次全链路复现校验（与 CI 同一条命令；加 --network none 证明它不需要网络）：
+#   docker run --rm --network none retail-agent-ops:cpu
 # 看命令面：
 #   docker run --rm retail-agent-ops:cpu retail-agent-ops --help
 #

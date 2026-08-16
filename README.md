@@ -90,7 +90,7 @@ flowchart LR
 
 | 机制 | 做法 |
 |---|---|
-| **运行证据不可伪造** | 运行报告的 ID 是它自己全部字段的哈希；逐产物 SHA-256 绑定；改一个字节就对不上 |
+| **运行证据不可伪造** | 运行报告的 ID 是它自己**全部字段**的自哈希，改一字节即加载失败（已做篡改测试）。另有**逐产物 SHA-256 绑定**——但它只能在私有产物在场时行使，而私有产物不随仓库分发；2026-08-16 已在本地对 R5 两次重建**完整行使过一次**（含改 `trajectories.jsonl` 一个字节被拒），见 [`REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md) |
 | **配对比较有前置条件** | 模型 revision、生成参数、数据集版本、code commit、`uv.lock`、system prompt 哈希**逐字段相同**才允许配对，否则加载失败 |
 | **holdout 是封存的** | 两段式授权门 + 五维指纹隔离；整个开发期只观测四次，逐次记在 [`HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) |
 | **门禁可以版本化但不可就地改** | `GATE_IDS` v1.0 逐字节冻结（否则磁盘上已有 release 报告全部无法加载），新口径走 v1.1；两套并存 |
@@ -165,7 +165,7 @@ flowchart LR
 | QLoRA 训练（全 linear，`sft-006` 配置的**三次**运行） | 单卡 3 epoch / 75 steps。时长 `sft-006` **293.7 s** / 重建 A **242.3 s** / 重建 B **242.2 s**（差异是共享 GPU 上他人占用，**不是配置差异**）；三次 `cuda_peak_allocated` 均 **5.65 GB**；adapter 三次**逐字节同尺寸** **66,127,776 B（63 MiB）** |
 | 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
 | serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
-| 工程基线 | **947 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
+| 工程基线 | **948 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
 
 ---
 
@@ -196,7 +196,15 @@ env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 
 GitHub Actions workflow 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 **仓库当前无 remote，该 workflow 从未真正跑过**——任何文档都不得声称它跑绿了。
-CPU-only 镜像见 [`Dockerfile`](./Dockerfile)（刻意不含 torch）。
+
+CPU-only 镜像见 [`Dockerfile`](./Dockerfile)（刻意不含 torch）。**它于 2026-08-16
+首次实际构建并验证过**：镜像 1.05 GB，在 `--network none`（完全断网）下跑通全链路——
+这比 workflow 更强，因为它证明的是"一个干净环境、没有网络，也能复现并断言内容哈希"。
+
+```bash
+docker build -t retail-agent-ops:cpu .
+docker run --rm --network none retail-agent-ops:cpu
+```
 
 ### 手动跑 qualification 链路
 

@@ -105,7 +105,7 @@ direction `product_cli → retail_ops.* → core.*` is locked by a governance te
 
 | Mechanism | How |
 |---|---|
-| **Run evidence cannot be forged** | A run report's ID is the hash of all of its own fields; every artifact is bound by SHA-256. Change one byte and it no longer matches |
+| **Run evidence cannot be forged** | A run report's ID is the self-hash of **all** its own fields — change one byte and loading fails (tamper-tested). There is also **per-artifact SHA-256 binding**, but it can only be exercised where the private artifacts are present, and those are not distributed with the repo; on 2026-08-16 it was exercised end-to-end once locally against the two R5 rebuilds (including a one-byte edit to `trajectories.jsonl` being rejected) |
 | **Paired comparison has preconditions** | Model revision, generation params, dataset version, code commit, `uv.lock` and system-prompt hash must be **identical field-for-field**, otherwise loading fails |
 | **The holdout is sealed** | Two-stage authorisation gate plus five-dimensional fingerprint isolation; observed only four times across the whole project, each logged in [`HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) |
 | **Gates may be versioned, never edited in place** | `GATE_IDS` v1.0 is frozen byte-for-byte (editing it would make every existing release report unloadable); new semantics ship as v1.1 and both coexist |
@@ -182,7 +182,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **947 tests passed**; Ruff / `ruff format --check` / mypy (80 files) / `uv lock --check` / public-release audit all green |
+| Engineering baseline | **948 tests passed**; Ruff / `ruff format --check` / mypy (80 files) / `uv lock --check` / public-release audit all green |
 
 ---
 
@@ -213,8 +213,17 @@ env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 
 The GitHub Actions workflow is at [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 **The repository currently has no remote, so that workflow has never actually run** — no
-document may claim it is green. The CPU-only image is [`Dockerfile`](./Dockerfile)
-(deliberately without torch).
+document may claim it is green.
+
+The CPU-only image is [`Dockerfile`](./Dockerfile) (deliberately without torch). **It was
+built and verified for the first time on 2026-08-16**: 1.05 GB, and it completes the whole
+chain under `--network none` — a stronger statement than the workflow, because it proves a
+clean environment with no network reproduces the run and asserts the content hashes.
+
+```bash
+docker build -t retail-agent-ops:cpu .
+docker run --rm --network none retail-agent-ops:cpu
+```
 
 ---
 
