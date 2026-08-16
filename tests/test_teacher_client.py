@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from veritool_rl.retail_ops.build.teacher_client import (
+    TEACHER_MAX_RETRIES,
+    TEACHER_REQUEST_TIMEOUT_SECONDS,
     OpenAICompatibleTeacherClient,
     TeacherClientError,
 )
@@ -260,6 +262,58 @@ def test_production_factory_lazy_imports_sdk_without_making_a_request(
 
     client = OpenAICompatibleTeacherClient.from_route(route, api_key)
 
-    assert constructor_calls == [{"base_url": route.base_url, "api_key": API_KEY}]
+    assert constructor_calls == [
+        {
+            "base_url": route.base_url,
+            "api_key": API_KEY,
+            "timeout": TEACHER_REQUEST_TIMEOUT_SECONDS,
+            "max_retries": TEACHER_MAX_RETRIES,
+        }
+    ]
     assert fake_sdk_client.completions.calls == []
     assert API_KEY not in repr(client)
+
+
+def test_production_factory_bounds_the_request_timeout_and_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SPEC §9：外部 API 必须有超时与重试上限，不得无限重试。
+
+    这条此前只做到了一半——`_classify_retryable` 把超时归类为可重试，
+    但构造 SDK client 时**没有设置任何超时**，落到 SDK 默认的 600 秒。
+    240 条轨迹是 519 次请求，一次挂起就是 10 分钟的静默停摆。
+    """
+    route, api_key = _route()
+    constructor_calls: list[dict[str, Any]] = []
+
+    def fake_openai(**kwargs: Any) -> _FakeOpenAIClient:
+        constructor_calls.append(kwargs)
+        return _FakeOpenAIClient(_response())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=fake_openai))
+
+    OpenAICompatibleTeacherClient.from_route(route, api_key)
+
+    assert len(constructor_calls) == 1
+    kwargs = constructor_calls[0]
+
+    timeout = kwargs.get("timeout")
+    assert timeout is not None, "production client 必须显式设置超时，不能沿用 SDK 默认值"
+    assert isinstance(timeout, (int, float))
+    assert 0 < timeout <= 120, f"超时 {timeout}s 对单次工具调用而言不是一个界"
+
+    max_retries = kwargs.get("max_retries")
+    assert max_retries is not None, "production client 必须显式设置重试上限"
+    assert isinstance(max_retries, int)
+    assert 0 <= max_retries <= 5, f"重试上限 {max_retries} 不构成「不得无限重试」的保证"
+
+
+def test_the_request_timeout_is_a_named_constant_not_a_magic_number() -> None:
+    """超时值必须能被引用与断言，否则文档里写的数字与代码里的会各走各的。"""
+    from veritool_rl.retail_ops.build.teacher_client import (
+        TEACHER_MAX_RETRIES,
+        TEACHER_REQUEST_TIMEOUT_SECONDS,
+    )
+
+    assert TEACHER_REQUEST_TIMEOUT_SECONDS > 0
+    assert TEACHER_MAX_RETRIES >= 0

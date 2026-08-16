@@ -820,3 +820,33 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-06 | Task 7 整分支审查发现 `formal_dev_base` 独立加载 `dev.json` 未走 `load_verified_formal_dataset`，跳过五维隔离交叉断言；`export_formal_train` 接收 `TeacherCollectionConfig` 却从未读取，teacher 证据仅凭 `task_id` 匹配记录；`code_commit` 可能来自脏工作树且 git 子进程无超时 | 三项均用 TDD 修复：`_run_formal_dev_base` 改为先 `load_verified_formal_dataset` 再取其 `dev_manifest`；新增 `_require_evidence_binds_record` 在 export 循环内核对 `task_fingerprint`/`trajectory.task`/`dataset_version`/`bundle_sha256`/`manifest_sha256`，不匹配即硬失败（非静默回退）；`_current_code_commit` 先查 `git status --porcelain` 非空即拒绝，git 调用统一加 30s 超时；复审确认 3 项均已解决、3 个关键判断均合理（`c4d7fdc`） |
 | 2026-08-06 | Task 7 复审发现 `manifests/retail_ops/v1/` 未被 `.gitignore` 覆盖（不同于 `data/`/`models/`/`reports/retail_ops/`），导致 `formal_freeze` 产出的公开 manifest 若不提交，会被新的脏树检查判定为"未跟踪=脏"从而阻塞 `formal_dev_base` | 非代码缺陷，是正式执行顺序的前置条件；已写入 `docs/handoffs/2026-08-06-r2-external-run-commands.md` 第 0 节，要求 `formal_freeze` 产出必须先提交再进入 `formal_dev_base` |
 
+
+## 2026-08-16 — R5 公开交付与求职收口
+
+- 用户要求把项目收口为可用于求职的交付物，并追加三条硬要求：**必须拿得出 GO**、
+  **收尾前由独立「面试官」角色审核**、**代码整洁性**。
+- **T1 代码整洁性**：全仓 `ruff format` 统一（58 个文件漂移，纯格式化单独提交）；
+  lint 集从 `E,F,I,UP,B` 扩到 `+SIM,C4,RET,PIE,RUF`（`RUF001-003` 对中文全角标点整体
+  误报，已 ignore 并写明理由），45 处全部修完；`ruff format --check` 进 CI 成为硬门禁。
+- **T2 独立重建复验（GPU）**：见 LOG-20260816-05 与 `docs/REBUILD_VERIFICATION.md`。
+  SPEC §6 第 6 条满足；同时发现训练不可逐位复现，dev 表述改为 58–60/60。
+- **T3 公开发布审计**：新增 `LICENSE`（MIT）、`NOTICE.md`、
+  `scripts/ci/audit_public_release.py`（六项，扫 `git ls-files` 全集）与 19 项测试。
+- **T4 故障矩阵**：新增 `docs/FAULT_MATRIX.md` + `tests/test_fault_matrix.py`（解析文档
+  断言引用的测试真实存在，已做突变验证）。修掉 teacher client 无超时的真缺陷。
+- **T5 对外文档**：`README.md` 重写（第一屏三条结论 + Mermaid 架构图）+ 新增
+  `README.en.md`；两份的关键数字由治理测试断言一致。
+- **T6 求职材料**：新增 `docs/INTERVIEW_PREP.md`；`RESUME_EVIDENCE.md` bullet 定稿，
+  §1.7 新增重建复验，§2 新增两条不可写表述，§5 缺口表重写。
+
+### R5 Verification Ledger
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-16 | R5 起始基线 `.venv/bin/pytest -q` | 907 passed |
+| 2026-08-16 | 全仓 `ruff format` 后 `.venv/bin/pytest -q` | 58 files reformatted；907 passed |
+| 2026-08-16 | lint 扩展 + LICENSE/NOTICE/审计后全门禁 | 924 passed；Ruff/format/mypy(80)/审计全绿 |
+| 2026-08-16 | gpu-5090 GPU 0 重建训练 ×2（seed 1 / seed 0） | 各 242 s；adapter 逐位互不相同，且与原 sft-006 也不同 |
+| 2026-08-16 | gpu-5090 GPU 0 重建 dev 评测 ×2 | seed1 60/60、seed0 58/60；两侧 `replayable` 均 60/60 |
+| 2026-08-16 | 故障矩阵锁定的突变验证 | 改一个被引用的测试名 → `test_every_fault_class_names_a_real_test` 变红，恢复后通过 |
+| 2026-08-16 | R5 最终全门禁 | **944 passed**；Ruff、`ruff format --check`、mypy 80 files、`uv lock --check`、`git diff --check`、公开发布审计全部通过 |

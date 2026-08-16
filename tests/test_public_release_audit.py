@@ -200,3 +200,27 @@ def test_the_ci_workflow_runs_the_audit() -> None:
     """审计脚本不进 CI 就只是一份文档。"""
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "scripts/ci/audit_public_release.py" in workflow
+
+
+def test_the_pattern_allowlist_cannot_grow_silently() -> None:
+    """豁免清单是审计最容易被悄悄放大的地方，所以把它钉死。
+
+    只有两个文件**必须**包含凭据形态字面量：定义模式的脚本，和验证"种一个进去
+    能被抓到"的这份测试。任何第三个条目都意味着有人在用豁免绕过审计。
+    """
+    assert audit.PATTERN_FIXTURE_ALLOWLIST == (
+        "scripts/ci/audit_public_release.py",
+        "tests/test_public_release_audit.py",
+    )
+
+
+def test_the_allowlist_does_not_disable_the_scan_for_those_files(fake_repo: Path) -> None:
+    """豁免只针对**凭据形态**与**真值键名**两项，不是让这两个文件免于全部审计。"""
+    planted = fake_repo / "scripts" / "ci" / "audit_public_release.py"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text("model:\n  local_dir: /mnt/aidata/whatever\n", encoding="utf-8")
+
+    # 后缀不是 yaml/json，绝对路径扫描本来就不看它；换一个 yaml 名字验证豁免没有外溢
+    other = _write(fake_repo, "scripts/ci/config.yaml", "local_dir: /mnt/aidata/whatever\n")
+    with pytest.raises(audit.AuditFailure, match="开发机绝对路径"):
+        audit.audit_no_absolute_dev_paths([other])

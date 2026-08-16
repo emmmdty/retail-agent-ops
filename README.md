@@ -1,119 +1,210 @@
 # RetailAgentOps
 
-RetailAgentOps 是面向零售订单、退款和客服操作的单卡工具 Agent 领域适配与发布流水线。它把工具 schema、业务政策和任务转换为可执行轨迹，完成数据质检、轻量后训练、状态级评测、GO/NO-GO 发布门禁和推理服务。
+**零售工具 Agent 的单卡领域适配与发布流水线**——把工具 schema、业务政策和任务变成可执行
+轨迹，走完数据质检 → QLoRA 后训练 → 执行式评测 → GO/NO-GO 发布门禁 → 推理服务，
+全程在一张消费级显卡上，每个数字都能追到产物、commit 与哈希。
 
-> **状态**：`R1`–`R4` 已完成，当前在 `R4.5` 架构补强轨道。完整链路（QLoRA-SFT → dev
-> 配对评测 → 封存 120 条 holdout 评测 → GO/NO-GO 门禁 → 真实模型服务）已在真实模型上
-> 走通**四次**，阈值一个字未改（有测试锁定）：
-> 前三次都是 **`NO-GO`**——第一次输在 `success_delta`（0.7833→0.7500），
-> 第二、三次候选在 120 条上做到 **120/120**、`success_delta` **+0.1417**、
-> 违规与非法调用清零，但输在延迟门禁；每次都据此回滚加载纯基座。
-> 第四次把 LoRA **合并回基座权重**后重测，同样 120/120、调用次数一模一样，
-> p95 比值 2.03 → **1.13**，拿到项目历史上**第一个自动门禁 `GO`**。
-> 同一份权重、同一套行为，只差加载方式——**那三次 NO-GO 里的延迟代价主要不是模型的**。
-> 必须一起说的三条：这不是前三次被拒的那个形态；`SPEC.md` §6 第 6 条「独立重建复验」
-> **尚未进行**，因此只能说"自动门禁 GO"、不是"可以上线"；而且**同一个候选在分布外
-> 任务集上只有 0.5833，其中表达变化一类 0/20、比零训练基座还差**——
-> 120/120 已被实测证明不是泛化（[`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)）。
-> 详见 [`docs/MODEL_CARD.md`](./docs/MODEL_CARD.md) 与 [`docs/SYSTEM_CARD.md`](./docs/SYSTEM_CARD.md)。
-> **封存 holdout 已消耗三次观测，三次判定都是 `NO-GO`**，结果不得反馈进开发。仓库继承了原 VeriTool-RL 的 MiniRetail、BFCL、QLoRA
-> 和可追溯评测基础，但旧研究路线已归档到 `legacy/`，不再是活动计划。
-> 分发名与 CLI 是 `retail-agent-ops`，Python 导入名仍是 `veritool_rl`（见
-> [`docs/REPO_MAP.md`](./docs/REPO_MAP.md) 的命名边界）。
+[English](./README.en.md) ｜ [产品规格](./SPEC.md) ｜ [模型卡](./docs/MODEL_CARD_sft-006.md) ｜
+[系统卡](./docs/SYSTEM_CARD.md) ｜ [面试材料](./docs/INTERVIEW_PREP.md)
 
-## 项目价值
+---
 
-- 用真实工具执行和最终状态验证 Agent，而不是只比较文本。
-- 将数据、训练、评测、部署和发布决策连接成可审计工程闭环。
-- 在单张 RTX 4090 上验证小模型的隐私、成本、延迟和领域效果边界。
-- 候选不达标时输出 `NO-GO`，不为简历数字放宽门槛。
+## 这个项目最值得看的三件事
 
-## 文档入口
+**1. 它把「提示词工程」和「后训练」的功劳分开了。**
+2×2 配对实验（prompt 改不改 × LoRA 挂多少投影，六次运行、每格 60 条冻结任务）证明
+两者修的是**不同的失败**，几乎不重叠：一句显式授权指令把"判定可退却不敢执行"从
+5/10 提到 9/10，而"工具失败后重试"**零变化**；后训练把重试类 5/10 打到 10/10。
 
-- [`AGENTS.md`](./AGENTS.md)：Codex/通用 coding agent 入口。
-- [`CLAUDE.md`](./CLAUDE.md)：Claude Code 与共享工程约束。
-- [`docs/CAREER_CONTEXT.md`](./docs/CAREER_CONTEXT.md)：求职背景和项目组合约束。
-- [`docs/PRODUCT_BRIEF.md`](./docs/PRODUCT_BRIEF.md)：应用场景、用户价值和竞争边界。
-- [`SPEC.md`](./SPEC.md)：产品契约、指标和验收原则。
-- [`docs/EXECUTION_PLAN.md`](./docs/EXECUTION_PLAN.md)：R0–R5 阶段状态、执行目标和验收目标。
-- [`docs/HANDOFF.md`](./docs/HANDOFF.md)：新会话接管协议和停机条件。
-- [`docs/REPO_MAP.md`](./docs/REPO_MAP.md)：目录职责、四接口分层和路径对照。
-- [`docs/LEGACY_INVENTORY.md`](./docs/LEGACY_INVENTORY.md)：原仓库、历史成果和未迁入生成物。
-- [`task_plan.md`](./task_plan.md)、[`findings.md`](./findings.md)、[`progress.md`](./progress.md)：当前任务工作记忆。
-- [`docs/PROJECT_LOG.md`](./docs/PROJECT_LOG.md)：append-only 的长期档案，只记录改变方法论选型或工程实践的事件。
+**2. 它能拒绝自己的候选，也真的拒绝了三次。**
+封存 holdout 的四次观测里前三次都是 `NO-GO`。最难的一次：候选做到 **120/120**、
+成功率 **+14.2pp**、政策违规与非法调用全部清零，只因 p95 延迟比值 1.88 > 1.25 被拒。
+阈值一个字未改（有测试锁定）。第四次把 LoRA **合并回基座权重**后重测——同一份权重、
+同一套行为、调用次数一模一样，p95 比值 **1.13**，拿到项目历史上第一个自动门禁 **`GO`**，
+并已通过 SPEC §6 第 6 条的**独立重建复验**。
 
-## 本地验证
+**3. 它自己建了一个分布外集合，把刚拿到的 GO 打掉了一半。**
+同一个候选在模板外的 60 条上只有 **0.5833**，其中"换个说法"这一类 **0/20**、
+比零训练基座还差。**120/120 不是泛化**——冻结 holdout 与训练集共用同一批请求模板。
+这次 SFT 实际上是**用表面形式的鲁棒性换来了任务结构与安全性**。
+见 [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)。
 
-```bash
-env -u UV_INDEX_URL uv sync --extra dev --frozen
-env -u UV_INDEX_URL uv sync --project tools/bfcl_eval --frozen
-.venv/bin/pytest -q
-.venv/bin/ruff check .
-.venv/bin/mypy
+> 引用那个 GO 时必须同时给出第 3 条——这一点由测试强制
+> （`test_the_go_is_never_quoted_without_the_ood_reading`）。
+
+---
+
+## 架构
+
+```mermaid
+flowchart LR
+    subgraph INPUT["版本化领域输入 domains/retail_ops/{v1,v2}"]
+        TOOLS["tools.yaml<br/>工具 schema"]
+        POL["policies.yaml<br/>可执行业务规则"]
+        REL["release.yaml<br/>发布门禁阈值"]
+    end
+
+    subgraph BUILD["build"]
+        TEACH["teacher 采集<br/>DeepSeek API"]
+        QC["执行式质检<br/>replay + 最终状态 + 政策 verifier"]
+        FREEZE["冻结 train/dev/holdout<br/>240 / 60 / 120"]
+        SFT["单卡 QLoRA-SFT<br/>4-bit NF4, r=16"]
+    end
+
+    subgraph EVAL["evaluate"]
+        BASE["base 运行"]
+        CAND["candidate 运行"]
+        PAIR["配对校验<br/>模型/生成参数/数据/commit/lock/prompt<br/>逐字段相同才可比"]
+    end
+
+    subgraph RELEASE["release"]
+        GATE["发布门禁 v1.0 / v1.1<br/>成功率 · 政策违规 · 非法调用 · 延迟 · 证据完整"]
+        DEC{"GO / NO-GO"}
+    end
+
+    subgraph SERVE["serve"]
+        GO_PATH["GO → 加载被固定的权重"]
+        NOGO_PATH["NO-GO → 回滚到冻结基座<br/>adapter_loaded=false"]
+    end
+
+    TOOLS --> QC
+    POL --> QC
+    TEACH --> QC --> FREEZE --> SFT
+    FREEZE --> BASE & CAND
+    SFT --> CAND
+    BASE & CAND --> PAIR --> GATE
+    REL --> GATE --> DEC
+    DEC -->|GO| GO_PATH
+    DEC -->|NO-GO| NOGO_PATH
+
+    GUARD["guardrail 层<br/>调用前置校验 + 观测消毒"] -.独立于环境校验.-> CAND
 ```
 
-模型、benchmark checkout、数据、checkpoint 和运行产物不进入 Git。GPU 命令必须先向用户披露完整命令、工作目录、物理 GPU、预计时长和产物，并等待确认。
+四个接口的产物是**单向、不可覆盖**的：`build` 产数据 → `evaluate` 产证据 → `release`
+产判定 → `serve` 只消费判定。依赖方向恒为 `product_cli → retail_ops.* → core.*`，
+由治理测试锁定。目录职责见 [`docs/REPO_MAP.md`](./docs/REPO_MAP.md)。
 
-## RetailOps v1 CPU qualification
+### 让结果可信的四个机制
 
-安装开发依赖后，以下六条命令会在 CPU 上依次生成固定任务、三组配对评测和两份发布结论：
-输出目录采用不可覆盖语义；重复验收时请把命令中的 `qualification-r1-final` 整体替换为新的 `qualification-*` 名称。
-
-```bash
-.venv/bin/retail-agent-ops build --config configs/retail_ops/build/retail_ops_v1_build.yaml --seed 0 --output_dir reports/retail_ops/v1/qualification-r1-final/build
-.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_base.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/base
-.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_oracle.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/oracle
-.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_fault.yaml --seed 0 --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/fault
-.venv/bin/retail-agent-ops release --config configs/retail_ops/release/retail_ops_v1_release.yaml --seed 0 --baseline_dir reports/retail_ops/v1/qualification-r1-final/base --candidate_dir reports/retail_ops/v1/qualification-r1-final/oracle --output_dir reports/retail_ops/v1/qualification-r1-final/release-go
-.venv/bin/retail-agent-ops release --config configs/retail_ops/release/retail_ops_v1_release.yaml --seed 0 --baseline_dir reports/retail_ops/v1/qualification-r1-final/base --candidate_dir reports/retail_ops/v1/qualification-r1-final/fault --output_dir reports/retail_ops/v1/qualification-r1-final/release-no-go
-```
-
-产物目录如下：
-
-| 目录 | 内容 |
+| 机制 | 做法 |
 |---|---|
-| `build/` | 12 条固定 qualification 任务及其 manifest |
-| `base/`、`oracle/`、`fault/` | 配置、本地完整轨迹、指标、脱敏失败摘要、日志和 run evidence |
-| `release-go/`、`release-no-go/` | `release.json`、`report.md`、`report.html` 发布报告 |
+| **运行证据不可伪造** | 运行报告的 ID 是它自己全部字段的哈希；逐产物 SHA-256 绑定；改一个字节就对不上 |
+| **配对比较有前置条件** | 模型 revision、生成参数、数据集版本、code commit、`uv.lock`、system prompt 哈希**逐字段相同**才允许配对，否则加载失败 |
+| **holdout 是封存的** | 两段式授权门 + 五维指纹隔离；整个开发期只观测四次，逐次记在 [`HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) |
+| **门禁可以版本化但不可就地改** | `GATE_IDS` v1.0 逐字节冻结（否则磁盘上已有 release 报告全部无法加载），新口径走 v1.1；两套并存 |
 
-可用 GO 报告启动本地 qualification 服务；服务启动前会核对 release、bundle 和 task manifest 哈希：
+---
+
+## 关键结果
+
+> 观测次数与逐次读数的唯一事实源是 [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)；
+> 简历取数口径见 [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md)。本节是摘录。
+
+### 封存 120 条 holdout（Qwen3-4B）
+
+| 观测 | 候选 | task_success | 政策违规 | 非法调用 | p95 比值 | 判定 |
+|---|---|---|---|---|---|---|
+| 1（2026-08-11） | R3，attention-only | 0.7500（90/120） | 16 → **0** | 41 → **0** | 1.0870 | **NO-GO**（`success_delta` −0.0333） |
+| 2（2026-08-14） | R4 `sft-006`，全 linear | **1.0000（120/120）** | 11 → **0** | 5 → **0** | **1.8774** | **NO-GO**（延迟） |
+| 3（2026-08-15） | 同上，代码冻结后复现 | **1.0000**（逐位相同） | 0 | 0 | 2.0250 | **NO-GO**（延迟） |
+| 4（2026-08-15） | **同一份权重，合并进基座** | **1.0000** | 0 | 0 | **1.1265** | **`GO` / candidate（merged）** |
+
+**GO 归因于部署形态，不是模型**：未合并候选对同一份 base 重算仍是 1.9219 FAIL。
+延迟代价已拆开——调用次数只增 14.6%，**单次调用耗时 1497 → 2971 ms（1.985×）**，
+来自全 linear LoRA 的前向开销。
+
+### dev 60 条：prompt × 容量 × 模型规模
+
+| | 零训练 | attention-only | 全 linear layer |
+|---|---|---|---|
+| **Qwen3-4B**，原 prompt | 48/60 | 45/60 | **60/60** |
+| **Qwen3-4B**，新 prompt | 54/60 | 55/60 | **60/60** |
+| **Qwen3-1.7B**，新 prompt | 44/60 | **58/60** | 45/60 |
+
+**1.7B 上方向相反**：全 linear 的 15 条失败**全部**是"该拒绝却没拒绝"
+（`refund_denied_ownership` 10/10 全灭，`average_tool_calls` 1.27→2.08）——
+容量过剩被训练数据 2:1 的执行偏向带跑。**结论是容量必须与规模匹配，不存在"越大越好"**，
+且数据配比与容量**耦合**，不能当作两个独立旋钮。
+
+### 分布外 60 条：120/120 不是泛化
+
+| | 零训练基座 | 拿到 GO 的合并版候选 |
+|---|---|---|
+| 封存 holdout（模板内） | 0.8583 | **1.0000** |
+| **分布外（模板外）** | **0.2167** | **0.5833** |
+| `expression_ood`（口语/错别字/中英夹杂/极简） | 0.30 | **0.00** |
+| `scenario_ood`（做不到的请求 + 多实体） | 0.00 | **0.75** |
+| `adversarial`（错订单号/脏字段/工具诱导） | 0.35 | **1.00** |
+
+### 工程与资源
+
+| 项 | 值 |
+|---|---|
+| teacher 采集通过率 / 成本 | 238/240 = **99.2%** ／ **$0.055**（519 次请求实测） |
+| QLoRA 训练（全 linear） | 单卡 3 epoch / 75 steps，**242–294 s**，峰值 **5.6 GB**，adapter **66 MB** |
+| 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
+| serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
+| 工程基线 | **944 tests passed**；Ruff / `ruff format --check` / mypy(80 源文件) / `uv lock --check` / 公开发布审计全绿 |
+
+---
+
+## 快速开始
 
 ```bash
-.venv/bin/retail-agent-ops serve --config configs/retail_ops/serve/retail_ops_v1_serve.yaml --release_dir reports/retail_ops/v1/qualification-r1-final/release-go --input_dir reports/retail_ops/v1/qualification-r1-final/build --output_dir reports/retail_ops/v1/qualification-r1-final/service
-```
+# 1. 装依赖（冻结 lock）
+env -u UV_INDEX_URL uv sync --extra dev --frozen
 
-这套数据是用于验证工程契约的合成 qualification；R1 未生成正式 holdout，也没有读取 holdout 真值。BFCL 只保留为独立外部回归，现有 BFCL 成绩不是 RetailOps 内部指标。
-
-### 自动化复现与容器
-
-上面六条命令由 `scripts/ci/verify_qualification_chain.py` 自动跑一遍，并断言两份
-`release.json` 的决策、失败门禁、`bundle_sha256` / `task_manifest_sha256` 与确定性
-指标等于冻结期望值——这是 `SPEC.md` §11「新环境能按文档完成 CPU smoke」的唯一自动化
-证明。GitHub Actions workflow 见 `.github/workflows/ci.yml`；**仓库当前无 remote，
-该 workflow 尚未真正运行过**。CPU-only 镜像见 `Dockerfile`（刻意不含 torch）。
-
-```bash
+# 2. 一条命令跑完 CPU 全链路并断言结果等于冻结期望值
 .venv/bin/python scripts/ci/verify_qualification_chain.py
 ```
 
-### 工具 schema 鲁棒性对照
+第 2 步就是 `SPEC.md` §11「新环境能按文档完成 CPU smoke」的自动化证明：它跑
+`build → evaluate ×3 → release ×2`，然后断言两份 `release.json` 的决策、失败门禁、
+`bundle_sha256` / `task_manifest_sha256` 与确定性指标**等于冻结期望值**——
+不是"退出码为 0"，是内容哈希相等。
 
-`perturb_schema` 会给工具改别名并打乱参数顺序（参数**键集合**不变）。两份只差一个
-开关的配置构成对照，回答"换一份客户的工具 schema 还能不能用"：
+### 质量门
 
 ```bash
-.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml     --seed 0 --input_dir <build> --output_dir <out-clean>
-.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml --seed 0 --input_dir <build> --output_dir <out-perturbed>
+.venv/bin/pytest -q
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/mypy
+env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
+.venv/bin/python scripts/ci/audit_public_release.py
 ```
 
-从工具清单按参数形状解析工具名的 `schema_adaptive` 策略在两侧都是 12/12；把
-`policy_type` 换成硬编码工具名的 `oracle`，扰动侧会**全灭**（测试锁定这个对照）。
-这条只用规则策略在 CPU 上跑，不涉及任何模型。
+GitHub Actions workflow 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
+**仓库当前无 remote，该 workflow 从未真正跑过**——任何文档都不得声称它跑绿了。
+CPU-only 镜像见 [`Dockerfile`](./Dockerfile)（刻意不含 torch）。
+
+### 手动跑 qualification 链路
+
+输出目录是不可覆盖语义；重复验收时把 `qualification-r1-final` 整体换成新名字。
+
+```bash
+R=reports/retail_ops/v1/qualification-r1-final
+.venv/bin/retail-agent-ops build    --config configs/retail_ops/build/retail_ops_v1_build.yaml --seed 0 --output_dir $R/build
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_base.yaml   --seed 0 --input_dir $R/build --output_dir $R/base
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_oracle.yaml --seed 0 --input_dir $R/build --output_dir $R/oracle
+.venv/bin/retail-agent-ops evaluate --config configs/retail_ops/evaluate/retail_ops_v1_qualification_fault.yaml  --seed 0 --input_dir $R/build --output_dir $R/fault
+.venv/bin/retail-agent-ops release  --config configs/retail_ops/release/retail_ops_v1_release.yaml --seed 0 --baseline_dir $R/base --candidate_dir $R/oracle --output_dir $R/release-go
+.venv/bin/retail-agent-ops release  --config configs/retail_ops/release/retail_ops_v1_release.yaml --seed 0 --baseline_dir $R/base --candidate_dir $R/fault  --output_dir $R/release-no-go
+.venv/bin/retail-agent-ops serve    --config configs/retail_ops/serve/retail_ops_v1_serve.yaml --release_dir $R/release-go --input_dir $R/build --output_dir $R/service
+```
+
+这套数据是用于验证**工程契约**的合成 qualification；R1 未生成正式 holdout，也没有读取
+holdout 真值。BFCL 只保留为独立外部回归，现有 BFCL 成绩不是 RetailOps 内部指标。
+
+### 工具 schema 鲁棒性对照
+
+`perturb_schema` 给工具改别名并打乱参数顺序（键集合不变），两份只差一个开关的配置
+回答"换一份客户的工具 schema 还能不能用"：按参数形状解析工具名的 `schema_adaptive`
+策略两侧都是 12/12，把 `policy_type` 换成硬编码工具名的 `oracle` 在扰动侧**全灭**
+（测试锁定这个对照）。纯 CPU、纯规则、不涉及模型。
+
+---
 
 ## 仓库结构
-
-按 `build → evaluate → release → serve` 四个稳定接口组织，详见
-[`docs/REPO_MAP.md`](./docs/REPO_MAP.md)：
 
 ```
 src/veritool_rl/
@@ -123,51 +214,62 @@ src/veritool_rl/
 ├── training/         单卡 QLoRA-SFT
 └── legacy/           原 VeriTool-RL 路线（BFCL 外部回归仍在用）
 configs/retail_ops/{build,evaluate,release,serve}/   与命令一一对应的运行配置
-domains/retail_ops/v1/                               工具 schema、业务政策、发布策略
+domains/retail_ops/{v1,v2}/                          工具 schema、业务政策、发布策略
 ```
 
-依赖方向恒为 `product_cli → retail_ops.* → core.*`；`core` 不反向依赖领域，
-`legacy` 不被主线依赖。
+分发名与 CLI 是 `retail-agent-ops`，Python 导入名仍是 `veritool_rl`（历史原因，
+命名边界见 [`docs/REPO_MAP.md`](./docs/REPO_MAP.md)）。
 
-## 结果边界
+---
 
-R3 候选（Qwen3-4B QLoRA-SFT）在 60 条冻结 dev 任务上：非法工具调用 21→0、
-关键政策违规 8→0、schema 合规率 0.781→1.000（精确 McNemar `p<0.0001` / `p=0.0078`）；
-但任务成功率 48/60→43/60，回退全部集中在需 ≥2 次工具调用的场景。
+## 结果边界（必须一起说的话）
 
-封存 120 条 holdout 已消耗**三次**观测，三次判定**都是 `NO-GO` / `deployment=baseline`**，
-且阈值一个字未改。逐次读数、失败门禁与判定口径边界见
-[`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)——**那是唯一事实源，本文件不复述**。
+- **候选没有"可以上线"。** 第四次是**自动门禁 GO**，SPEC §6 第 6 条的独立重建复验
+  已完成（[`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md)），
+  但任务集是 2 工具 / 6 类 / 单一中文零售退款场景，每类 20 条，`ci95` 在满分时是
+  [1.0, 1.0] 的退化区间——那不是显著性证据。
+- **通过门禁的是合并部署形态**，不是前三次被拒的那个形态。两者是同一份权重的两种加载方式。
+- **合并形态的门禁余量只有 1–3%**，而 base 侧 p95 在两次观测间有 9% 的波动——
+  不得表述为"延迟问题已解决"。
+- **dev 的读数带选择偏差**：dev 已被用于从多个候选中选出这一个，holdout 必然回落。
+- **延迟数不可跨运行比较**：GPU 共享，各次运行他人占用 0%–98% 不等。门禁用的是同一次
+  运行内的**比值**。
+- **`verifier_reward` 四次与主判据反向**，现已降级为诊断量。主判据只有最终状态与政策
+  verifier。
+- **BFCL 成绩属 legacy 轨道**：Qwen3-1.7B 固定 200 条单轮 AST 子集 Base/SFT 为
+  163/200 与 167/200，差值置信区间跨 0，**不是**官方 BFCL 全量或排行榜成绩。
+- 不产出论文，不以 SOTA、ablation 数量或三 seed 作为完成标准。
 
-- 观测 1（2026-08-11，R3 候选）复现了 dev 的同一模式且更极端：非法调用 41→0、
-  政策违规 16→0、schema 合规率 0.7819→1.0000，而任务成功率 0.7833→0.7500。
-  唯一失败门禁 `success_delta` −0.0333 < +0.05；候选失败 100% 是
-  `premature_final_response`，`refund_eligible` 20/20 全数失败。
-- 观测 2（2026-08-14，R4 候选 `sft-006`）任务指标全面达标：**120/120**、
-  `success_delta` +0.1417、违规与非法调用清零。唯一失败门禁是
-  `p95_latency_ratio` 1.8774 > 1.25，判定仍是 `NO-GO`。**这个数字是部署形态的代价
-  而不是模型能力的结论**：单次调用耗时 1.985×，而调用次数只增 1.146×。
+完整的「不可写表述」清单在 [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md) §2。
+故障覆盖与明确没做的项见 [`docs/FAULT_MATRIX.md`](docs/FAULT_MATRIX.md)。
 
-- 观测 3（2026-08-15，R4.5 代码冻结后）复现了观测 2 的任务指标（**逐位相同**），
-  两套门禁口径都仍是 `NO-GO`。同时把候选的 LoRA **合并回基座权重**后重测：
-  同样 120/120、零违规、调用次数一模一样，单次调用 2946.5 → **1717.7 ms**，
-  p95 比值 2.0250 → **1.2141**。**但那不是发布判定**——封存判定的契约要求
-  candidate = 同一基座 + adapter，合并版结构上无法作为候选。见
-  [`docs/SERVING_FORM_COMPARISON.md`](docs/SERVING_FORM_COMPARISON.md)。
+---
 
-**120/120 已被实测证明不构成泛化证据**：train/dev/holdout 共用同一批 12 句请求模板。
-2026-08-16 用一个独立的 60 条分布外任务集验证——同一个候选掉到 **0.5833**，
-其中表达变化一类 **0/20**（零训练基座 0.30），而场景/对抗两类反而从 0.00/0.35 升到
-0.75/1.00。**这次 SFT 用表面形式鲁棒性换来了任务结构与安全性。**
-见 [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)。
-**合并形态的门禁余量只有 1–3%**，而 base 侧 p95 在观测 2 与观测 3 之间有 9% 的波动——
-不得表述为"延迟问题已解决"。
+## 文档索引
 
-两侧 CI95 大幅重叠，仅凭 −3.3pp **不能**断言整体显著回退；但门禁要求的是实测 +5pp 的
-提升，候选没有做到，NO-GO 因此成立。另有一条必须一起说的观察：候选的
-`verifier_reward` 从 0.5646 升到 0.7500 而任务成功率下降——复合奖励里的格式分量会掩盖
-执行能力退化，所以主判据是最终状态与政策 verifier，不是奖励值。
+| 文档 | 内容 |
+|---|---|
+| [`SPEC.md`](./SPEC.md) | 产品契约、指标、发布门禁、验收原则 |
+| [`docs/EXECUTION_PLAN.md`](docs/EXECUTION_PLAN.md) | R0–R5 阶段状态（唯一事实源） |
+| [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) | 封存 holdout 观测台账（唯一事实源） |
+| [`docs/MODEL_CARD_sft-006.md`](docs/MODEL_CARD_sft-006.md) | 最强候选的模型卡 |
+| [`docs/SYSTEM_CARD.md`](docs/SYSTEM_CARD.md) | 系统边界、安全与失败模式 |
+| [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md) | 分布外任务集与读数 |
+| [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md) | 独立重建复验（SPEC §6 第 6 条） |
+| [`docs/SERVING_FORM_COMPARISON.md`](docs/SERVING_FORM_COMPARISON.md) | 部署形态与引擎的四档吞吐对照 |
+| [`docs/ENGINE_SUBSTITUTION.md`](docs/ENGINE_SUBSTITUTION.md) | vLLM 走完整 evaluate 路径的行为一致性 |
+| [`docs/AGENT_LOOP.md`](docs/AGENT_LOOP.md) | Agent 循环、user simulator 与多轮澄清 |
+| [`docs/DOMAIN_BUNDLE_V2.md`](docs/DOMAIN_BUNDLE_V2.md) | 政策外置、幂等键、guardrail |
+| [`docs/FAULT_MATRIX.md`](docs/FAULT_MATRIX.md) | 五类故障 → 具体测试的映射 |
+| [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md) | 简历取数口径与不可写表述 |
+| [`docs/INTERVIEW_PREP.md`](docs/INTERVIEW_PREP.md) | 五分钟讲解、深挖问答、失败案例库 |
+| [`docs/DEMO.md`](docs/DEMO.md) | 演示流程 |
+| [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md) | append-only 长期档案（只记改变做法的事件） |
+| [`NOTICE.md`](./NOTICE.md) | 第三方组件、分发边界、benchmark 声明边界 |
 
-现有 Qwen3-1.7B BFCL 固定 200 条单轮 AST holdout 上，Base/SFT 为 163/200 与 167/200；差值置信区间跨 0，不能声称稳定改善，也不能称为官方 BFCL 全量或排行榜成绩。
+面向 coding agent 的工程协议见 [`AGENTS.md`](./AGENTS.md) 与 [`CLAUDE.md`](./CLAUDE.md)。
 
-项目不产出论文，不以 SOTA、ablation 数量或三 seed 作为完成标准。正式简历指标必须来自冻结任务、实际运行产物和明确发布门禁。
+## 许可
+
+MIT，见 [`LICENSE`](./LICENSE)。模型权重、训练数据、holdout 真值与运行产物**不随仓库
+分发**，边界与强制方式见 [`NOTICE.md`](./NOTICE.md)。

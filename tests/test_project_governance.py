@@ -1106,3 +1106,47 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
     # 以及这个集合不封存（用它选候选就等于开始过拟合它）。
     assert "作者手写" in ood
     assert "它不是封存集合" in ood
+
+
+def test_the_english_readme_agrees_with_the_chinese_one() -> None:
+    """双语文档最容易的失效方式是"英文版落后一个版本"。
+
+    不做逐句翻译比对（那不现实），而是断言两边**同一组关键数字**都在。
+    任一边更新了结论而另一边没跟上，这条就会红。
+    """
+    zh = _read("README.md")
+    en = _read("README.en.md")
+
+    shared_numbers = (
+        "120/120",  # 第二/三/四次观测的候选读数
+        "1.8774",  # 被拒的那个 p95 比值
+        "1.1265",  # 拿到 GO 的那个 p95 比值
+        "0.5833",  # 分布外总分
+        "0/20",  # 分布外表达变化类
+        "58/60",  # 同 seed 重建
+        "54/60",  # 零训练 base
+        "99.2%",  # teacher 通过率
+        "$0.055",  # teacher 成本
+        "163/200",  # BFCL legacy
+        "167/200",
+    )
+    for number in shared_numbers:
+        assert number in zh, f"README.md 缺少关键数字 {number}"
+        assert number in en, f"README.en.md 缺少关键数字 {number}"
+
+    # 两份都必须互相指向对方，否则读者会停在其中一份
+    assert "README.en.md" in zh
+    assert "README.md" in en
+
+
+def test_the_english_readme_keeps_the_same_boundaries() -> None:
+    """英文版不得因为"翻译时太长"而丢掉边界。"""
+    en = _read("README.en.md")
+    for claim in (
+        'not "ready to ship."',
+        "not generalisation",
+        "never actually run",
+        "an official BFCL score",
+        "not comparable across runs",
+    ):
+        assert claim in en, f"README.en.md 缺少边界表述：{claim}"

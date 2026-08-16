@@ -12,6 +12,22 @@ from veritool_rl.core.trajectory import ToolCall
 from veritool_rl.core.trajectory.schema import StrictModel
 from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot
 
+#: 单次 teacher 请求的墙钟上限（秒）。
+#:
+#: SPEC §9 要求外部 API 有超时与重试上限。2026-08-16 之前这条只做到了一半：
+#: `_classify_retryable` 把超时归类为可重试，但 SDK client 从未被设置超时，
+#: 落到 openai SDK 的默认 600 秒。240 条轨迹是 519 次请求，一次挂起就是
+#: 10 分钟静默停摆，而采集脚本看起来像在正常工作。
+#:
+#: 60 秒的依据：实测 519 次请求的 p95 远低于 10 秒（LOG-20260806-06），
+#: 60 秒给慢响应留了足够余量，同时让"卡住"在一分钟内变成一个可重试的错误。
+TEACHER_REQUEST_TIMEOUT_SECONDS = 60.0
+
+#: SDK 层自动重试的上限。**不是**采集层的重试上限——采集层由
+#: `TeacherCollectionConfig` 单独控制，两层相乘才是最坏情况的请求数。
+#: 取 2 是为了让这个乘积保持可预测。
+TEACHER_MAX_RETRIES = 2
+
 _RETRYABLE_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504})
 _RETRYABLE_ERROR_CLASS_NAMES = frozenset(
     {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError"}
@@ -103,7 +119,12 @@ class OpenAICompatibleTeacherClient:
             raise TeacherClientError(msg) from None
 
         try:
-            client = OpenAI(base_url=route.base_url, api_key=api_key)
+            client = OpenAI(
+                base_url=route.base_url,
+                api_key=api_key,
+                timeout=TEACHER_REQUEST_TIMEOUT_SECONDS,
+                max_retries=TEACHER_MAX_RETRIES,
+            )
         except Exception as error:
             message = _redact_error(str(error), (api_key,))
             raise TeacherClientError(message) from None

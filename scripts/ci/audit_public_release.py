@@ -93,8 +93,13 @@ HOLDOUT_TRUTH_KEYS = (
 #: NOTICE 时，这一项会失败。
 REQUIRED_NOTICE_MENTIONS = ("Qwen3-4B", "Qwen3-1.7B", "Gorilla", "BFCL", "vLLM", "Apache-2.0")
 
-#: 本脚本自身列举了凭据形态与真值键名，扫描时必须跳过自己，否则它永远失败。
-SELF_RELPATH = "scripts/ci/audit_public_release.py"
+#: 必须包含凭据形态字面量的两个文件：定义它们的脚本，与验证"种一个进去能被抓到"的
+#: 那份测试。**这是唯一的豁免，且被 `test_the_pattern_allowlist_cannot_grow_silently`
+#: 钉死为恰好这两项**——豁免清单是审计最容易被悄悄放大的地方。
+PATTERN_FIXTURE_ALLOWLIST = (
+    "scripts/ci/audit_public_release.py",
+    "tests/test_public_release_audit.py",
+)
 
 
 class AuditFailure(Exception):
@@ -168,7 +173,7 @@ def audit_no_credentials(paths: list[Path]) -> None:
     offenders: list[str] = []
     for path in paths:
         relpath = path.relative_to(REPO_ROOT).as_posix()
-        if relpath == SELF_RELPATH:
+        if relpath in PATTERN_FIXTURE_ALLOWLIST:
             continue
         text = read_text_or_none(path)
         if text is None:
@@ -229,7 +234,7 @@ def _walk(node: object) -> Iterator[tuple[str | None, object]]:
 def audit_no_holdout_truth(paths: list[Path]) -> None:
     offenders: list[str] = []
     for relpath, document in _structured_documents(paths):
-        if relpath == SELF_RELPATH:
+        if relpath in PATTERN_FIXTURE_ALLOWLIST:
             continue
         hits = sorted({key for key, _ in _walk(document) if key in HOLDOUT_TRUTH_KEYS})
         if hits:
