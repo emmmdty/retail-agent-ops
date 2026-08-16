@@ -39,14 +39,21 @@ same weights, same behaviour, identical tool-call counts, p95 ratio **1.13** —
 first automatic-gate **`GO`**, which has since passed the independent-rebuild check
 (SPEC §6, gate 6).
 
-**3. It then built an out-of-distribution set and knocked that GO down by half.**
-The same candidate scores only **0.5833** on 60 out-of-template tasks, and **0/20** on the
-"say it differently" class — *worse than the untrained base*. **120/120 is not generalisation**:
-the frozen holdout shares its 12 request templates with the training set. This SFT run traded
-**surface-form robustness for task structure and safety**. See
-[`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md).
+**3. It built an out-of-distribution set that knocked that GO down by half — then fixed it, and priced the fix.**
+The same candidate scores only **0.5833** out-of-template and **0/20** on the "say it
+differently" class — *worse than the untrained base*. **120/120 is not generalisation**: the
+frozen holdout shares its 12 request templates with the training set
+([`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)).
 
-> Quoting that GO without the third point is forbidden, and enforced by a test
+The mechanism was then diagnosed (all 12 templates are formal "please verify…" imperatives, so
+the model learned **surface form → action**), and fixed with an LLM phrasing bank used for
+training augmentation: **0.7333 → 1.0000** on a **sealed partition observed exactly once**, and
+`expression_ood` **0.00 → 1.00** on an independently hand-written set **never used for
+selection**. **The cost is equally concrete**: the model became more action-prone — 2 new policy
+violations on dev, and "impossible request" handling fell 0.75 → 0.60. See
+[`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md).
+
+> Quoting that GO without the out-of-distribution reading is forbidden, and enforced by a test
 > (`test_the_go_is_never_quoted_without_the_ood_reading`).
 
 ---
@@ -154,6 +161,32 @@ excess capacity gets dragged by the 2:1 execution bias in the training data.
 | `expression_ood` (colloquial / typos / code-switching / terse) | 0.30 | **0.00** |
 | `scenario_ood` (impossible requests, multi-entity) | 0.00 | **0.75** |
 | `adversarial` (wrong order id, dirty fields, tool bait) | 0.35 | **1.00** |
+
+### Generalisation fix: a result that survives distribution shift, and its bill
+
+Phrasings are partitioned deterministically by `sha256(text + fixed salt)`; the partition used
+for training augmentation is **disjoint, item by item**, from the two evaluation partitions
+(ADR 0005). Augmentation rewrites **only the user's first message** — tool calls and target
+state are untouched.
+
+**Sealed partition (observed exactly once, after the code was frozen):**
+
+| Run | Overall | `eligible` | `recovery` | 3 denial classes | Policy violations |
+|---|---|---|---|---|---|
+| Untrained base | 0.7167 | 0.30 | 1.00 | 0.60 / 0.90 / 0.80 | 3 |
+| Old candidate `sft-006` | 0.7333 | **0.10** | **0.30** | 1.00 ×3 | 0 |
+| **New candidate `sft-008`** | **1.0000** | 1.00 | 1.00 | 1.00 ×3 | **0** |
+
+**Independent transfer check** (OOD v1: hand-written by the author, entirely different
+generation process, **never used for selection**): `expression_ood` **0.00 → 1.00** (all five
+sub-kinds perfect), overall 0.5833 → **0.8667**.
+
+**The bill**: the model became more action-prone, so it now sometimes acts where it should
+refuse — **2 new policy violations** on dev (`refund_denied_window`), and `scenario_ood` fell
+0.75 → **0.60** on OOD v1 (`partial_refund` 1.00 → **0.00**). Benefit and cost come from the
+same change and are not reported separately.
+
+Details in [`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md).
 
 ### Independent rebuild (SPEC §6, gate 6)
 

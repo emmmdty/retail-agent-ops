@@ -25,13 +25,19 @@
 同一套行为、调用次数一模一样，p95 比值 **1.13**，拿到项目历史上第一个自动门禁 **`GO`**，
 并已通过 SPEC §6 第 6 条的**独立重建复验**。
 
-**3. 它自己建了一个分布外集合，把刚拿到的 GO 打掉了一半。**
-同一个候选在模板外的 60 条上只有 **0.5833**，其中"换个说法"这一类 **0/20**、
-比零训练基座还差。**120/120 不是泛化**——冻结 holdout 与训练集共用同一批请求模板。
-这次 SFT 实际上是**用表面形式的鲁棒性换来了任务结构与安全性**。
-见 [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)。
+**3. 它自己建了一个分布外集合，把刚拿到的 GO 打掉了一半——然后把它修好了，并算清了账单。**
+同一个候选在模板外只有 **0.5833**，"换个说法"这一类 **0/20**、比零训练基座还差。
+**120/120 不是泛化**——冻结 holdout 与训练集共用同一批请求模板
+（[`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md)）。
 
-> 引用那个 GO 时必须同时给出第 3 条——这一点由测试强制
+诊断到机制（12 句模板全是"请核实…"的书面祈使句，模型学的是**表面形式 → 动作**），
+用 LLM 措辞池做训练增强后，在一个**只观测一次的封存分片**上从 0.7333 到 **1.0000**，
+在一个**作者手写、从未用于选择**的独立集合上 `expression_ood` **0.00 → 1.00**。
+**代价同样具体**：模型变得更倾向执行，dev 上多了 2 次政策违规、
+"做不到的请求"一类从 0.75 掉到 0.60。见
+[`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md)。
+
+> 引用那个 GO 时必须同时给出分布外读数——这一点由测试强制
 > （`test_the_go_is_never_quoted_without_the_ood_reading`）。
 
 ---
@@ -137,6 +143,29 @@ flowchart LR
 | `expression_ood`（口语/错别字/中英夹杂/极简） | 0.30 | **0.00** |
 | `scenario_ood`（做不到的请求 + 多实体） | 0.00 | **0.75** |
 | `adversarial`（错订单号/脏字段/工具诱导） | 0.35 | **1.00** |
+
+### 泛化修复：一个扛得住分布漂移的结果，和它的账单
+
+诊断出「表面形式 → 动作」的捷径后，用 LLM 生成的措辞池做训练增强
+（只改 user 第一句话，工具调用与目标状态一个字不动）。措辞按
+`sha256(措辞+固定盐)` **确定性三分**，训练用的与评测用的**逐条互斥**（ADR 0005）。
+
+**封存分片（只观测一次，代码冻结后跑）**：
+
+| 运行 | 总计 | `eligible` | `recovery` | 三个拒绝类 | 政策违规 |
+|---|---|---|---|---|---|
+| 零训练基座 | 0.7167 | 0.30 | 1.00 | 0.60 / 0.90 / 0.80 | 3 |
+| 旧候选 `sft-006` | 0.7333 | **0.10** | **0.30** | 1.00 ×3 | 0 |
+| **新候选 `sft-008`** | **1.0000** | 1.00 | 1.00 | 1.00 ×3 | **0** |
+
+**独立迁移检查**（OOD v1：作者手写、生成过程完全不同、**从未用于选择**）：
+`expression_ood` **0.00 → 1.00**（五个子类全满分），总分 0.5833 → **0.8667**。
+
+**账单**：模型变得更倾向执行，于是「不该动手时也动手」——dev 上新增 **2 次政策违规**
+（`refund_denied_window`），OOD v1 的 `scenario_ood` 从 0.75 掉到 **0.60**
+（`partial_refund` 从 1.00 掉到 **0.00**）。收益与代价来自同一个改动，不能只报一半。
+
+详见 [`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md)。
 
 ### 独立重建复验（SPEC §6 第 6 条）
 
@@ -302,7 +331,8 @@ domains/retail_ops/{v1,v2}/                          工具 schema、业务政�
 | [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) | 封存 holdout 观测台账（唯一事实源） |
 | [`docs/MODEL_CARD_sft-006.md`](docs/MODEL_CARD_sft-006.md) | 最强候选的模型卡 |
 | [`docs/SYSTEM_CARD.md`](docs/SYSTEM_CARD.md) | 系统边界、安全与失败模式 |
-| [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md) | 分布外任务集与读数 |
+| [`docs/OOD_EVALUATION.md`](docs/OOD_EVALUATION.md) | 分布外任务集 v1 与读数（现为独立迁移检查） |
+| [`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md) | **泛化修复**：诊断、措辞池、封存分片判定与代价 |
 | [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md) | 独立重建复验（SPEC §6 第 6 条） |
 | [`docs/SERVING_FORM_COMPARISON.md`](docs/SERVING_FORM_COMPARISON.md) | 部署形态与引擎的四档吞吐对照 |
 | [`docs/ENGINE_SUBSTITUTION.md`](docs/ENGINE_SUBSTITUTION.md) | vLLM 走完整 evaluate 路径的行为一致性 |
