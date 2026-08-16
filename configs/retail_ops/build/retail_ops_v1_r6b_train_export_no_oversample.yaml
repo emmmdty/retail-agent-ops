@@ -1,0 +1,37 @@
+# R6 第二个候选（sft-008）的导出：相对 train-export-006 的**唯一**差别是
+# sft_oversample 从 {refund_eligible: 3, refund_recovery: 3} 变成 {}。
+#
+# **假设（在看到 sft-008 任何读数之前写定）**：
+# sft-007 在 dev 上新增的 2 次政策违规全部是 refund_denied_window / refund_not_eligible
+# （退款窗口已过却退了）。机制是 oversample 把执行类 ×3，措辞增强又给每条任务 ×4，
+# 于是「用户开口要退款」这个措辞空间里压倒性地映射到「执行」，
+# 而四个退款场景的请求在语义上**本来就无法区分**——区别全在订单状态里。
+#
+# 去掉 oversample 是有动机的、而不是「调到好看为止」：
+# 它是 R4 第一轮为纠正动作分布加的，而那一轮的单变量实验已经证明
+# 它对目标类别的效果**精确为零**（LOG-20260811-09）。措辞增强现在提供了数据量，
+# 它就只剩下副作用。
+#
+# **判读（同样事先写定）**：
+#   - dev 政策违规回到 0 且 OOD-v2-dev 不明显下降 -> 假设成立，sft-008 是更好的候选；
+#   - 政策违规仍在 -> 假设被证伪，如实记录，以 sft-007 为准并把这个代价写进结论；
+#   - OOD 大幅下降 -> oversample 其实在支撑 OOD 收益，两者不可兼得，如实写。
+# **无论哪种结果，sft-007 与 sft-008 都会同时出现在文档里。**
+#
+# 行数：240 × (1 + 3) = 960（train-export-006 是 1600）。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v1
+public_dir: manifests/retail_ops/v1/retail_ops_v1_r2_20260722
+dataset_version: retail_ops_v1_r2_20260722
+teacher_attempt_id: teacher-full-001
+attempt_id: train-export-007
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: "8ae813c4284246b9700470053ba90339a3f88439d9e57905d5db704ca63283dd"
+
+# bank_sha256 是**声明的期望值**：换了池子却忘了改这里，会静默产出另一份训练集。
+# 与 sft_system_prompt_sha256 同一个形状、同一个理由。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-001/phrasings.jsonl
+  bank_sha256: "a34b25ac6f2b1ae24f9c2a135e3ac11a47ac8b401f676cc50b8c2bce1720b4f6"
+  per_task: 3
