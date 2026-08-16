@@ -1165,3 +1165,24 @@ def test_the_english_readme_keeps_the_same_boundaries() -> None:
         "not comparable across runs",
     ):
         assert claim in en, f"README.en.md 缺少边界表述：{claim}"
+
+
+def test_there_is_exactly_one_five_minute_script() -> None:
+    """同一份讲稿存在两处就一定会漂。
+
+    `DEMO.md` 原来有一份 R3 时期的五分钟讲稿，结论停在"NO-GO、回滚基座"，
+    而此后又发生了三次观测、一个 GO、一次分布外评测和一次重建复验。
+    现在讲稿只在 `INTERVIEW_PREP.md`，`DEMO.md` 只保留演示流程。
+    """
+    demo = _read("docs/DEMO.md")
+    prep = _read("docs/INTERVIEW_PREP.md")
+
+    assert "## 1. 五分钟讲解（约 750 字，按段落计时）" in prep
+    assert "已迁出本文件" in demo
+    assert "INTERVIEW_PREP.md" in demo
+    # DEMO 不得再自带时间轴段落（那是讲稿的形状）
+    for timeline_marker in ("0:00–0:40", "2:40–4:00", "4:00–5:00"):
+        assert timeline_marker not in demo, f"DEMO.md 又长回了一份讲稿：{timeline_marker}"
+    # DEMO 保留的是流程
+    for kept in ("纯 CPU 全链路演示", "真实模型服务演示", "必须一起讲的失败案例"):
+        assert kept in demo, kept
