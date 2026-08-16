@@ -1207,3 +1207,59 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
   公开/私有边界的全部治理。
 - **共享卡上的礼貌**：`gpu_memory_utilization=0.35`（约 11 GB）而不是默认 0.9。
   这会限制 KV cache 从而影响批量吞吐的绝对值——报告时必须带上这个参数。
+
+## triton 缓存跨 venv 污染，把项目自己的 HF 评测路径打挂了（2026-08-16，已修复）
+
+**这是本轮唯一一次真正弄坏了东西，且是我造成的。记在这里因为它会再发生。**
+
+**现象**：跑完 vLLM 基准后，项目 venv 里任何一次 `TransformersBackend.generate`
+都崩在 `RuntimeError: Failed to find C compiler`。连零训练基座 + 一句"你好"都跑不了。
+几小时前（8-15 23:59）的 OOD 正式评测还是好的，项目 venv 与 `uv.lock` 均未改动
+（`uv lock --check` 通过，`site-packages` 的 mtime 停在 8/5–8/6）。
+
+**机制**（已验证，不是猜测）：
+
+1. torch 2.13 的 `torch._native` 会把 `bmm_outer_product` 派发到 triton 实现，
+   于是 Qwen3 的前向**必然**初始化 triton；triton 首次运行要编译一个
+   `cuda_utils` 扩展。
+2. triton 的缓存键**只含源码与 triton 版本，不含 Python ABI**。两个 venv 的
+   triton 都是 **3.7.1**，因此项目（3.11）与 vLLM venv（3.12）落到**同一个键**
+   `MIH4X24…`，而目录里的 `.so` 文件名带 ABI（`cuda_utils.cpython-3XX-….so`）。
+3. 后跑的一方覆盖前一方。我的 3.12 运行之后，缓存里只剩 312 版；
+   项目的 3.11 找不到自己那份，转而重新编译。
+4. **这台机器没有 C 编译器**——`dpkg` 里只有 `cpp` 预处理器与 `gcc-*-base`，
+   没有 `gcc` 本体。于是重编译必然失败。
+
+**决定性证据**：修复后同一个键 `MIH4X24…` 下变成 `cuda_utils.cpython-**311**-….so`，
+项目路径恢复；两个版本映射到同一个键因此得证。
+
+**修复**（两条都必要）：
+
+- 用**用户态**编译器补回缺失的构建能力：`/mnt/aidata/tongjiakai/cc-venv` 里装
+  `ziglang`，`$D/bin/cc` 是个 shim。zig cc 自带 sysroot、不搜索系统库目录，
+  因此 shim 要把 triton 传的 `-l:libcuda.so.1` 改写成绝对路径
+  `/usr/lib/x86_64-linux-gnu/libcuda.so.1`，否则 `ld.lld` 报 unable to find library。
+- **给 vLLM 侧单独的 `TRITON_CACHE_DIR`**（`run_vllm_bench.sh` 已固化）。
+  项目保持默认 `~/.triton/cache`——让入侵者搬走，而不是让项目依赖额外环境变量，
+  否则哪天忘了设就又挂了。
+
+**教训（会改变后续做法）**：在这台机器上引入**任何**第二个 Python 版本的深度学习
+环境之前，先把它的 `TRITON_CACHE_DIR` 隔离掉。共享缓存 + 无编译器 = 一次运行就能
+让另一个环境永久失效，而症状（"找不到 C 编译器"）完全不指向真正的原因。
+
+## 第四档的读数（2026-08-16，gpu-5090 物理 GPU 0）
+
+同一批 12 条公开 qualification fixture、同一份合并权重、同一套贪心契约，
+三侧输出 token 总数**都是 390**，工具调用与文本 **12/12 全同**：
+
+| | HF+NF4 | HF+bf16 | vLLM+bf16 |
+|---|---|---|---|
+| mean / p50 / p95 (ms) | 675.97 / 633.70 / 1078.70 | 411.66 / 370.64 / 817.23 | 203.51 / 199.99 / 220.39 |
+| tok/s | 48.08 | 78.95 | 159.70 |
+
+- **3.32× 是乘性的两段**：去量化 1.64× + 换引擎 2.02×。前一段不需要新依赖。
+- 批量 12 并发冷启 1375.38 tok/s；prefix caching 值 **+57.5%**（对照组：关掉后
+  第二遍 861.16 与第一遍 873.11 持平）。
+- HF+NF4 在这 12 条上的 48.08 tok/s 与封存 holdout 观测 3 的 48.87 tok/s 几乎相同，
+  说明这个微基准在吞吐维度上是有代表性的（延迟维度**不可**跨集合比较：
+  输入 428 vs ~1067 token、输出 ~32 vs ~126 token）。

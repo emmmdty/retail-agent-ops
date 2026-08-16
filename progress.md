@@ -751,3 +751,17 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 0.00→0.75、`adversarial` 0.35→1.00、**`expression_ood` 0.30→0.00**（`code_switch`
 1.00→0.00）。候选在表达类的 20 条失败全部是 `premature_final_response`。
 详见 `docs/OOD_EVALUATION.md` 与 **LOG-20260816-01**。
+
+## 2026-08-16 第四档 merged + vLLM（gpu-5090，物理 GPU 0）
+
+| 运行 | 命令 | 结果 |
+|---|---|---|
+| vLLM 安装 | 独立 venv `/mnt/aidata/tongjiakai/vllm-venv`，Python 3.12 | vllm 0.27.1 / torch 2.13.0+cu130；项目 `uv.lock` 未动 |
+| 基准 ×4 次重跑 | `run_vllm_bench.sh` | 前三次分别因 Python 3.11、缺 nvcc、缓存复用导致的测量缺陷作废；第四次有效 |
+| prefix cache ON | `vllm-bench-cache-on.json` | 单流 203.51 ms / 159.70 tok/s；批量冷启 1375.38 tok/s |
+| prefix cache OFF | `vllm-bench-cache-off.json` | 单流 214.43 ms / 151.56 tok/s；批量冷启 873.11 tok/s |
+| 引擎一致性 | `engine-agreement.json` | 工具调用 12/12、文本 12/12；HF+NF4 675.97 ms / 48.08 tok/s |
+| 量化分解 | `engine-agreement-bf16.json` | HF+bf16 411.66 ms / 78.95 tok/s |
+| 事故与修复 | triton 缓存跨 venv 污染 | 项目 HF 路径一度全崩；已用 zig cc 重建 + 隔离 `TRITON_CACHE_DIR` 修复并复验 |
+
+产物均在 `/mnt/aidata/tongjiakai/`，**不进 Git**（大运行产物边界）。
