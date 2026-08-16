@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from veritool_rl.core.agent.policy import Policy
 from veritool_rl.core.agent.qwen import (
@@ -126,7 +126,22 @@ class BaseEvaluationConfig(StrictModel):
 
 
 class BaseRunEvidence(StrictModel):
-    """dev base 运行的完整治理绑定；不含任何 task/family 标识。"""
+    """dev base 运行的完整治理绑定；不含任何 task/family 标识。
+
+    **新增 `inference_engine` / `runtime_env_sha256`。** 二者都可选且默认 `None`，
+    并且在**取值为 None 时被排除出内容哈希**（见 `RUNTIME_PROVENANCE_FIELDS` 与
+    `_content_id`），因此加上它们不会作废任何一份已产出的证据——这是这次扩展能做的
+    唯一前提。
+
+    **刻意不用 `schema_version` 做这件事**：`CandidateRunEvidence` 早已把它当作
+    类型判别符（固定 `"1.1"` 以便 base 的严格模型无法加载候选证据，反之亦然），
+    再往上叠演进语义会让同一个 `"1.1"` 同时表示两件事，且会改变磁盘上已有候选证据的
+    哈希投影。按"值为 None 即视为未记录"来投影没有这个歧义。
+
+    加它们的理由：`uv_lock_sha256` 哈希的是仓库里的 `uv.lock` **文件**而不是实际装了
+    什么包，换一个 venv 跑评测它纹丝不动。2026-08-16 的三次 vLLM 评测正是跑在另一个
+    环境里的，而证据逐字段声称用的是冻结依赖，**没有任何机制发现得了**。
+    """
 
     schema_version: Literal["1.0"] = "1.0"
     run_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -158,6 +173,24 @@ class BaseRunEvidence(StrictModel):
     replayable_count: int = Field(ge=0)
     evidence_complete: bool
     artifact_sha256: dict[str, str]
+    #: 真正跑这次评测的推理引擎。缺失读作**"未记录"而不是 "transformers"**——
+    #: 2026-08-16 之前的证据都没有这个字段，把缺失当成某个具体值就是编造。
+    inference_engine: Literal["transformers", "vllm"] | None = None
+    #: 实际安装包集合的摘要，见 `current_runtime_env_sha256`。
+    runtime_env_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _runtime_provenance_is_all_or_nothing(self) -> BaseRunEvidence:
+        """要么两个都记，要么都不记。
+
+        只记一个会产生一份"说了一半"的证据：知道引擎却不知道环境（或反之），
+        而这两条恰恰要合起来才能回答"这次到底跑在哪里"。
+        """
+        recorded = [self.inference_engine is not None, self.runtime_env_sha256 is not None]
+        if any(recorded) and not all(recorded):
+            msg = "inference_engine 与 runtime_env_sha256 必须同时记录或同时缺失"
+            raise ValueError(msg)
+        return self
 
     _validate_json_fields = field_validator("metrics")(validate_json_value)
 
@@ -213,6 +246,8 @@ def evaluate_formal_dev_base(
     attempt_id: str,
     public_report_path: Path,
     hardware_provider: HardwareProvider,
+    inference_engine: Literal["transformers", "vllm"] | None = None,
+    runtime_env_sha256: str | None = None,
 ) -> BaseRunEvidence:
     """在 60 条已验证 dev 记录上跑一次确定性 base 评测并写出全部证据。
 
@@ -280,6 +315,8 @@ def evaluate_formal_dev_base(
                 replayable_count=run.replayed,
                 evidence_complete=_evidence_complete(run.trajectories, run.replayed),
                 artifact_sha256=artifact_sha256,
+                inference_engine=inference_engine,
+                runtime_env_sha256=runtime_env_sha256,
             ),
             "run_id",
         )
@@ -483,13 +520,29 @@ def write_run_artifacts(
 _ID_PLACEHOLDER = "0" * 64
 
 
+#: 2026-08-16 新增的运行时溯源字段。**取值为 None 时不参与内容哈希**，
+#: 因此此前产出的每一份证据复算结果逐位不变。未来若再加字段，登记到这里即可，
+#: 忘了登记就会让旧证据复算不出原值——那正是要防的事。
+RUNTIME_PROVENANCE_FIELDS = frozenset({"inference_engine", "runtime_env_sha256"})
+
+
 def _finalize_evidence(evidence: EvidenceT, id_field: str) -> EvidenceT:
-    """用证据自身内容的规范 JSON 摘要回填自哈希字段。"""
+    """用内容摘要回填自哈希字段。"""
     return evidence.model_copy(update={id_field: _content_id(evidence, id_field)})
 
 
 def _content_id(evidence: StrictModel, id_field: str) -> str:
+    """内容摘要；未记录（None）的运行时溯源字段不参与。
+
+    这样一份 2026-08-16 之前的证据——它根本没有这两个字段，加载后取值为 None——
+    复算出的 `run_id` 与它当初落盘时**逐位相同**。这是新增字段的唯一前提。
+    """
     payload = evidence.model_dump(mode="json", exclude={id_field, "schema_version"})
+    payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in RUNTIME_PROVENANCE_FIELDS or value is not None
+    }
     return _content_sha256(payload)
 
 

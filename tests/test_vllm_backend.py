@@ -338,3 +338,18 @@ def test_the_dev_base_channel_also_honours_the_engine_flag(
 
     assert isinstance(backend, VllmBackend)
     assert backend.adapter_path is None
+
+
+def test_an_unknown_engine_is_rejected_at_the_boundary() -> None:
+    """argparse 的 choices 只管命令行那一路；库内调用会绕过它。
+
+    不在边界挡一次，任意字符串就会被带进证据的 `inference_engine` 字段。
+    """
+    import argparse
+
+    import veritool_rl.product_cli as cli
+
+    assert cli._engine_from(argparse.Namespace(engine="vllm")) == "vllm"
+    assert cli._engine_from(argparse.Namespace()) == "transformers"
+    with pytest.raises(ValueError, match="未知的推理引擎"):
+        cli._engine_from(argparse.Namespace(engine="sglang"))

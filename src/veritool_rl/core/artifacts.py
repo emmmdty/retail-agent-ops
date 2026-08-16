@@ -57,3 +57,27 @@ def write_yaml(path: Path, value: dict[str, Any]) -> None:
 def sha256_file(path: Path) -> str:
     """返回文件内容摘要。"""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _installed_distributions() -> Iterable[Any]:
+    """抽成函数是为了可注入——测试要能在不新建 venv 的前提下断言"换环境会变"。"""
+    from importlib.metadata import distributions
+
+    return distributions()
+
+
+def current_runtime_env_sha256() -> str:
+    """**实际装了什么包**的摘要。
+
+    与 `uv_lock_sha256` 的区别是这次扩展的全部理由：后者哈希的是仓库里的 `uv.lock`
+    **文件**，因此换一个 venv 跑评测它纹丝不动——不是会失配，是**发现不了**。
+    2026-08-16 的三次 vLLM 评测正是跑在另一个环境（Python 3.12 + vLLM）里的。
+
+    只取 (名字, 版本) 并排序去重：路径、安装顺序、解析器版本都不该影响摘要，
+    否则同一个环境两次算出的值会不同，这个字段就没法用来判定"是不是同一个环境"。
+    """
+    seen = {
+        (str(dist.metadata["Name"] or ""), str(dist.version))
+        for dist in _installed_distributions()
+    }
+    return hashlib.sha256(canonical_json(sorted(seen)).encode("utf-8")).hexdigest()

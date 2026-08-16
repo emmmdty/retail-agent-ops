@@ -16,7 +16,7 @@ import re
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import uvicorn
 from fastapi import FastAPI
@@ -30,7 +30,13 @@ from veritool_rl.core.agent.qwen import (
     TransformersBackend,
     verify_local_model_files,
 )
-from veritool_rl.core.artifacts import canonical_json, create_output_dir, sha256_file, write_json
+from veritool_rl.core.artifacts import (
+    canonical_json,
+    create_output_dir,
+    current_runtime_env_sha256,
+    sha256_file,
+    write_json,
+)
 from veritool_rl.core.paths import validate_project_relative_path
 from veritool_rl.retail_ops.build.dev_sft_export import build_dev_sft_rows, write_dev_sft_export
 from veritool_rl.retail_ops.build.formal_manifests import (
@@ -565,6 +571,21 @@ def _default_ood_backend(
     return _ood_backend_for_engine("transformers")(config, models_root)
 
 
+def _engine_from(args: argparse.Namespace) -> Literal["transformers", "vllm"]:
+    """读出 `--engine` 并收窄类型。
+
+    argparse 的 `choices` 只管命令行那一路；库内调用与旧 Namespace 走的是 `getattr`
+    默认值那一路，不在这里挡一次就会把任意字符串带进证据的 `inference_engine`。
+    """
+    value = getattr(args, "engine", "transformers")
+    if value == "vllm":
+        return "vllm"
+    if value == "transformers":
+        return "transformers"
+    msg = f"未知的推理引擎: {value!r}"
+    raise ValueError(msg)
+
+
 def _hardware_provider_for_engine(engine: str) -> HardwareProvider:
     """vLLM 把模型跑在子进程里，父进程的 torch CUDA 统计要么报错要么恒为 0。
 
@@ -625,7 +646,7 @@ def _run_ood_evaluate(
     这条路径**不是**封存 holdout：分布外集合公开、可反复读、可逐类别拆解。
     两者的治理级别不同，因此代码路径也不同——共用的只有环境、verifier 与模型 pin 校验。
     """
-    engine = getattr(args, "engine", "transformers")
+    engine = _engine_from(args)
     pipeline = config.get("pipeline")
     is_candidate = pipeline == "ood_candidate"
     _require_config_keys(
@@ -1028,7 +1049,7 @@ def _run_formal_dev_base(
         uv_lock_sha256=_current_uv_lock_sha256(),
     )
 
-    engine = getattr(args, "engine", "transformers")
+    engine = _engine_from(args)
     backend = (backend_factory or _generation_backend_for_engine(engine))(
         base_config, models_root
     )
@@ -1050,6 +1071,10 @@ def _run_formal_dev_base(
         attempt_id=attempt_id,
         public_report_path=public_report_path,
         hardware_provider=hardware_provider,
+        # 证据必须说得出它跑在哪个引擎、哪个环境：`uv_lock_sha256` 只哈希仓库里的
+        # `uv.lock` 文件，换一个 venv 跑它发现不了。
+        inference_engine=engine,
+        runtime_env_sha256=current_runtime_env_sha256(),
     )
 
 
