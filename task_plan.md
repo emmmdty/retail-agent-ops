@@ -6,8 +6,9 @@
 
 ## Current Phase
 
-**R5 公开交付与求职收口**（`docs/EXECUTION_PLAN.md` 已更新）。R4.5 架构补强 13 条
-已全部收口，基线 **907 tests passed**。本阶段不再产生新的模型改进方案。
+**R5 公开交付与求职收口**（`docs/EXECUTION_PLAN.md` 已标为已完成）。R4.5 架构补强 13 条
+已全部收口。起始基线 **907 tests passed**，收口基线 **944 passed**。
+本阶段不产生新的模型改进方案。
 
 ## Current Task：R5 收口封存
 
@@ -62,7 +63,7 @@
 
 ### 失败模式（实施时主动防御）
 
-1. **为了拿 GO 而挑 seed**：重建复验只跑一次、seed 事先写定为 1，结果无论正负都记录；
+1. **为了拿 GO 而挑 seed**：重建的 seed 事先写定（0 与 1）并提交进配置，两次结果无论正负都记录、都进文档，不跑第三个再挑好看的；
 2. **formatter 大 diff 掩盖语义改动**：格式化与逻辑修改分成两次提交，中间各跑一次全量测试；
 3. **文档漂移**：观测次数、测试数、`report_id` 这类数字只在唯一事实源出现，
    其余文档引用而不复述；新增治理测试锁定；
@@ -73,7 +74,7 @@
 ### 影响文件（预计）
 
 - T1：全仓 `.py`、`pyproject.toml`、`.github/workflows/ci.yml`；
-- T2：新增 `configs/retail_ops/evaluate/retail_ops_v1_r5_rebuild_candidate.yaml`、
+- T2：新增 `configs/retail_ops/evaluate/retail_ops_v1_r5_rebuild_seed{0,1}_candidate.yaml`、
   `docs/REBUILD_VERIFICATION.md`、`tests/test_retail_ops_r5_cli.py`；
 - T3：新增 `LICENSE`、`NOTICE.md`、`scripts/ci/audit_public_release.py`、对应测试；
 - T4：新增 `docs/FAULT_MATRIX.md`、`tests/` 补缺口；
@@ -107,14 +108,18 @@ GPU **是**（用户 2026-08-16 授权，仅 dev 轨道，不碰封存 holdout�
 
 - [x] 0. 上下文读取、基线确认（907 passed）、后台 shell 核查（属另一项目，与本仓库无关）
 - [x] 1. `task_plan.md` 重写为 R5
-- [ ] 2. T2 GPU：独立重建复验（训练已起跑）
-- [ ] 3. T1 代码整洁性
-- [ ] 4. T3 公开发布审计
-- [ ] 5. T4 故障注入矩阵
-- [ ] 6. T5 对外文档（中英）
-- [ ] 7. T6 求职材料
-- [ ] 8. T7 收口与提交
-- [ ] 9. T8 独立面试官审核
+- [x] 2. **T2 GPU 独立重建复验**：seed 0 与 seed 1 各重训 + dev 配对评测；
+      58/60 与 60/60（base 54/60）→ SPEC §6 第 6 条满足；
+      **同时发现同 seed 不可逐位复现**（LOG-20260816-05）
+- [x] 3. T1 代码整洁性：全仓 format（58 文件）+ lint 集扩展（45 处）+ format 进 CI
+- [x] 4. T3 公开发布审计：`LICENSE` / `NOTICE.md` / `audit_public_release.py` / 19 项测试
+- [x] 5. T4 故障注入矩阵：`FAULT_MATRIX.md` + 文档-测试绑定（已突变验证）；
+      修掉 teacher client 无超时的真缺陷（LOG-20260816-06）
+- [x] 6. T5 对外文档：README 重写 + `README.en.md`，关键数字由治理测试断言一致
+- [x] 7. T6 求职材料：`INTERVIEW_PREP.md` + `RESUME_EVIDENCE.md` bullet 定稿
+- [x] 8. T7 收口：`EXECUTION_PLAN` R5 标完成、`PROJECT_LOG` 两条、接管文档漂移收口、
+      最终门禁 **944 passed** 全绿、三次提交
+- [ ] 9. T8 独立面试官审核（进行中；未通过则回到对应任务修复）
 
 ## Task Rules
 

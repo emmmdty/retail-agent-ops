@@ -1307,3 +1307,44 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
   三次评测记下同一个摘要，读数也逐字复现（0.5833 / 0.2333 / 1.0000）。
 - **仍未做**：`SealedEvaluationReport` 未加这两个字段。封存轨道至今只在 transformers
   上跑过，且改它需要 v1.2 版本化——那是独立决策。
+
+## 2026-08-16 — R5 收口
+
+### 独立重建复验（SPEC §6 第 6 条）
+
+- 原 `sft-006` 用的是 `seed: 0`（从 `reports/.../r4/sft-006/config.yaml` 读到）。
+- SFT 的 CLI 入口是 `build --config <sft.yaml> --seed N --input_dir <私有数据根> --output_dir`，
+  **`--input_dir` 是必填**（`product_cli.py:1396`），私有数据根是
+  `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722`。首次起跑漏了它，硬失败退出。
+- `formal_dev_candidate` **冻结 `--seed 0`**（`product_cli.py:1118`），
+  评测侧的 seed 与训练侧的 seed 是两个不同的东西，不要混。
+- 排除混淆的三条核对：`src/veritool_rl/training/` 最后改动 `c466b64`（2026-08-09），
+  **早于** sft-006 的 8-14 训练；`train-export-004/sft.jsonl` SHA-256 `9ef21dcc…` 一致；
+  解析后 `config.yaml` 与原次逐行 diff **只差 `adapter_dir`/`output_dir` 两行**。
+- 结论：同 seed 产出的 adapter 权重逐位不同（`8a49251f…` vs `c93c6698…`）。
+  dev 读数 60/60 → 58/60，**两条失败都是 `refund_recovery` / `recovery_failure`**。
+
+### 公开发布审计
+
+- 第一版按**文件文本**扫描绝对路径与 holdout 真值键名，产生 14 条误报：
+  配置注释里的溯源、测试里作为坏输入的 `/data/TJK/...`、源码里的 `reference_trajectory`
+  字段名。**"提到"与"取值"是两件事**——改为扫 YAML/JSON 解析后的取值后归零。
+- 上游 BFCL 的 `*_result.json` 实际是 **JSON Lines**，`json.loads` 直接失败。
+  审计里不能"解析不了就跳过"，要换正确的解析方式，否则那些文件永远不被扫描。
+- 审计脚本与它的负测试**必然**包含凭据形态字面量，只能豁免这两个文件；
+  豁免清单本身被测试钉死为恰好两项。
+
+### teacher client 的超时缺口
+
+- `_classify_retryable` 把超时归类为可重试（`teacher_client.py:237` 附近），
+  但 `from_route` 构造 `OpenAI(...)` 时**没有传 `timeout` 也没有传 `max_retries`**。
+  openai SDK 的默认超时是 600 s。519 次请求的采集里一次挂起 = 10 分钟静默停摆。
+- SDK 层重试上限与采集层（`TeacherCollectionConfig`）重试上限**相乘**才是最坏请求数，
+  必须是两个分开且都有界的旋钮。
+
+### 文档漂移的结构性原因
+
+- `test_no_active_doc_restates_a_stale_observation_count` 的 `checked` 列表
+  **不含 `AGENTS.md` / `CLAUDE.md`**，所以"两次观测"从 R4 一路留到 R5 才被发现。
+  治理测试只覆盖它列出的文件——**新增活动文档时必须同时加进这类扫描列表**，
+  否则治理是有洞的。
