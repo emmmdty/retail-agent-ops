@@ -93,10 +93,10 @@ git diff --check
 **阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`；封存 holdout 观测次数的唯一事实源是
 `docs/HOLDOUT_LEDGER.md`。本节只做摘要，两者冲突时以它们为准。**
 
-- **R0–R5 全部已完成**（R5 于 2026-08-16 收口）。12 周计划走完，
+- **R0–R6 全部已完成**（R5 于 2026-08-16 收口，R6 泛化修复于 2026-08-17 收口）。12 周计划走完，
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
-- 当前基线：**1029 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(80)、
+- 当前基线：**1033 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(80)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
 ### 结论摘要（引用时必须带条件）
@@ -127,6 +127,17 @@ git diff --check
   主判据只有最终状态与政策 verifier。
 - BFCL 163/200 与 167/200 属 legacy 轨道的**项目自划固定单轮 AST 子集**，
   差值置信区间跨 0，不得声称稳定提升，不是官方全量或排行榜成绩。
+
+- **R6 泛化修复（LOG-20260817-01）**：诊断出「表面形式 → 动作」的捷径后，
+  用 LLM 措辞池做训练增强。**封存分片只观测一次**：零训练基座 0.7167、
+  旧候选 0.7333、**新候选 `sft-008` 1.0000**；**独立迁移检查**（作者手写的 OOD v1，
+  从未用于选择）`expression_ood` **0.00 → 1.00**、总分 0.5833 → 0.8667。
+  **代价必须一起说**：dev 新增 2 次政策违规、OOD v1 的 `scenario_ood` 0.75 → 0.60
+  （`partial_refund` 1.00 → 0.00）——模型更倾向执行，两处同一机制。
+  **本轮未消耗第五次封存 holdout 观测。**
+- **评测集的新纪律（ADR 0005）**：判断泛化的评测集必须①素材按哈希切分不由人挑、
+  ②训练与评测素材逐条互斥且代码断言、③留一个只观测一次的分片、
+  ④素材经语义回环校验。手写的 OOD v1 已退出选择流程，只作独立迁移检查。
 
 ### 硬约束提醒
 

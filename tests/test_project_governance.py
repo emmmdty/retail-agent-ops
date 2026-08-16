@@ -1307,3 +1307,53 @@ def test_the_numbers_guide_covers_every_suspiciously_perfect_number() -> None:
     assert "反过来" in guide
     for name in ("README.md", "docs/RESUME_EVIDENCE.md"):
         assert "READING_THE_NUMBERS" in _read(name), f"{name} 未指向读数指南"
+
+
+def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
+    """R6 的收益与代价来自**同一个改动**，只报一半是误导。
+
+    与 `test_the_go_is_never_quoted_without_the_ood_reading` 同一个形状：
+    这类「好消息旁边必须有坏消息」的约束靠人记是靠不住的。
+    """
+    for name in (
+        "README.md",
+        "README.en.md",
+        "docs/GENERALIZATION_FIX.md",
+        "docs/RESUME_EVIDENCE.md",
+        "docs/READING_THE_NUMBERS.md",
+        "docs/EXECUTION_PLAN.md",
+        "CLAUDE.md",
+    ):
+        text = _read(name)
+        # 提到封存分片满分或 expression 修复，就必须同时给出两项代价之一
+        mentions_gain = "1.0000" in text and ("0.8667" in text or "0.00 → 1.00" in text)
+        if not mentions_gain:
+            continue
+        assert "0.60" in text or "政策违规" in text or "policy violation" in text, (
+            f"{name}: 提到 R6 的收益却没给出代价"
+        )
+
+
+def test_the_sealed_partition_is_declared_observed_once() -> None:
+    """「只观测一次」是这条证据的全部分量所在，必须写在文档里。"""
+    fix = _read("docs/GENERALIZATION_FIX.md")
+    assert "只观测一次" in fix
+    assert "sft-007` 没有跑封存分片" in fix or "sft-007 没有跑封存分片" in fix
+    assert "运行内容在观测前就已固定" in fix
+
+
+def test_the_transfer_check_is_labelled_as_never_used_for_selection() -> None:
+    """独立迁移检查的价值来自「没被用来选过」，这一点必须显式声明。"""
+    for name in ("docs/GENERALIZATION_FIX.md", "docs/OOD_EVALUATION.md"):
+        text = _read(name)
+        assert "从未用于" in text or "不得用于任何候选选择" in text, name
+
+
+def test_r6_never_claims_a_release_decision() -> None:
+    """本轮没有消耗第五次封存 holdout 观测，任何文档都不得暗示它通过了发布门禁。"""
+    for name in ("README.md", "docs/GENERALIZATION_FIX.md", "docs/RESUME_EVIDENCE.md"):
+        text = _read(name)
+        for forbidden in ("sft-008 通过了发布门禁", "sft-008 拿到 GO", "第五次观测已完成"):
+            assert forbidden not in text, f"{name}: {forbidden}"
+    fix = _read("docs/GENERALIZATION_FIX.md")
+    assert "封存 120 条 holdout 本轮**没有观测**" in fix
