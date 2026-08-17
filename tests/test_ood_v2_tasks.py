@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
 from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 from veritool_rl.retail_ops.domain.ood_v2_tasks import (
+    OOD_V2_DATASET_VERSION,
     OOD_V2_SCENARIOS,
     OOD_V2_TASKS_PER_SCENARIO,
     build_ood_v2_tasks,
@@ -182,7 +184,15 @@ def test_the_state_space_matches_the_frozen_contract(partition: str) -> None:
     被它替换掉的旧测试叫 `test_the_business_contract_matches_the_frozen_one`，
     名字承诺了这件事，实现却只是抽一条样本看几个符号，正是它漏掉了这个缺陷。
     """
-    frozen = [record.task for record in build_formal_task_set(_FROZEN_DATASET, 0).dev]
+    # 下限取 **train ∪ dev ∪ holdout** 的全集，不是 dev 一份。
+    # 外部审阅第四轮指出：只拿 dev 当下限，一个退回到「只覆盖 dev 那 4 种状态」的
+    # 回归会通过一个名字写着「冻结契约」的测试。契约是全集，下限就该是全集。
+    task_set = build_formal_task_set(_FROZEN_DATASET, 0)
+    frozen = [
+        record.task
+        for split in (task_set.train, task_set.dev, task_set.holdout)
+        for record in split
+    ]
     ood = build_ood_v2_tasks(_index(partition))
 
     def order_counts(tasks: list[TaskSpec]) -> set[int]:
@@ -246,16 +256,41 @@ def test_user_requests_are_distinct_within_a_set(partition: str) -> None:
 
 
 def test_the_built_artifacts_match_the_generator() -> None:
-    """已落盘的两份任务集必须与当前代码重算的结果一致。"""
+    """已落盘的任务集必须与当前代码重算的结果**逐字节**一致。
+
+    早期版本只比 `manifest.task_ids`——而 `task_id` 是
+    `sha256(f"oodv2:{seed}:{scenario}:{index}")`，**只依赖位置**，
+    不依赖措辞池、不依赖请求文本、不依赖状态。证据：退役的窄状态空间版本与
+    现在的宽版本 `task_ids` **完全相同**。那条断言什么都没验证，
+    而且它还指向已退役的 `ood-v2/` 目录，加载一份陈旧 manifest 然后通过。
+    （2026-08-17 外部审阅第四轮抓到，与它上一轮抓到的是同一个失败模式。）
+
+    现在比的是 `tasks_file_sha256`——那个哈希覆盖每一条任务的全部内容。
+    """
+    import hashlib
+
+    from veritool_rl.core.artifacts import write_jsonl
     from veritool_rl.retail_ops.build.ood_manifests import load_ood_manifest
 
     for partition, name in (("ood_dev", "dev"), ("ood_sealed", "sealed")):
-        manifest_path = REPO_ROOT / f"reports/retail_ops/v1/ood-v2/{name}/tasks/manifest.json"
+        manifest_path = REPO_ROOT / f"reports/retail_ops/v1/ood-v2.1/{name}/tasks/manifest.json"
         if not manifest_path.is_file():
-            pytest.skip("OOD v2 产物是 ignored 运行产物，未生成时跳过")
+            pytest.skip("OOD v2.1 产物是 ignored 运行产物，未生成时跳过")
         manifest = load_ood_manifest(manifest_path)
         rebuilt = build_ood_v2_tasks(_index(partition))
+
         assert manifest.task_ids == [task.task_id for task in rebuilt]
+        assert manifest.dataset_version == OOD_V2_DATASET_VERSION
+
+        # 逐条内容哈希：把重算结果按同一套写入器落到临时文件再比
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tasks.jsonl"
+            write_jsonl(path, (task.model_dump(mode="json") for task in rebuilt))
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert digest == manifest.tasks_file_sha256, (
+            f"{name} 的落盘任务集与当前代码重算结果不一致——"
+            f"manifest 声称 {manifest.tasks_file_sha256[:16]}…，重算得到 {digest[:16]}…"
+        )
 
 
 def test_recovery_target_state_is_refunded() -> None:

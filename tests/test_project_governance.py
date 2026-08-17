@@ -1064,6 +1064,14 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         "已消耗四次观测",
         "已消耗**四次**观测",
         "四次观测均已消耗",
+        # **前瞻式**表述同样会过期，而旧词表只拦总数（外部审阅第四轮指出：
+        # 真正变陈旧的恰恰是"下一次会是第五次"这一类）。
+        "会是**第五次**观测",
+        "会是第五次观测",
+        "都是第五次",
+        "需要**第五次**封存 holdout 观测",
+        "本轮没有观测",
+        "本轮**没有**消耗",
         "两次 release 判定",
         "两次发布判定",
         # 注意：不拦"前三次判定都是 NO-GO"——那是**相对**指代（历史上的头三次），
@@ -1078,6 +1086,12 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         # 于是正文里"任何新的发布判定都需要第三次观测"一直没被发现。
         # 唯一事实源恰恰是最该被扫描的文件。
         "docs/HOLDOUT_LEDGER.md",
+        # 2026-08-17 补（外部审阅第四轮）：这四份都承载 R6 的结论口径，
+        # 却都不在扫描里，于是 GENERALIZATION_FIX 的 §7.5 与 §8 相隔十四行互相矛盾。
+        "docs/GENERALIZATION_FIX.md",
+        "docs/EXECUTION_PLAN.md",
+        "docs/READING_THE_NUMBERS.md",
+        "docs/OOD_SEALED_LEDGER.md",
         "SPEC.md",
         "docs/SYSTEM_CARD.md",
         "docs/MODEL_CARD.md",
@@ -1407,11 +1421,46 @@ def test_the_transfer_check_is_labelled_as_never_used_for_selection() -> None:
         assert "从未用于" in text or "不得用于任何候选选择" in text, name
 
 
-def test_r6_never_claims_a_release_decision() -> None:
-    """本轮没有消耗第五次封存 holdout 观测，任何文档都不得暗示它通过了发布门禁。"""
-    for name in ("README.md", "docs/GENERALIZATION_FIX.md", "docs/RESUME_EVIDENCE.md"):
-        text = _read(name)
-        for forbidden in ("sft-008 通过了发布门禁", "sft-008 拿到 GO", "第五次观测已完成"):
-            assert forbidden not in text, f"{name}: {forbidden}"
+def test_r6_states_the_current_release_boundary() -> None:
+    """R6 候选**已经**通过发布门禁，所以边界从「还没测」变成「测了但不等于可上线」。
+
+    这条测试上一版把一句**已经变假**的话钉住了：它断言
+    `"封存 120 条 holdout 本轮**没有观测**" in fix`，而第五次观测在那之前就跑完了。
+    结果是 `GENERALIZATION_FIX.md` 的 §7.5（拿到 GO）与 §8（本轮没有观测）
+    相隔十四行互相矛盾，**而测试在保护错的那一半**。
+    2026-08-17 外部审阅第四轮指出——「比名不副实更糟：它在强制一个谎言」。
+
+    现在断言的是**当前**边界，且刻意不用字符串黑名单：黑名单只会逼出绕过它的措辞
+    （审阅指出 §7.5 的「…上拿到 **GO**」正是绕过了旧黑名单）。
+    """
     fix = _read("docs/GENERALIZATION_FIX.md")
-    assert "封存 120 条 holdout 本轮**没有观测**" in fix
+
+    # 边界一：通过门禁 ≠ 可以上线，且必须给出「不是满分」这个事实
+    assert "通过了发布门禁 ≠ 可以上线" in fix
+    assert "117/120" in fix, "拿到 GO 的候选不是满分，这一条必须在场"
+
+    # 边界二：不会有第六次
+    assert "不会有第六次" in fix
+
+    # 反向：那句已经变假的话不得再出现在任何活动文档里
+    for name in (
+        "README.md",
+        "docs/GENERALIZATION_FIX.md",
+        "docs/EXECUTION_PLAN.md",
+        "docs/RESUME_EVIDENCE.md",
+    ):
+        text = _read(name)
+        assert "封存 120 条 holdout 本轮**没有观测**" not in text, name
+
+
+def test_the_per_style_sample_sizes_are_disclosed() -> None:
+    """「七种风格全部 1.00」的证据强度取决于最小的那一格，n 必须写在旁边。
+
+    2026-08-17 外部审阅第四轮：措辞由哈希分片决定，各风格条数从 2 到 21 不等，
+    `terse` 一条都没有——而「八种/七种全部满分」是头条表述。
+    """
+    ledger = _read("docs/OOD_SEALED_LEDGER.md")
+    assert "逐风格样本量" in ledger
+    assert "`terse` 一条都没有" in ledger
+    assert "n=2 基本没有信息量" in ledger
+    assert "逐风格不是" in ledger
