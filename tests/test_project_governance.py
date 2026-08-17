@@ -153,7 +153,9 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
     assert "不得把 dev 读数写成 release 判定" in agents
     # 封存 holdout 的消耗状态是不可逆资源，必须在接管文档里显式可见
     assert "封存 holdout 已消耗五次观测" in agents
-    assert "不再有「未观测」状态" in agents
+    # 观测次数不再是硬约束，但纪律必须同时在场——只写前半句会读成「随便测」。
+    assert "观测次数不再是硬约束" in agents
+    assert "结果永远不得反馈进开发" in agents
     # R4 的结论已被跨规模检验限缩，接管文档不得留下无条件的一般化表述
     assert "LoRA 容量须与模型规模匹配" in agents
     assert "提示词干预是规模依赖的" in agents
@@ -1439,8 +1441,10 @@ def test_r6_states_the_current_release_boundary() -> None:
     assert "通过了发布门禁 ≠ 可以上线" in fix
     assert "117/120" in fix, "拿到 GO 的候选不是满分，这一条必须在场"
 
-    # 边界二：不会有第六次
-    assert "不会有第六次" in fix
+    # 边界二：观测次数不再是硬约束，但纪律不变——两句都必须在场，
+    # 只说前半句会读成「随便测」，只说后半句会与台账的当前状态冲突。
+    assert "观测次数不再是硬约束" in fix
+    assert "永远不得反馈进开发" in fix
 
     # 反向：那句已经变假的话不得再出现在任何活动文档里
     for name in (
