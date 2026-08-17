@@ -17,10 +17,11 @@ GO_RELEASE = REPO_ROOT / "reports/retail_ops/v1/r45b/formal-release-004-v10/rele
 OOD_BASE = REPO_ROOT / "reports/retail_ops/v1/ood/base/ood-report.json"
 OOD_CAND = REPO_ROOT / "reports/retail_ops/v1/ood/merged/ood-report.json"
 SEALED = {
-    "零训练基座": REPO_ROOT / "reports/retail_ops/v1/r6/oodv2-sealed-base/ood-report.json",
-    "旧候选": REPO_ROOT / "reports/retail_ops/v1/r6/oodv2-sealed-sft006/ood-report.json",
-    "新候选": REPO_ROOT / "reports/retail_ops/v1/r6/oodv2-sealed-sft008/ood-report.json",
+    "零训练基座": REPO_ROOT / "reports/retail_ops/v1/r6/oodv21-sealed-base/ood-report.json",
+    "旧候选": REPO_ROOT / "reports/retail_ops/v1/r6/oodv21-sealed-sft006/ood-report.json",
+    "新候选": REPO_ROOT / "reports/retail_ops/v1/r6/oodv21-sealed-sft008/ood-report.json",
 }
+GATE5 = REPO_ROOT / "reports/retail_ops/v1/r6/formal-release-005-v11/release.json"
 TRANSFER = REPO_ROOT / "reports/retail_ops/v1/r6/oodv1-sft008/ood-report.json"
 
 
@@ -85,8 +86,14 @@ def _print_fix(cand: dict[str, Any]) -> int:
         f"  ->  新候选 {transfer['category_success']['expression_ood']:.2f}"
     )
     print()
+    if GATE5.is_file():
+        gate = json.loads(GATE5.read_text(encoding="utf-8"))
+        print()
+        print(f"它也通过了发布门禁（第五次、最后一次封存 holdout 观测）：{gate['decision']}")
+        print(f"  失败门禁 {gate['failed_gate_ids']}，两套口径都是 GO")
+    print()
     print("代价：模型变得更倾向执行，于是不该动手时也动手")
-    print("  dev 新增 2 次政策违规（refund_denied_window）")
+    print("  封存 holdout 上 117/120，且有 2 次政策违规（旧候选那次是 120/120、0 违规）")
     print(
         f"  做不到的请求一类 {cand['category_success']['scenario_ood']:.2f}"
         f" -> {transfer['category_success']['scenario_ood']:.2f}"
