@@ -37,7 +37,7 @@ invalid calls — rejected purely on a p95 latency ratio of 1.88 > 1.25.
 the previous version). The fourth observation **merged the LoRA back into the base weights**:
 same weights, same behaviour, identical tool-call counts, p95 ratio **1.13** — the project's
 first automatic-gate **`GO`**, which has since passed the independent-rebuild check
-(SPEC §6, gate 6).
+(SPEC §6, gate 6) — **the final candidate has been rebuilt too**, both candidates have.
 
 **3. It built an out-of-distribution set that knocked that GO down by half — then fixed it, and priced the fix.**
 The same candidate scores only **0.5833** out-of-template and **0/20** on the "say it
@@ -47,10 +47,12 @@ frozen holdout shares its 12 request templates with the training set
 
 The mechanism was then diagnosed (all 12 templates are formal "please verify…" imperatives, so
 the model learned **surface form → action**), and fixed with an LLM phrasing bank used for
-training augmentation: **0.7333 → 1.0000** on a **sealed partition observed exactly once**, and
+training augmentation: **1.0000 and 0.9833** on **two independently generated sealed
+partitions, each observed exactly once** (same weights; untrained base 0.7667 / 0.7333), and
 `expression_ood` **0.00 → 1.00** on an independently hand-written set **never used for
-selection**. **The cost is equally concrete**: the model became more action-prone — 2 new policy
-violations on dev, and "impossible request" handling fell 0.75 → 0.60. See
+selection**. **The cost is equally concrete**: the model became more action-prone — on the
+sealed 120, two runs of the same config produced **2 and 7 policy violations**, and
+"impossible request" handling fell 0.75 → 0.60. See
 [`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md).
 
 > Quoting that GO without the out-of-distribution reading is forbidden, and enforced by a test
@@ -133,10 +135,18 @@ direction `product_cli → retail_ops.* → core.*` is locked by a governance te
 | 3 (2026-08-15) | same, after code freeze | **1.0000** (bit-identical) | 0 | 0 | 2.0250 | **NO-GO** (latency) |
 | 4 (2026-08-15) | **same weights, merged into base** | **1.0000** | 0 | 0 | **1.1265** | **`GO` / candidate (merged)** |
 | 5 (2026-08-17) | **R6 `sft-008` (phrasing-augmented), merged** | 0.9750 (**117/120**) | 11 → **2** | 0 | **1.0203** | **`GO` / candidate (merged)** |
+| 6 (2026-08-17) | **same config, training seed changed** | 0.9417 (**113/120**) | 11 → **7** | 0 | 1.0902 | **`GO` / candidate (merged)** |
 
-Observation 5 is the current final candidate. **It is not a perfect score**: 117/120, and
-policy violations went back from 0 (`sft-006`) to **2** — that is what the R6 trade cost
-inside the template, see "generalisation fix" below.
+**Observations 5 and 6 are two training runs of the same SFT config, differing only in
+`--seed`.** They score 117/120 (2 policy violations) and 113/120 (**7**) on these same 120
+tasks — **a 3.5× spread in safety failures between two runs of one configuration**. Both are
+`GO`, but observation 6's `success_delta_ci_lower` is only **+0.0083** (observation 5: +0.0583),
+which is all but touching zero.
+
+**All 7 failures share one signature** (refunding an order past its refund deadline): 7 of the
+20 tasks in that class, with the other five classes at 20/20. **The gate compares against the
+base (11 → 7 passes), so a candidate with *more* violations can still pass — that is a property
+of the gate definition, stated here rather than hidden. Passing the gate ≠ shippable.**
 
 **The GO is attributable to deployment form, not to the model**: recomputing the unmerged
 candidate against the same base still FAILs at 1.9219. The latency cost was decomposed —
@@ -174,29 +184,50 @@ for training augmentation is **disjoint, item by item**, from the two evaluation
 (ADR 0005). Augmentation rewrites **only the user's first message** — tool calls and target
 state are untouched.
 
-**Sealed partition (observed exactly once, after the code was frozen):**
+**Sealed partitions — two independently generated phrasing banks, each observed exactly
+once, after the code was frozen.** One bank cannot separate "the model is robust" from "that
+batch of phrasings happened to be easy", which is why there are two:
 
-| Run | Overall | `eligible` | `recovery` | 3 denial classes | Policy violations |
-|---|---|---|---|---|---|
-| Untrained base | 0.7167 | 0.30 | 1.00 | 0.60 / 0.90 / 0.80 | 3 |
-| Old candidate `sft-006` | 0.7333 | **0.10** | **0.30** | 1.00 ×3 | 0 |
-| **New candidate `sft-008`** | **1.0000** | 1.00 | 1.00 | 1.00 ×3 | **0** |
+| Run | `bank-002` partition | **`bank-003` partition (fresh material)** |
+|---|---|---|
+| Untrained base | 0.7667 | 0.7333 |
+| Old candidate `sft-006` | **0.7167** (**below the base**) | not run |
+| **New candidate `sft-008`** | **1.0000** | **0.9833** |
+| `sft-008` rebuilt with a different seed | not run | **0.9833** |
+
+**The defensible phrasing is therefore "1.0000 and 0.9833 on two independently generated
+phrasing banks", not a single perfect score.** The `bank-003` partition covers all eight
+phrasing styles (smallest cell n=3); `bank-002`'s covered only seven and contained no `terse`
+item at all — it structurally could not test what the new one tests. An earlier version of
+this partition was **defective** (narrower state space than training/dev, i.e. easier, while
+four files claimed "the only independent variable is how the customer phrases it"); that was
+found by external review, and the retired readings are kept in
+[`docs/OOD_SEALED_LEDGER.md`](docs/OOD_SEALED_LEDGER.md).
 
 **Independent transfer check** (OOD v1: hand-written by the author, entirely different
 generation process, **never used for selection**): `expression_ood` **0.00 → 1.00** (all five
 sub-kinds perfect), overall 0.5833 → **0.8667**.
 
 **The bill**: the model became more action-prone, so it now sometimes acts where it should
-refuse — **2 new policy violations** on dev (`refund_denied_window`), and `scenario_ood` fell
-0.75 → **0.60** on OOD v1 (`partial_refund` 1.00 → **0.00**). Benefit and cost come from the
-same change and are not reported separately.
+refuse — on the sealed 120 tasks, **two runs of the same config produced 2 and 7 policy
+violations** respectively (the old candidate `sft-006` produced 0), all with the same
+signature (refunding past the deadline); and `scenario_ood` fell 0.75 → **0.60** on OOD v1
+(`partial_refund` 1.00 → **0.00**). Benefit and cost come from the same change.
+
+**This bill was initially understated.** R6 reported 2 violations — the better of two runs —
+and attributed them to the augmentation as a deterministic cost, on the grounds that two
+candidates produced identical failure signatures. **Those two candidates shared a training
+seed.** See [the independent rebuild](docs/REBUILD_VERIFICATION.md).
 
 Details in [`docs/GENERALIZATION_FIX.md`](docs/GENERALIZATION_FIX.md).
 
 ### Independent rebuild (SPEC §6, gate 6)
 
 Same config, same data, same base, same hyper-parameters — only `--seed` changed, retrained
-twice and re-evaluated against the same base evidence:
+and re-evaluated against the same base evidence. **Done twice**, and the second round covers
+the final candidate.
+
+**Round 1 (`sft-006`, dev only):**
 
 | Run | seed | dev task_success | Policy violations |
 |---|---|---|---|
@@ -205,11 +236,38 @@ twice and re-evaluated against the same base evidence:
 | **rebuild A** | **0 (same seed)** | 0.9667 (**58/60**) | **0** |
 | **rebuild B** | 1 | 1.0000 (**60/60**) | **0** |
 
-Gate 6 is satisfied — both rebuilds stay well above the untrained base and zero out policy
-violations. **But the same seed does not reproduce the same weights bit-for-bit** (training
-code unchanged since 2026-08-09, data hash identical, resolved config differing only in two
-output-path lines). So **"60/60" is not a constant** — it varies by ±2, and the variance lands
-entirely in `refund_recovery`, exactly the class that post-training uniquely contributes.
+**The same seed does not reproduce the same weights bit-for-bit** (training code unchanged,
+data hash identical, resolved config differing only in two output-path lines). So
+**"60/60" is not a constant** — it varies by ±2, and the variance lands entirely in
+`refund_recovery`. **Training is the one step in this project that is not bit-reproducible.**
+
+**Round 2 (`sft-008`, the final candidate — dev + out-of-distribution + sealed 120):** round 1
+was run on `sft-006`, so "your final candidate was never independently rebuilt" stayed open
+until this round.
+
+| Criterion (**written down before the runs**) | Result |
+|---|---|
+| **A** dev strictly above the untrained base | ✅ rebuild **60/60, 0 violations** (original 58/60, 2 violations) |
+| **B** on a **freshly generated** sealed phrasing partition, ≥ base +0.15 and within 0.10 of the original | ✅ **+0.2500** and **0.0000** (both 0.9833; base 0.7333) |
+| **C** the sealed-120 gate decision (**deliberately excluded from the reproduction verdict**) | `GO` in both schemas; but 113/120 and **7 policy violations** |
+
+**A and B both hold → reproduced.** But "reproduced" has to be precise: what reproduces is the
+**direction and magnitude**; what does *not* reproduce is **item-level behaviour** — weights
+differ bit-for-bit, the specific failing items differ, and safety failures differ by 3.5×
+between two runs of one configuration.
+
+**This round corrected one of R6's attributions.** R6 called those 2 policy violations "the
+cost of the augmentation", on the evidence that two candidates differing only in oversampling
+produced identical failure signatures — **but they shared a training seed**. With a different
+seed, dev shows 0 violations and the sealed 120 shows 7. The defensible claim is only that
+**the augmentation makes this failure class possible, with a count that varies a lot between
+runs**.
+
+**And dev ranked the two runs in the opposite order from the sealed set** (dev favours the
+rebuild, the sealed set favours the original) — `refund_denied_window` has only 10 dev items
+and cannot see a 7-in-20 effect. **That is after-the-fact evidence for "dev cannot substitute
+for the sealed set".**
+
 Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 
 ### Engineering and resources

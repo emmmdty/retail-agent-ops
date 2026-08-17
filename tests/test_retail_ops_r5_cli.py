@@ -93,12 +93,27 @@ def test_the_same_seed_rebuild_really_used_the_same_seed() -> None:
 
 
 def test_the_rebuild_doc_states_what_it_does_not_claim() -> None:
+    """复验文档必须有「明确不声称」一节，且它必须谈到样本量、seed 挑选与上线边界。
+
+    **这条测试此前钉着一句 `"没有在 holdout 上重建" in doc`。** 那句话在 2026-08-17
+    第二轮复验（最终候选 `sft-008`，做到了封存 holdout 上）之后成了假的，
+    而测试会强制它留在文档里——与 LOG-20260817-06 记的是同一个失败模式：
+    **断言「某句话必须在场」的测试，会在那句话过期时把它焊死。**
+
+    现在断言的是那一节必须覆盖的**三类边界**，每类给一组可接受的措辞，
+    而不是某一句特定的话。
+    """
     doc = (REPO_ROOT / "docs" / "REBUILD_VERIFICATION.md").read_text(encoding="utf-8")
     assert "明确不声称" in doc
-    assert "没有在 holdout 上重建" in doc
-    assert "不做 seed 挑选" in doc
-    # 复验通过不等于可以上线——这句必须在文档里，不能只在对话里说过
-    assert "不是**这个结果能泛化**" in doc
+
+    required_topics = {
+        "样本量": ("n 极小", "n = 3", "不足以给出", "不是置信区间"),
+        "seed 挑选": ("不做 seed 挑选",),
+        "上线边界": ("不等于", "≠ 可以上线", "不是**这个结果能泛化**"),
+        "不可重放": ("不能重放", "不随仓库分发"),
+    }
+    for topic, markers in required_topics.items():
+        assert any(marker in doc for marker in markers), f"「明确不声称」没有覆盖：{topic}"
 
 
 def test_spec_gate_six_is_no_longer_the_open_one() -> None:

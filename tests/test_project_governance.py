@@ -1123,10 +1123,26 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
             assert phrase not in text, f"{name}: 过期的观测次数表述 {phrase!r}"
 
     ledger = _read("docs/HOLDOUT_LEDGER.md")
-    assert "已消耗观测 | **5 次**" in ledger
-    assert "LOG-20260815-03" in ledger
-    assert "LOG-20260815-04" in ledger
-    assert "LOG-20260817-04" in ledger
+
+    # 台账自洽：表头声称的次数必须等于台账里观测小节的数量。
+    #
+    # 此前这里写的是 `assert "已消耗观测 | **5 次**" in ledger`——一个会在下一次观测后
+    # 过期、并且被测试**焊死**的字面值（LOG-20260817-06 的失败模式）。
+    # 现在断言的是「唯一事实源自己说的数」与「它自己记了几条」一致，
+    # 这条永远不会过期，而且拦得住真正要防的事：跑了观测但没记账。
+    declared = re.search(r"已消耗观测 \| \*\*(\d+) 次\*\*", ledger)
+    assert declared is not None, "台账表头没有声明观测次数"
+    sections = re.findall(r"^## 观测 (\d+) — ", ledger, re.MULTILINE)
+    assert int(declared.group(1)) == len(sections), (
+        f"台账声称 {declared.group(1)} 次观测，但只记了 {len(sections)} 条：{sections}"
+    )
+    assert sections == [str(index + 1) for index in range(len(sections))], (
+        f"观测编号不连续：{sections}"
+    )
+
+    # 历史条目不得改写：早期观测的 LOG 引用必须原样还在。
+    for token in ("LOG-20260815-03", "LOG-20260815-04", "LOG-20260817-04"):
+        assert token in ledger, token
 
 
 def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
@@ -1396,12 +1412,30 @@ def test_the_sealed_partition_has_a_ledger_not_just_a_sentence() -> None:
     """
     ledger = _read("docs/OOD_SEALED_LEDGER.md")
 
-    # 台账必须是唯一事实源，且记着次数、退役分片与变更规则
+    # 台账必须是唯一事实源，且记着退役分片与变更规则
     assert "唯一事实源" in ledger
-    assert "已消耗观测 | **1 次**" in ledger
     assert "退役记录" in ledger
     assert "历史条目不得改写" in ledger
-    # 每条观测必须带可核对的 run_id 与 commit
+
+    # **一份素材只观测一次**——断言的是这条规矩的语义，不是某个次数的字面值。
+    # 此前这里写的是 `assert "已消耗观测 | **1 次**" in ledger`：第二个分片被观测后
+    # 那句话就过期了，而测试会把它焊死（LOG-20260817-06 的同一个失败模式）。
+    sections = re.findall(r"^## 观测 \d+ — .*?（`(phrasing-bank-\d+)`", ledger, re.MULTILINE)
+    assert sections, "台账里找不到任何一条观测记录"
+    assert len(sections) == len(set(sections)), f"同一份措辞池被观测了多次：{sections}"
+
+    # 每条观测小节都必须带可核对的 run_id 与 code_commit——这条同样是结构性的，
+    # 不依赖具体是哪几个哈希。
+    bodies = re.split(r"^## ", ledger, flags=re.MULTILINE)[1:]
+    for body in bodies:
+        if not body.startswith("观测 "):
+            continue
+        assert "run_id" in body and "code_commit" in body, body.splitlines()[0]
+        assert len(re.findall(r"`[0-9a-f]{12,}…?`|`[0-9a-f]{7,}`", body)) >= 3, (
+            f"{body.splitlines()[0]}：观测记录里的可核对标识不足三个"
+        )
+
+    # 历史条目不得改写：第一条观测的标识必须原样还在。
     for token in ("b4717d43bcb2", "b8b646cb6ba8", "15c8875b1172", "7dfd4ef"):
         assert token in ledger, token
 
