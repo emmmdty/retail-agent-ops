@@ -125,3 +125,53 @@ def test_the_unmerged_control_exists_and_says_why() -> None:
     text = (EVAL / "retail_ops_ood_sft006_unmerged.yaml").read_text(encoding="utf-8")
     assert "去掉混淆" in text
     assert "ood_candidate" in text
+
+
+# --- 第五次封存 holdout 观测 --------------------------------------------------
+
+
+def test_the_fifth_observation_base_matches_the_fourth_field_by_field() -> None:
+    """base 侧必须重跑（commit 变了就不可配对），但除 attempt_id 外一个字段不能动。"""
+    fourth = _load(EVAL / "retail_ops_v1_r45b_holdout_base.yaml")
+    fifth = _load(EVAL / "retail_ops_v1_r6_holdout_base.yaml")
+    assert _diff(fourth, fifth) == {"attempt_id"}
+    assert fifth["attempt_id"] == "qwen3-4b-holdout-base-005"
+
+
+def test_the_fifth_observation_candidate_changes_only_the_model() -> None:
+    """候选侧相对第四次只换模型与血统；生成参数、receipt、bundle、seed 全部不动。"""
+    fourth = _load(EVAL / "retail_ops_v1_r45b_holdout_merged_candidate.yaml")
+    fifth = _load(EVAL / "retail_ops_v1_r6_holdout_merged_candidate.yaml")
+    assert _diff(fourth, fifth) == {"attempt_id", "merged_from", "model"}
+    assert fifth["generation"] == fourth["generation"]
+    assert fifth["holdout_receipt_path"] == fourth["holdout_receipt_path"]
+
+
+def test_the_fifth_candidate_lineage_is_recomputable() -> None:
+    """自己声明一个 merged_revision 等于没有证明——它必须能从基座与 adapter 复算。"""
+    from veritool_rl.core.agent.qwen import derive_merged_revision
+
+    config = _load(EVAL / "retail_ops_v1_r6_holdout_merged_candidate.yaml")
+    lineage = config["merged_from"]
+    assert (
+        derive_merged_revision(lineage["base_revision"], lineage["adapter_file_sha256"])
+        == lineage["merged_revision"]
+    )
+    assert config["model"]["revision"] == lineage["merged_revision"]
+
+
+def test_the_fifth_candidate_is_sft_008_not_sft_006() -> None:
+    """第五次观测的候选必须是 R6 的最终候选，不是此前拿过 GO 的那个。"""
+    fifth = _load(EVAL / "retail_ops_v1_r6_holdout_merged_candidate.yaml")
+    sft008 = _load(EVAL / "retail_ops_ood_r6b_candidate.yaml")
+    assert fifth["merged_from"]["adapter_file_sha256"] == sft008["adapter"]["file_sha256"]
+
+
+def test_the_fifth_observation_was_declared_before_it_ran() -> None:
+    """内容与判读必须写在跑之前，且三种结果都要预先写明——否则「按规则跑」无从验证。"""
+    plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
+    assert "第五次封存 holdout 观测：内容与判读**在跑之前写定**" in plan
+    assert "运行内容（三个，固定，不得增减）" in plan
+    for verdict in ("**GO**", "NO-GO / 延迟类", "NO-GO / 任务或安全类"):
+        assert verdict in plan, verdict
+    assert "不得再改部署形态去凑" in plan

@@ -1,0 +1,43 @@
+# 第五次封存 holdout 观测的**候选侧：`sft-008` 的合并部署形态**。
+#
+# `sft-008` 是 R6 的最终候选——它把「表面形式 → 动作」的捷径打断了
+# （封存 OOD 分片 1.0000、独立迁移检查 expression_ood 0.00 -> 1.00），
+# 但**从未经过发布门禁**。这次观测就是补上那一步。
+#
+# 为什么候选侧用合并形态：第三、四次已把延迟代价归因到部署实现开销而非模型能力
+# （单次调用 1.985×，调用次数只增 1.146×）。用未合并形态跑等于明知会输在一个
+# 已归因清楚的实现细节上。**这个选择在跑之前写定**（见 task_plan.md）。
+#
+# merged_revision 可从「基座 revision + adapter 逐文件哈希」复算，
+# 配对校验会重算它，对不上直接拒绝——自己声明一个标识等于没有证明。
+pipeline: formal_holdout_merged_candidate
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-merged-candidate-005
+merged_from:
+  base_repo: Qwen/Qwen3-4B
+  base_revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  merged_revision: "b0fce237cb2659a500858bb02081d768eced3b09a93dcb8b84e84d1a20a686d0"
+  adapter_file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "872e2ea8f1899ce0ec98f8f3c5629c9e0abfe40d366ed94c59d4c1e71d4e8401"
+    adapter_model.safetensors: "8222b7f52816275bfab8b9f6eed3a8fe4914ecf989a9318fcf1552d84fac6df1"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "a5c01f21246fb694e7a9176b98d07e7087f1568ded77da1d8ae8a45f121fc082"
+model:
+  repo: local/Qwen3-4B-sft-008-merged
+  revision: "b0fce237cb2659a500858bb02081d768eced3b09a93dcb8b84e84d1a20a686d0"
+  local_dir: Qwen3-4B-sft-008-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "70981220774eca22b208f16255cefa733b5151affe083a64d88deed994ab3edd"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
