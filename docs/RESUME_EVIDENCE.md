@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **1045** tests passed；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **1046** tests passed；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -76,7 +76,7 @@ LOG-20260814-01/02/03。
 | **`uv_lock_sha256` 锁定了运行环境** | 换一个完全不同的 venv（Python 3.12 + vLLM）跑评测，证据仍逐字段声称用的是冻结依赖，**无任何机制发现得了**——它哈希的是仓库里的一个文件，不是实际装了什么 | LOG-20260816-04 |
 | **训练结果可以逐位复现** | 同 seed、训练代码零改动、数据哈希一致，重跑产出的 adapter 权重**逐位不同**；dev 读数 60/60 → 58/60 | §1.7，2026-08-16 |
 
-### 1.5 封存 holdout：四次观测——三次 NO-GO，第四次拿到 GO
+### 1.5 封存 holdout：五次观测——前三次 NO-GO，第四、五次 GO
 
 > 观测次数、逐次读数与判定的**唯一事实源**是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
 > 本节是面向面试的摘录；两者出现分歧时以台账为准。
@@ -281,7 +281,7 @@ dev 上新增 **2 次政策违规**（`refund_denied_window`），OOD v1 的 `sc
 
 > **RetailAgentOps｜零售工具 Agent 的单卡适配与发布流水线**（个人项目，Python/PyTorch/FastAPI）
 > - 设计并实现 `build / evaluate / release / serve` 四接口流水线，覆盖轨迹数据执行式质检、
->   冻结任务配对评测、版本化发布门禁与单卡服务；**1045** 项测试、Ruff/mypy/依赖锁/公开发布
+>   冻结任务配对评测、版本化发布门禁与单卡服务；**1046** 项测试、Ruff/mypy/依赖锁/公开发布
 >   审计全绿，一条命令可在纯 CPU 环境复现全链路并断言内容哈希等于冻结期望值。
 > - 建立**不可伪造的证据链**：运行报告以全字段自哈希为 ID、逐产物 SHA-256 绑定、
 >   配对比较前强制校验模型/生成参数/数据/commit/依赖锁/prompt 哈希同条件，任一字段被改动

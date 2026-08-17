@@ -152,8 +152,8 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
     # 候选结论必须以 dev / holdout 口径分别陈述，不得被写成 release 判定
     assert "不得把 dev 读数写成 release 判定" in agents
     # 封存 holdout 的消耗状态是不可逆资源，必须在接管文档里显式可见
-    assert "封存 holdout 已消耗四次观测" in agents
-    assert "任何新判定都是**第五次**" in agents
+    assert "封存 holdout 已消耗五次观测" in agents
+    assert "不再有「未观测」状态" in agents
     # R4 的结论已被跨规模检验限缩，接管文档不得留下无条件的一般化表述
     assert "LoRA 容量须与模型规模匹配" in agents
     assert "提示词干预是规模依赖的" in agents
@@ -1060,6 +1060,10 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         # AGENTS.md 此前不在 checked 里，因此"两次"一路留到了 R5 才被发现。
         "已消耗**三次**观测",
         "已消耗三次观测",
+        # 2026-08-17 第五次观测之后，"四次"同样成为过期的总数表述。
+        "已消耗四次观测",
+        "已消耗**四次**观测",
+        "四次观测均已消耗",
         "两次 release 判定",
         "两次发布判定",
         # 注意：不拦"前三次判定都是 NO-GO"——那是**相对**指代（历史上的头三次），
@@ -1094,9 +1098,10 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
             assert phrase not in text, f"{name}: 过期的观测次数表述 {phrase!r}"
 
     ledger = _read("docs/HOLDOUT_LEDGER.md")
-    assert "已消耗观测 | **4 次**" in ledger
+    assert "已消耗观测 | **5 次**" in ledger
     assert "LOG-20260815-03" in ledger
     assert "LOG-20260815-04" in ledger
+    assert "LOG-20260817-04" in ledger
 
 
 def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
@@ -1306,6 +1311,14 @@ def test_the_numbers_guide_covers_every_suspiciously_perfect_number() -> None:
     for number in ("120/120", "1.0000", "99.2%", "87.9%", "0.5833", "0/20", "58/60", "0.00"):
         assert number in guide, f"读数指南没有解释 {number}"
 
+    # 2026-08-17 外部审阅：**被引用最多的那个高分反而漏了**。
+    # `expression_ood` 0.00 → 1.00 出现在 README、RESUME_EVIDENCE、CLAUDE、EXECUTION_PLAN
+    # 四处，而指南只解释了作为"低得可疑"的 0.00，没解释涨上去的 1.00。
+    # 它的样本量（20 条 = 五子类 × n=4）也必须一起写。
+    assert "0.00 涨到 1.00" in guide or "`expression_ood` 从 0.00 涨到 1.00" in guide
+    assert "n=4" in guide, "expression_ood 的子类样本量必须写明"
+    assert "117/120" in guide, "封存 holdout 上并非满分，这一条必须在场"
+
     # 每个高分都必须配一个「旁边那个不好看的数」
     for pairing in ("旁边那个不好看的数", "不能支持什么", "哪些数字低得可疑"):
         assert pairing in guide, pairing
@@ -1348,12 +1361,43 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         )
 
 
-def test_the_sealed_partition_is_declared_observed_once() -> None:
-    """「只观测一次」是这条证据的全部分量所在，必须写在文档里。"""
+def test_the_sealed_partition_has_a_ledger_not_just_a_sentence() -> None:
+    """「只观测一次」不能只是一句写在 Markdown 里的话。
+
+    2026-08-17 的外部审阅指出：120 条 holdout 有 `HOLDOUT_LEDGER.md`，
+    而承载头条结果的 OOD 封存分片只有一句 `assert "只观测一次" in fix`——
+    「承载结论的证据，其治理级别不能低于它所支撑的结论的分量」。
+    现在它有自己的台账，规矩与 holdout 台账同规格。
+    """
+    ledger = _read("docs/OOD_SEALED_LEDGER.md")
+
+    # 台账必须是唯一事实源，且记着次数、退役分片与变更规则
+    assert "唯一事实源" in ledger
+    assert "已消耗观测 | **1 次**" in ledger
+    assert "退役记录" in ledger
+    assert "历史条目不得改写" in ledger
+    # 每条观测必须带可核对的 run_id 与 commit
+    for token in ("b4717d43bcb2", "b8b646cb6ba8", "15c8875b1172", "7dfd4ef"):
+        assert token in ledger, token
+
     fix = _read("docs/GENERALIZATION_FIX.md")
+    assert "OOD_SEALED_LEDGER.md" in fix, "结论文档必须指向台账"
     assert "只观测一次" in fix
-    assert "sft-007` 没有跑封存分片" in fix or "sft-007 没有跑封存分片" in fix
-    assert "运行内容在观测前就已固定" in fix
+    assert "运行内容在观测前固定" in fix
+
+
+def test_the_ood_v2_state_space_claim_is_not_overstated() -> None:
+    """「唯一自变量是说法」这句话曾经是假的，改正过程必须留在文档里。
+
+    第一版的状态空间比训练/dev 更窄（1 个订单 vs 1–5、1 种余量 vs 7、3 种状态 vs 7），
+    而四个文件都写着「业务逻辑完全相同」。这条测试确保那次更正没有被悄悄抹掉——
+    项目对「被自己实验推翻的判断」一向留档，被外部审阅推翻的同样要留。
+    """
+    fix = _read("docs/GENERALIZATION_FIX.md")
+    assert "那句话是假的" in fix
+    assert "不是我自己发现的" in fix
+    ledger = _read("docs/OOD_SEALED_LEDGER.md")
+    assert "退役原因（不是因为读数不好看）" in ledger
 
 
 def test_the_transfer_check_is_labelled_as_never_used_for_selection() -> None:

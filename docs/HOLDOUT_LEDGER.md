@@ -16,9 +16,9 @@
 | 项 | 值 |
 |---|---|
 | 数据集 | `retail_ops_v1_r2_20260722`，120 条，六类各 20 |
-| 已消耗观测 | **4 次**（2026-08-11、-14、-15 ×2），共 **9 次运行** |
+| 已消耗观测 | **5 次**（2026-08-11、-14、-15 ×2、-17），共 **11 次运行** |
 | 剩余"未观测"状态 | **无**。每一次新判定都需用户单独决策 |
-| 最新判定 | **GO / candidate（merged 形态）** —— 前三次判定均为 NO-GO |
+| 最新判定 | **GO / candidate（merged 形态）**，两套口径都是 —— 前三次判定均为 NO-GO |
 | 阈值变更次数 | **0**，由三层保证：① `tests/test_release_gate_schema_v11.py::test_thresholds_come_from_the_untouched_release_yaml` 钉住 `release.yaml` 的字面值（`success_delta_min=0.05`、`p95_latency_ratio_max=1.25`）与键集合；② `invalid_call_count_max: Literal[0]`（`domain/bundle.py:79`）在类型层禁止非零；③ `release.yaml` 是 `bundle_sha256` 的**哈希分量**（`domain/bundle.py:124-133`），改一个阈值就会让磁盘上**每一份**已有 sealed 证据配对失败。（此前本行引用的 `test_release_config_does_not_touch_the_gates` 比较的是两份只含 `pipeline`/`bundle_dir`/`gate_schema_version` 的配置，**并不锁阈值**——2026-08-16 外部审阅指出，已更正。） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -233,6 +233,57 @@ schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立�
 > 且把 merge 对照描述为"那是 dev 不是 holdout"。两句在观测 3 与观测 4 之后就已过期，
 > 却因为本文件当时不在 `test_no_active_doc_restates_a_stale_observation_count` 的扫描
 > 列表里而留了下来——由 2026-08-16 的外部审阅指出。已改，并把本文件纳入扫描。**
+
+## 观测 5 — 2026-08-17（LOG-20260817-04）：**最好的候选终于经过了门禁**
+
+代码冻结于 `c73f595`。运行内容与三种判读**在跑之前**写进 `task_plan.md` 并提交（`705a066`）。
+
+**为什么跑**：项目的整个主张是 `build → evaluate → release → serve` 这条链路，
+而 R6 的最终候选 `sft-008`（修好了分布外鲁棒性）**从未经过发布门禁**——
+「你修好了泛化，那它过不过你自己的门禁？」这个问题当时的答案是「我没测」。
+
+| | base-005 | `sft-008` 合并候选 |
+|---|---|---|
+| `report_id` | `86bf709e7fe3e9c2…` | `6c22ff26593612e7…` |
+| 形态 | 基座 | **merged** |
+| `task_success` | 0.8583（103/120） | **0.9750（117/120）** |
+| `policy_violation_count` | 11 | **2** |
+| `invalid_call_count` | 5 | **0** |
+| `schema_valid_rate` | 0.9691 | **1.0000** |
+| `p95_latency_ms` | 3112.2 | 3175.3 |
+
+**base 侧的任务指标与第四次逐位相同**（0.8583 / 11 / 5 / 0.9691），跨 commit 确定性第四次成立；
+只有 p95 从 2936.9 变成 3112.2 ms（+6%，共享 GPU 噪声）。
+
+### 判定：**GO / candidate，两套口径都是**
+
+| 门禁 | v1.0 | v1.1 |
+|---|---|---|
+| `success_delta` | PASS +0.1167 | PASS +0.1167 |
+| `success_delta_ci_lower` | — | **PASS +0.0583** |
+| `policy_violation_delta` | PASS −9 | PASS −9 |
+| `invalid_call_count` | PASS 0 | PASS 0 |
+| `p95_latency_ratio` | **PASS 1.0203** | 已拆分 |
+| `per_call_latency_ratio` | — | **PASS 1.1135** |
+| `steps_to_success_ratio` | — | PASS 1.0205 |
+| `latency_per_success_ratio` | — | **PASS 1.1363** |
+| **判定** | **GO / candidate** | **GO / candidate** |
+
+### 五条必须与这个 GO 一起说的限制
+
+1. **候选在 120 条上不是满分**：117/120，且**有 2 次政策违规**（`sft-006` 那次是 120/120、0 违规）。
+   这正是 R6 措辞增强的代价在模板内的体现，与 dev 上观察到的完全一致
+   （见 `GENERALIZATION_FIX.md` §5）。**用分布外的鲁棒性换了模板内的一点安全性。**
+2. **`p95_latency_ratio` 1.0203 比第四次的 1.1265 更好，但分母也变大了**：
+   base 侧 p95 这次是 3112.2 ms（第四次 2936.9），+6%。门禁是比值，
+   **一个更慢的 base 等于给候选放宽了门禁**。这条波动此前一直被记为风险，这次是往有利方向偏。
+3. **v1.1 的第一次运行是我的操作失误**：漏了 `--baseline_trajectories` /
+   `--candidate_trajectories`，产出了一份 `NO-GO / success_delta_ci_lower`
+   的报告——读起来像模型没通过统计检验，实际是命令少了两个参数。
+   已按 TDD 修掉（LOG-20260817-03），并重跑得到上表。**那份错误报告已删除，不留在证据树里。**
+4. **不等于「可以上线」**：任务集仍是 2 工具 / 6 类 / 单一中文零售退款场景。
+5. **这是最后一次观测。** 封存 holdout 不再有「未观测」状态，此后任何判定都必须
+   基于一个新的封存集合，而不是再读这 120 条。
 
 ## 变更规则
 

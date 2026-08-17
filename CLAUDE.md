@@ -96,17 +96,18 @@ git diff --check
 - **R0–R6 全部已完成**（R5 于 2026-08-16 收口，R6 泛化修复于 2026-08-17 收口）。12 周计划走完，
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
-- 当前基线：**1045 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(86)、
+- 当前基线：**1046 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(86)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
 ### 结论摘要（引用时必须带条件）
 
-- **封存 holdout 已消耗四次观测**：前三次 `NO-GO`（第一次输在 `success_delta` −0.0333，
+- **封存 holdout 已消耗五次观测**：前三次 `NO-GO`（第一次输在 `success_delta` −0.0333，
   第二、三次候选做到 120/120、`success_delta` +0.1417 但输在延迟），
   **第四次 `GO` / candidate**——候选是同一份权重的**合并部署形态**，p95 比值 2.03 → 1.13。
   **GO 归因于部署形态，不是模型**：未合并形态对同一 base 重算仍 FAIL 1.9219。
   阈值一个字未改（`test_release_config_does_not_touch_the_gates`）。
-  **任何新判定都是第五次，需用户单独决策。**
+  **第五次（2026-08-17）用 R6 的最终候选 `sft-008` 拿到 GO，两套口径都是**（117/120、
+  政策违规 11→2、`p95_latency_ratio` 1.0203）。**不再有「未观测」状态。**
 - **引用那个 GO 必须同时给出分布外读数**（有测试强制）：同一候选在模板外 60 条上
   只有 0.5833、`expression_ood` 0/20 且**比零训练基座差**。**120/120 不是泛化**——
   冻结 holdout 与训练集共用同一批 12 句请求模板。这次 SFT 是**用表面形式鲁棒性
