@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import copy
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -109,11 +111,52 @@ def test_dev_and_sealed_share_no_phrasing() -> None:
 
 
 def test_evaluation_sets_never_use_the_training_partition() -> None:
-    """拿训练增强用过的措辞当评测集，测的是有没有背下训练数据。"""
-    train = {record.phrasing_id for record in _index("train_aug").get("refund_request", ())}
+    """拿训练增强用过的措辞当评测集，测的是有没有背下训练数据。
+
+    取 `train_aug` 的**全部意图**——早期版本只取了 `refund_request` 一个，
+    那样 `status_inquiry` 与 `refund_request_retry` 的重叠会漏检。
+    """
+    train_index = _index("train_aug")
+    train = {record.phrasing_id for bucket in train_index.values() for record in bucket}
+    assert len(train) > 100, "train_aug 分片过小，这条断言会变得没有意义"
     for partition in ("ood_dev", "ood_sealed"):
         used = {task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index(partition))}
+        assert used, partition
         assert used & train == set(), partition
+
+
+def test_no_evaluation_phrasing_appears_in_the_actual_training_file() -> None:
+    """最强的一条：直接比对**真实训练文件**，而不是比对分片。
+
+    分片互斥是「构造上应该互斥」，这条是「实际写进 sft.jsonl 的那些句子里，
+    确实没有一句是评测集用的」。两者的区别在于：前者信任导出流水线没写错，
+    后者不信任任何东西，直接读产物。
+    """
+    sft_path = (
+        REPO_ROOT
+        / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
+        / "train-export/train-export-007/sft.jsonl"
+    )
+    if not sft_path.is_file():
+        pytest.skip("训练集是 ignored 私有产物，未同步到本机时跳过")
+
+    trained_requests: set[str] = set()
+    for line in sft_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        user = next(m for m in row["messages"] if m["role"] == "user")
+        # 去掉订单号，只留说法本身——订单号本来就每条不同
+        trained_requests.add(re.sub(r"O-[A-Z0-9]+", "<OID>", user["content"]))
+
+    assert len(trained_requests) > 100, "训练集里的说法太少，这条断言会变得没有意义"
+
+    for partition in ("ood_dev", "ood_sealed"):
+        for task in build_ood_v2_tasks(_index(partition)):
+            normalized = re.sub(r"O-[A-Z0-9]+", "<OID>", task.user_request)
+            assert normalized not in trained_requests, (
+                f"{partition} 的这句话在真实训练文件里出现过：{normalized}"
+            )
 
 
 @pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])

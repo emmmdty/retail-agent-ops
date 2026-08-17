@@ -66,6 +66,24 @@ tool 观测与 `target_state` 一个字不动。sft 行数 400 → 1600，
 **oracle 可解性已验证**：gold 调用序列在环境里跑一遍，两个分片各 60/60 到达
 `target_state` 且零政策违规。这一条不过，整份评测测的就是真值写错了。
 
+### 3.1 分离是**经验证实的**，不只是构造上应该如此
+
+「分片互斥」有两个强度：一是「导出流水线**应该**保证互斥」，二是「实际写进
+`sft.jsonl` 的那些句子里，**确实**没有一句是评测集用的」。后者不信任任何中间环节，
+直接读产物比对。实测：
+
+| | 措辞条数 | 其中确实出现在真实训练文件里的 |
+|---|---|---|
+| `train_aug` | 147 | **142** |
+| `ood_sealed` | 61 | **0** |
+
+（`train_aug` 有 5 条没被取到，是因为每条任务只从池子里取 3 条，属正常。）
+
+这条由 `tests/test_ood_v2_tasks.py::test_no_evaluation_phrasing_appears_in_the_actual_training_file`
+锁定——它读 `train-export-007/sft.jsonl`，把订单号归一化后逐句比对。
+**早期版本的互斥测试只取了 `train_aug` 里一个意图**（`refund_request`），
+另外两个意图的重叠会漏检；已改为取全部意图，并补上这条直接读训练文件的更强断言。
+
 ## 4. 结果（`ood_dev`，用于迭代）
 
 | 运行 | 总计 | `lookup` | `eligible` | `recovery` | 三个拒绝类 | `premature_final_response` |
