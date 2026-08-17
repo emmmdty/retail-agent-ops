@@ -1221,7 +1221,14 @@ def test_the_documented_test_count_matches_reality() -> None:
 
     for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
         text = _read(name)
-        documented = re.findall(r"\*\*(\d+)\*\*? tests passed|\*\*(\d+) tests passed\*\*", text)
+        # 三种写法都要覆盖：`**N tests passed**`、`**N** tests passed`、以及
+        # **中文的 `**N** 项测试`**——最后这种此前没被覆盖，于是定稿简历 bullet 里的
+        # 「936 项测试」一直停在一个旧值上，而那是最会被雇主读到的一句话
+        # （2026-08-17 外部审阅指出）。
+        documented = re.findall(
+            r"\*\*(\d+)\*\*? tests passed|\*\*(\d+) tests passed\*\*|\*\*(\d+)\*\* 项测试",
+            text,
+        )
         flat = [int(value) for pair in documented for value in pair if value]
         assert flat, f"{name}: 找不到「N tests passed」形式的工程基线数字"
         for value in flat:
@@ -1325,12 +1332,19 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         "CLAUDE.md",
     ):
         text = _read(name)
-        # 提到封存分片满分或 expression 修复，就必须同时给出两项代价之一
-        mentions_gain = "1.0000" in text and ("0.8667" in text or "0.00 → 1.00" in text)
-        if not mentions_gain:
+        # **极性必须是「提到收益 -> 断言代价在场」。**
+        # 2026-08-17 的外部审阅指出，第一版把两者用 and 连起来当触发条件：
+        #   mentions_gain = "1.0000" in text and ("0.8667" in text or "0.00 → 1.00" in text)
+        # 于是一份只写 `1.0000` 而删掉代价的文档，`mentions_gain` 为 False、
+        # 直接被 continue 跳过——**守卫只在它要防的东西已经不存在时才触发**。
+        # 参照同文件里 R4.5 那条（`if "GO" not in text: continue`）的正确形状重写。
+        gain_markers = ("1.0000", "0.00 → 1.00", "0.8667")
+        if not any(marker in text for marker in gain_markers):
             continue
-        assert "0.60" in text or "政策违规" in text or "policy violation" in text, (
-            f"{name}: 提到 R6 的收益却没给出代价"
+        cost_markers = ("0.60", "政策违规", "policy violation", "partial_refund")
+        assert any(marker in text for marker in cost_markers), (
+            f"{name}: 提到了 R6 的收益（{[m for m in gain_markers if m in text]}）"
+            f"却没有给出任何一项代价"
         )
 
 

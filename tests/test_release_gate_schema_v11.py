@@ -65,13 +65,14 @@ def _gates(
     candidate: dict[str, Any],
     *,
     paired_outcomes: list[tuple[bool, bool]] | None = None,
+    schema_version: str = "1.1",
 ) -> dict[str, Any]:
     results = build_release_gates(
         base,
         candidate,
         evidence_complete=True,
         policy=_policy(),
-        schema_version="1.1",
+        schema_version=schema_version,
         paired_outcomes=paired_outcomes,
     )
     return {gate.gate_id: gate for gate in results}
@@ -361,3 +362,56 @@ def test_v10_decisions_recorded_on_disk_are_not_rewritten() -> None:
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert payload["decision"] == "NO-GO"
         assert payload["failed_gate_ids"] == expected
+
+
+def test_v11_without_paired_evidence_is_an_operator_error_at_the_cli_layer() -> None:
+    """v1.1 少传逐任务证据时，**CLI 必须硬失败**，不能产出一份 NO-GO 报告。
+
+    2026-08-17 的第五次封存 holdout 观测踩到了这个：`release` 命令漏了
+    `--baseline_trajectories` / `--candidate_trajectories`，产出的报告是
+    `NO-GO`、失败门禁 `success_delta_ci_lower`、观测值 `insufficient_paired_evidence`。
+    那份报告**看起来像模型没通过统计检验**，实际是命令少了两个参数。
+
+    分层是有意的：库层 `_paired_ci_gate` 保持 fail-closed（见上一条测试），
+    因为它要支持「拿一份只有聚合量的公开报告复算门禁」；
+    而 CLI 知道操作者明确配了 v1.1，缺证据就是配置错误。
+    """
+    from argparse import Namespace
+
+    from veritool_rl.product_cli import _paired_outcomes
+
+    empty = Namespace(baseline_trajectories=None, candidate_trajectories=None)
+
+    # v1.0 不需要配对证据，None 是完全正常的
+    assert _paired_outcomes(empty, "1.0") is None
+
+    # v1.1 需要，缺了就是配置错误
+    with pytest.raises(ValueError, match=r"1\.1 需要逐任务配对证据"):
+        _paired_outcomes(empty, "1.1")
+
+
+def test_only_one_side_of_the_paired_evidence_is_still_an_error() -> None:
+    """既有保护不得因为新增分支而失效。"""
+    from argparse import Namespace
+    from pathlib import Path as _Path
+
+    from veritool_rl.product_cli import _paired_outcomes
+
+    for one_sided in (
+        Namespace(baseline_trajectories=_Path("a.jsonl"), candidate_trajectories=None),
+        Namespace(baseline_trajectories=None, candidate_trajectories=_Path("b.jsonl")),
+    ):
+        with pytest.raises(ValueError, match="必须成对提供"):
+            _paired_outcomes(one_sided, "1.1")
+
+
+def test_v10_still_does_not_need_paired_evidence() -> None:
+    """v1.0 的门禁集合里没有 CI 那一项，缺配对证据是完全正常的。"""
+    gates = _gates(
+        _metrics(task_success=0.5, latency=1000.0, tool_calls=1.0),
+        _metrics(task_success=0.6, latency=1000.0, tool_calls=1.0),
+        schema_version="1.0",
+        paired_outcomes=None,
+    )
+    assert "success_delta_ci_lower" not in gates
+    assert gates["success_delta"].passed is True

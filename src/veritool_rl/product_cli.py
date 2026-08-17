@@ -502,7 +502,7 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
             candidate,
             bundle.release,
             gate_schema_version=gate_schema_version,
-            paired_outcomes=_paired_outcomes(args),
+            paired_outcomes=_paired_outcomes(args, gate_schema_version),
         ),
         args.output_dir,
     )
@@ -515,15 +515,31 @@ def _gate_schema_version(config: dict[str, Any]) -> GateSchemaVersion:
     return cast(GateSchemaVersion, value)
 
 
-def _paired_outcomes(args: argparse.Namespace) -> list[tuple[bool, bool]] | None:
+def _paired_outcomes(
+    args: argparse.Namespace, gate_schema_version: GateSchemaVersion = "1.0"
+) -> list[tuple[bool, bool]] | None:
     """从两份私有 `trajectories.jsonl` 读逐任务配对结局。
 
     两个路径必须成对提供：只给一侧是配置错误，不是"降级到无配对证据"——后者会把
     一次误用悄悄变成一个 FAIL 的门禁，看起来像模型问题。
+
+    **两侧都不给 + v1.1 同样是配置错误**，理由完全相同。库层的
+    `_paired_ci_gate` 保持 fail-closed（缺证据不是通过的理由），
+    但那是给"拿一份只有聚合量的公开报告复算门禁"用的；这里是命令行，
+    操作者明确配了 v1.1，就必须给出它需要的证据。
+    2026-08-17 的第五次封存 holdout 观测正是漏了这两个参数，产出了一份
+    `NO-GO / success_delta_ci_lower` 的报告——读起来像模型没通过统计检验，
+    实际是命令少了两个参数（LOG-20260817-03）。
     """
     baseline_path = getattr(args, "baseline_trajectories", None)
     candidate_path = getattr(args, "candidate_trajectories", None)
     if baseline_path is None and candidate_path is None:
+        if gate_schema_version == "1.1":
+            raise ValueError(
+                "gate_schema_version 1.1 需要逐任务配对证据来计算 success_delta_ci_lower，"
+                "请补上 --baseline_trajectories 与 --candidate_trajectories。"
+                "缺证据是配置问题，不能产出一份看起来像模型失败的 NO-GO。"
+            )
         return None
     if baseline_path is None or candidate_path is None:
         raise ValueError("--baseline_trajectories 与 --candidate_trajectories 必须成对提供")

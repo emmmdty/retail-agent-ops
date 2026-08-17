@@ -359,6 +359,13 @@ def _paired_ci_gate(
     candidate_success: float,
 ) -> tuple[float | str, bool]:
     if paired_outcomes is None:
+        # 缺证据不是通过的理由——fail-closed。这是**库层**的语义，故意不抛错：
+        # 纯函数在缺一个可选输入时崩掉，会让「拿到一份只有聚合量的公开报告
+        # 想复算门禁」这件事做不成。
+        #
+        # 操作失误（配了 v1.1 却没给逐任务证据）由 **CLI 层**在产出报告之前拒绝，
+        # 见 `product_cli._paired_outcomes`。两层分工是 2026-08-17 第五次封存
+        # holdout 观测踩坑之后定的（LOG-20260817-03）。
         return "insufficient_paired_evidence", False
     total = len(paired_outcomes)
     if total == 0:

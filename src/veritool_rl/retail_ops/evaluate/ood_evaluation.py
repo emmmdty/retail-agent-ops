@@ -57,7 +57,13 @@ class OodEvaluationConfig(StrictModel):
     合并候选三种形态——正是 R4.5 之后需要横向比较的那三档。
     """
 
-    dataset_version: Literal["retail_ops_ood_v1_20260815"] = "retail_ops_ood_v1_20260815"
+    #: **2026-08-17 修正**：这个字段此前被写死成 v1 的字面量，于是 OOD v2 的报告
+    #: 也声称自己属于 `retail_ops_ood_v1_20260815`——两个不同数据集的读数
+    #: （v1 的 0.8667 与 v2 的 1.0000）在同一张表里挂着同一个数据集版本号，
+    #: 恰好违反项目自己的配对前提。外部审阅指出后改为两个版本并存的判别式。
+    dataset_version: Literal["retail_ops_ood_v1_20260815", "retail_ops_ood_v2_20260817"] = (
+        "retail_ops_ood_v1_20260815"
+    )
     seed: Literal[0] = 0
     model: ModelArtifact
     adapter: AdapterArtifact | None = None

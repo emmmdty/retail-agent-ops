@@ -49,8 +49,8 @@ from veritool_rl.retail_ops.build.phrasing_bank import (
     PhrasingRecord,
 )
 
-OOD_V2_DATASET_VERSION = "retail_ops_ood_v2_20260816"
-OOD_V2_GENERATOR_ID = "ood_phrasing_bank_v2"
+OOD_V2_DATASET_VERSION = "retail_ops_ood_v2_20260817"
+OOD_V2_GENERATOR_ID = "ood_phrasing_bank_v2_full_state_space"
 
 #: 每个场景的任务数。六场景 × 10 = 60，与 dev 同量级。
 #: n=10 的逐场景 CI 宽度约 ±30pp——**足以看方向，不足以排序**，
@@ -67,13 +67,32 @@ OOD_V2_SCENARIOS: tuple[TaskScenario, ...] = (
     TaskScenario.REFUND_RECOVERY,
 )
 
-#: 与 `formal_tasks` 保持一致的取值域。
+#: 取值域**与 `formal_tasks` 逐值相同**。
+#:
+#: 2026-08-17 的外部审阅发现第一版把状态空间收窄了：每条状态只有 1 个订单
+#: （冻结集合是 1–5）、期限余量只有 ±6 一种（冻结集合有 7 种，含 ±1 这种边界）、
+#: 订单状态只有 3 种（冻结集合有 7 种）。也就是说 OOD v2 在三个维度上都**更容易**，
+#: 而四个文件都写着「唯一自变量是顾客怎么说」——**那句话是假的**。
+#:
+#: 这一版把三个维度全部对齐。「唯一自变量是说法」这句话现在才成立，
+#: 由 `tests/test_ood_v2_tasks.py::test_the_state_space_matches_the_frozen_contract`
+#: 逐维度断言——它直接构造冻结任务集来比对，而不是比对一份写死的清单。
 _REASONS = ("damaged", "wrong_item", "not_as_described", "changed_mind")
-_LOOKUP_STATUSES = ("shipped", "delivered", "processing")
+_LOOKUP_STATUSES = (
+    "pending",
+    "processing",
+    "shipped",
+    "delivered",
+    "cancelled",
+    "returned",
+    "refunded",
+)
+_MARGINS = (1, 2, 3, 5, 7, 10, 14)
 _CURRENT_DAY = 20
 
-#: 退款期限相对 `_CURRENT_DAY` 的余量／欠量。与冻结契约同一个形状。
-_MARGIN = 6
+#: 干扰订单数量的取值域，与冻结契约的 `context_variant` 相同（0–4）。
+#: 干扰订单存在的意义：没有它，「退错订单」这一整类失败模式在结构上测不出来。
+_DISTRACTOR_COUNTS = (0, 1, 2, 3, 4)
 
 
 def _digest(value: str) -> str:
@@ -85,7 +104,7 @@ def _identity(scenario: TaskScenario, index: int, seed: int) -> tuple[str, str]:
     return f"C-{token[:12].upper()}", f"O-{token[12:24].upper()}"
 
 
-def _order(customer_id: str, overrides: dict[str, Any]) -> dict[str, Any]:
+def _order(customer_id: str, overrides: dict[str, Any], margin: int = 6) -> dict[str, Any]:
     """默认订单 + 场景覆盖。
 
     `overrides` 用位置参数而不是 `**kwargs`：`refund_denied_ownership` 要覆盖的正是
@@ -94,7 +113,7 @@ def _order(customer_id: str, overrides: dict[str, Any]) -> dict[str, Any]:
     order: dict[str, Any] = {
         "customer_id": customer_id,
         "status": "delivered",
-        "refund_deadline": _CURRENT_DAY + _MARGIN,
+        "refund_deadline": _CURRENT_DAY + margin,
         "refund_status": "none",
     }
     order.update(overrides)
@@ -102,7 +121,14 @@ def _order(customer_id: str, overrides: dict[str, Any]) -> dict[str, Any]:
 
 
 def _contract(
-    scenario: TaskScenario, customer_id: str, order_id: str, reason: str, index: int
+    scenario: TaskScenario,
+    customer_id: str,
+    order_id: str,
+    reason: str,
+    index: int,
+    margin: int,
+    status: str,
+    distractor_count: int,
 ) -> tuple[dict[str, Any], dict[str, Any], list[ToolCall], ExpectedDecision, dict[str, int], int]:
     """返回 (initial_state, target_state, expected_calls, decision, transient, max_steps)。
 
@@ -115,7 +141,7 @@ def _contract(
     overrides: dict[str, Any]
     transient: dict[str, int]
     if scenario is TaskScenario.LOOKUP_STATUS:
-        overrides = {"status": _LOOKUP_STATUSES[index % len(_LOOKUP_STATUSES)]}
+        overrides = {"status": status}
         decision, calls, transient, steps = ExpectedDecision.INFORM, [get_order], {}, 4
     elif scenario is TaskScenario.REFUND_ELIGIBLE:
         overrides = {}
@@ -126,7 +152,7 @@ def _contract(
         calls = [get_order, refund, copy.deepcopy(refund)]
         transient, steps = {"refund_order": 1}, 5
     elif scenario is TaskScenario.REFUND_DENIED_WINDOW:
-        overrides = {"refund_deadline": _CURRENT_DAY - _MARGIN}
+        overrides = {"refund_deadline": _CURRENT_DAY - margin}
         decision, calls, transient, steps = ExpectedDecision.DENY, [get_order], {}, 4
     elif scenario is TaskScenario.REFUND_DENIED_OWNERSHIP:
         overrides = {"customer_id": f"{customer_id}-OTHER"}
@@ -137,10 +163,21 @@ def _contract(
     else:  # pragma: no cover - 由 OOD_V2_SCENARIOS 穷举保证
         raise ValueError(f"不支持的场景: {scenario}")
 
+    orders: dict[str, Any] = {order_id: _order(customer_id, overrides, margin)}
+    # 干扰订单：与冻结契约同构（同一个 owner 之外的订单、固定 shipped、期限充裕）。
+    # 它们让「退错订单」成为一种**可能发生**的失败，没有它这一类测不出来。
+    for distractor_index in range(distractor_count):
+        token = _digest(f"distractor:{order_id}:{distractor_index}")
+        orders[f"O-{token[:12].upper()}"] = {
+            "customer_id": f"C-{token[12:24].upper()}",
+            "status": "shipped",
+            "refund_deadline": _CURRENT_DAY + 30,
+            "refund_status": "none",
+        }
     initial: dict[str, Any] = {
         "customer_id": customer_id,
         "current_day": _CURRENT_DAY,
-        "orders": {order_id: _order(customer_id, overrides)},
+        "orders": orders,
     }
     target = copy.deepcopy(initial)
     if decision is ExpectedDecision.ALLOW:
@@ -173,7 +210,14 @@ def build_ood_v2_tasks(
             reason = _REASONS[index_in_scenario % len(_REASONS)]
             phrasing = pool[(offset + index_in_scenario) % len(pool)]
             initial, target, calls, decision, transient, steps = _contract(
-                scenario, customer_id, order_id, reason, index_in_scenario
+                scenario,
+                customer_id,
+                order_id,
+                reason,
+                index_in_scenario,
+                margin=_MARGINS[index_in_scenario % len(_MARGINS)],
+                status=_LOOKUP_STATUSES[index_in_scenario % len(_LOOKUP_STATUSES)],
+                distractor_count=_DISTRACTOR_COUNTS[index_in_scenario % len(_DISTRACTOR_COUNTS)],
             )
             tasks.append(
                 TaskSpec(

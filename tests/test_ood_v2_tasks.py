@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from veritool_rl.core.trajectory import ExpectedDecision, TaskScenario
+from veritool_rl.core.trajectory import ExpectedDecision, TaskScenario, TaskSpec
 from veritool_rl.retail_ops.build.phrasing_bank import (
     LEAKAGE_PATTERN,
     intent_index,
@@ -22,6 +22,7 @@ from veritool_rl.retail_ops.build.phrasing_bank import (
 )
 from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 from veritool_rl.retail_ops.domain.ood_v2_tasks import (
     OOD_V2_SCENARIOS,
     OOD_V2_TASKS_PER_SCENARIO,
@@ -30,10 +31,11 @@ from veritool_rl.retail_ops.domain.ood_v2_tasks import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_DIR = REPO_ROOT / "domains" / "retail_ops" / "v1"
+_FROZEN_DATASET = "retail_ops_v1_r2_20260722"
 BANK_PATH = (
     REPO_ROOT
     / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
-    / "phrasing/phrasing-bank-001/phrasings.jsonl"
+    / "phrasing/phrasing-bank-002/phrasings.jsonl"
 )
 
 
@@ -168,22 +170,72 @@ def test_only_real_tools_appear_in_gold_calls(partition: str) -> None:
 
 
 @pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_the_business_contract_matches_the_frozen_one(partition: str) -> None:
-    """逐场景核对状态形状，确认 v2 改的是说法而不是任务。"""
-    tasks = {
-        str(task.metadata["ood_category"]): task for task in build_ood_v2_tasks(_index(partition))
-    }
-    order = lambda task: next(iter(task.initial_state["orders"].values()))  # noqa: E731
+def test_the_state_space_matches_the_frozen_contract(partition: str) -> None:
+    """状态空间必须与冻结契约同宽——否则「唯一自变量是说法」这句话是假的。
 
-    assert order(tasks[TaskScenario.REFUND_ELIGIBLE.value])["refund_status"] == "none"
-    assert order(tasks[TaskScenario.REFUND_DENIED_DUPLICATE.value])["refund_status"] == "refunded"
-    assert (
-        order(tasks[TaskScenario.REFUND_DENIED_WINDOW.value])["refund_deadline"]
-        < tasks[TaskScenario.REFUND_DENIED_WINDOW.value].initial_state["current_day"]
+    2026-08-17 的外部审阅发现第一版在三个维度上都更窄：每条状态只有 1 个订单
+    （冻结集合 1–5）、期限余量只有 ±6（冻结集合 7 种）、订单状态只有 3 种
+    （冻结集合 7 种）。也就是说那个评测集**更容易**，而四个文件都写着
+    「业务逻辑完全相同，唯一自变量是顾客怎么说」。
+
+    这条测试**直接构造冻结任务集来比对**，不比对写死的清单——
+    被它替换掉的旧测试叫 `test_the_business_contract_matches_the_frozen_one`，
+    名字承诺了这件事，实现却只是抽一条样本看几个符号，正是它漏掉了这个缺陷。
+    """
+    frozen = [record.task for record in build_formal_task_set(_FROZEN_DATASET, 0).dev]
+    ood = build_ood_v2_tasks(_index(partition))
+
+    def order_counts(tasks: list[TaskSpec]) -> set[int]:
+        return {len(task.initial_state["orders"]) for task in tasks}
+
+    def margins(tasks: list[TaskSpec]) -> set[int]:
+        return {
+            order["refund_deadline"] - task.initial_state["current_day"]
+            for task in tasks
+            for order in task.initial_state["orders"].values()
+        }
+
+    def statuses(tasks: list[TaskSpec]) -> set[str]:
+        return {
+            str(order.get("status"))
+            for task in tasks
+            for order in task.initial_state["orders"].values()
+        }
+
+    # 干扰订单：冻结集合里 1–5 都出现，OOD 必须同样覆盖，
+    # 否则「退错订单」这一整类失败模式在结构上测不出来。
+    assert order_counts(ood) >= order_counts(frozen), (
+        f"{partition} 的订单数覆盖窄于冻结集合：{order_counts(ood)} vs {order_counts(frozen)}"
     )
-    ownership = tasks[TaskScenario.REFUND_DENIED_OWNERSHIP.value]
-    assert order(ownership)["customer_id"] != ownership.initial_state["customer_id"]
-    assert tasks[TaskScenario.REFUND_RECOVERY.value].transient_failures == {"refund_order": 1}
+    assert margins(ood) >= margins(frozen), (
+        f"{partition} 的期限余量覆盖窄于冻结集合：{sorted(margins(ood))}"
+    )
+    assert statuses(ood) >= statuses(frozen), (
+        f"{partition} 的订单状态覆盖窄于冻结集合：{sorted(statuses(ood))}"
+    )
+
+
+@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
+def test_the_per_scenario_semantics_match_the_frozen_contract(partition: str) -> None:
+    """逐场景核对语义形状，确认 v2 改的是说法而不是任务。"""
+    tasks: dict[str, list[TaskSpec]] = {}
+    for task in build_ood_v2_tasks(_index(partition)):
+        tasks.setdefault(str(task.metadata["ood_category"]), []).append(task)
+
+    def primary(task: TaskSpec) -> dict:
+        return task.initial_state["orders"][task.metadata["order_id"]]
+
+    for task in tasks[TaskScenario.REFUND_ELIGIBLE.value]:
+        assert primary(task)["refund_status"] == "none"
+        assert primary(task)["customer_id"] == task.initial_state["customer_id"]
+    for task in tasks[TaskScenario.REFUND_DENIED_DUPLICATE.value]:
+        assert primary(task)["refund_status"] == "refunded"
+    for task in tasks[TaskScenario.REFUND_DENIED_WINDOW.value]:
+        assert primary(task)["refund_deadline"] < task.initial_state["current_day"]
+    for task in tasks[TaskScenario.REFUND_DENIED_OWNERSHIP.value]:
+        assert primary(task)["customer_id"] != task.initial_state["customer_id"]
+    for task in tasks[TaskScenario.REFUND_RECOVERY.value]:
+        assert task.transient_failures == {"refund_order": 1}
 
 
 @pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
@@ -217,3 +269,25 @@ def test_recovery_target_state_is_refunded() -> None:
     target_order = next(iter(recovery.target_state["orders"].values()))
     assert target_order["refund_status"] == "refunded"
     assert copy.deepcopy(recovery.initial_state) != recovery.target_state
+
+
+def test_the_dataset_version_distinguishes_v1_from_v2() -> None:
+    """两个数据集必须有不同的版本号，否则它们的读数在同一张表里不可区分。
+
+    此前 `dataset_version` 被写死成 v1 的字面量，于是 OOD v2 的报告也声称属于
+    `retail_ops_ood_v1_20260815`——v1 的 0.8667 与 v2 的 1.0000 挂着同一个版本号，
+    恰好违反项目自己的配对前提。2026-08-17 外部审阅指出后修正。
+    """
+    from veritool_rl.retail_ops.build.ood_manifests import OodTaskManifest, load_ood_manifest
+    from veritool_rl.retail_ops.domain.ood_tasks import OOD_DATASET_VERSION
+    from veritool_rl.retail_ops.domain.ood_v2_tasks import OOD_V2_DATASET_VERSION
+
+    assert OOD_DATASET_VERSION != OOD_V2_DATASET_VERSION
+    allowed = OodTaskManifest.model_fields["dataset_version"].annotation
+    assert OOD_DATASET_VERSION in str(allowed)
+    assert OOD_V2_DATASET_VERSION in str(allowed)
+
+    manifest_path = REPO_ROOT / "reports/retail_ops/v1/ood-v2.1/sealed/tasks/manifest.json"
+    if not manifest_path.is_file():
+        pytest.skip("OOD v2.1 产物是 ignored 运行产物，未生成时跳过")
+    assert load_ood_manifest(manifest_path).dataset_version == OOD_V2_DATASET_VERSION

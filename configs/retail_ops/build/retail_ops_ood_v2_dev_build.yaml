@@ -11,9 +11,18 @@
 
 # 措辞池的 train_aug 分片用于训练增强，与本文件用的分片**逐条互斥**，
 # 由 `assert_partitions_are_disjoint` 在加载时断言。
+#
+# **2026-08-17 修订（v2.1）**：外部审阅发现第一版把状态空间收窄了——每条状态只有
+# 1 个订单（冻结集合 1–5）、期限余量只有 ±6（冻结集合 7 种）、订单状态只有 3 种
+# （冻结集合 7 种）。也就是说它在三个维度上都**更容易**，而文档写着「唯一自变量是说法」。
+# 这一版把三个维度全部对齐，那句话现在才成立。
+#
+# 同时**换了一份全新的措辞池**（bank-002）而不是复读 bank-001 的封存分片——
+# 需要第二次测量时生成新素材，而不是再看一遍封存的那份。这才是「只观测一次」
+# 该有的做法；bank-001 的封存分片就此退役，其唯一一次读数照实保留在文档里。
 pipeline: ood_build
 bundle_dir: domains/retail_ops/v1
 phrasing:
-  bank_relpath: phrasing/phrasing-bank-001/phrasings.jsonl
-  bank_sha256: "a34b25ac6f2b1ae24f9c2a135e3ac11a47ac8b401f676cc50b8c2bce1720b4f6"
+  bank_relpath: phrasing/phrasing-bank-002/phrasings.jsonl
+  bank_sha256: "dffaa6f9818299930e9d896631a18f492e889eec5f05c3e1869c652591deb060"
   partition: ood_dev
