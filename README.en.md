@@ -30,7 +30,7 @@ from 5/10 to 9/10 and leaves "retry after a tool failure" **completely unchanged
 post-training moves the retry class from 5/10 to 10/10.
 
 **2. It can reject its own candidate — and did, three times.**
-Of four observations on the sealed holdout, the first three were `NO-GO`. The hardest one:
+The first three observations on the sealed holdout were all `NO-GO`. The hardest one:
 the candidate scored **120/120**, **+14.2pp** task success, zero policy violations and zero
 invalid calls — rejected purely on a p95 latency ratio of 1.88 > 1.25.
 **No threshold was changed** (a test asserts the gate config is field-for-field identical to
@@ -114,7 +114,7 @@ direction `product_cli → retail_ops.* → core.*` is locked by a governance te
 |---|---|
 | **Run evidence cannot be forged** | A run report's ID is the self-hash of **all** its own fields — change one byte and loading fails (tamper-tested). There is also **per-artifact SHA-256 binding**, but it can only be exercised where the private artifacts are present, and those are not distributed with the repo; on 2026-08-16 it was exercised end-to-end once locally against the two R5 rebuilds (including a one-byte edit to `trajectories.jsonl` being rejected) |
 | **Paired comparison has preconditions** | Model revision, generation params, dataset version, code commit, `uv.lock` and system-prompt hash must be **identical field-for-field**, otherwise loading fails |
-| **The holdout is sealed** | Two-stage authorisation gate plus five-dimensional fingerprint isolation; observed only four times across the whole project, each logged in [`HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) |
+| **The holdout is sealed** | Two-stage authorisation gate plus five-dimensional fingerprint isolation; every observation logged in [`HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) |
 | **Gates may be versioned, never edited in place** | `GATE_IDS` v1.0 is frozen byte-for-byte (editing it would make every existing release report unloadable); new semantics ship as v1.1 and both coexist |
 
 ---
@@ -132,6 +132,11 @@ direction `product_cli → retail_ops.* → core.*` is locked by a governance te
 | 2 (2026-08-14) | R4 `sft-006`, all-linear | **1.0000 (120/120)** | 11 → **0** | 5 → **0** | **1.8774** | **NO-GO** (latency) |
 | 3 (2026-08-15) | same, after code freeze | **1.0000** (bit-identical) | 0 | 0 | 2.0250 | **NO-GO** (latency) |
 | 4 (2026-08-15) | **same weights, merged into base** | **1.0000** | 0 | 0 | **1.1265** | **`GO` / candidate (merged)** |
+| 5 (2026-08-17) | **R6 `sft-008` (phrasing-augmented), merged** | 0.9750 (**117/120**) | 11 → **2** | 0 | **1.0203** | **`GO` / candidate (merged)** |
+
+Observation 5 is the current final candidate. **It is not a perfect score**: 117/120, and
+policy violations went back from 0 (`sft-006`) to **2** — that is what the R6 trade cost
+inside the template, see "generalisation fix" below.
 
 **The GO is attributable to deployment form, not to the model**: recomputing the unmerged
 candidate against the same base still FAILs at 1.9219. The latency cost was decomposed —
@@ -215,7 +220,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **1066 tests passed**; Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit all green |
+| Engineering baseline | **1069 tests passed**; Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit all green |
 
 ---
 

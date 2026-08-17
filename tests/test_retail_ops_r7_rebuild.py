@@ -205,6 +205,54 @@ def test_the_new_bank_is_never_used_for_training() -> None:
             )
 
 
+EVAL = REPO_ROOT / "configs" / "retail_ops" / "evaluate"
+
+
+def _diff(left: dict[str, Any], right: dict[str, Any]) -> set[str]:
+    return {key for key in set(left) | set(right) if left.get(key) != right.get(key)}
+
+
+def test_the_rebuild_dev_config_differs_only_by_attempt_and_adapter() -> None:
+    """重建候选的 dev 配置相对原候选只允许差 `attempt_id` 与 `adapter`。
+
+    多改一样东西，"换了 seed，读数从 A 变成 B"这个结论就退化成"换了一堆东西，读数变了"。
+    """
+    original = _load(EVAL / "retail_ops_v1_r6b_candidate.yaml")
+    rebuild = _load(EVAL / "retail_ops_v1_r7_rebuild_seed1_candidate.yaml")
+    assert _diff(original, rebuild) == {"attempt_id", "adapter"}
+    assert rebuild["adapter"]["run_dir"].endswith("sft-008-rebuild-seed1")
+    # 权重必须真的不同——否则"重建"是假的（复制了同一份 adapter 也会让这个配置成立）。
+    assert (
+        rebuild["adapter"]["file_sha256"]["adapter_model.safetensors"]
+        != original["adapter"]["file_sha256"]["adapter_model.safetensors"]
+    )
+
+
+def test_the_rebuild_ood_config_differs_only_by_the_adapter() -> None:
+    original = _load(EVAL / "retail_ops_ood_r6b_candidate.yaml")
+    rebuild = _load(EVAL / "retail_ops_ood_r7_rebuild_candidate.yaml")
+    assert _diff(original, rebuild) == {"adapter"}
+
+
+def test_the_rebuild_uses_the_untouched_training_config() -> None:
+    """SFT 配置必须一个字未改——`--seed` 是命令行参数，不是配置里的东西。
+
+    这一条挡的是"重建"其实偷偷调了超参：那样得到的正向结果既不是复现，也不是重建。
+    """
+    import subprocess
+
+    relative = "configs/retail_ops/build/retail_ops_v1_r6b_no_oversample_sft.yaml"
+    committed = subprocess.run(
+        ["git", "log", "--oneline", "--", relative],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    # 该配置自 R6 定稿以来只应有它诞生的那一次提交。多出一次就得解释是什么改了。
+    assert len(committed) == 1, f"训练配置被改过 {len(committed)} 次：{committed}"
+
+
 def test_the_built_v22_artifacts_match_the_generator() -> None:
     """已落盘的 v2.2 任务集必须与当前代码重算的结果逐字节一致。
 

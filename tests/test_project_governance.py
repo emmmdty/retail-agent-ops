@@ -1076,6 +1076,15 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
         "本轮**没有**消耗",
         "两次 release 判定",
         "两次发布判定",
+        # 2026-08-17 补：`README.en.md` 一直在 `checked` 里，但整张词表全是中文，
+        # 于是英文侧的 "Of four observations" / "observed only four times" 一路没被拦。
+        # **扫描列表覆盖了文件，词表却没覆盖它的语言**——这是治理有洞的另一种形状。
+        "Of four observations",
+        "Of five observations",
+        "observed only four times",
+        "observed only five times",
+        "the last observation of the sealed holdout",
+        "no further observations",
         # 注意：不拦"前三次判定都是 NO-GO"——那是**相对**指代（历史上的头三次），
         # 与"两次观测均已消耗"这种**总数**表述不同，且它是正确的。
     )
