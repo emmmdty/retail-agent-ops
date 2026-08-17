@@ -17,7 +17,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast, get_args
 
 from pydantic import Field
 
@@ -47,6 +47,20 @@ from veritool_rl.retail_ops.domain.ood_v2_tasks import (
     build_ood_v2_tasks,
 )
 
+#: 允许出现在 OOD manifest 里的数据集版本号。
+#:
+#: 每一个都对应**一份具体素材**：v1 是作者手写的模板库，v2 是 `phrasing-bank-002`，
+#: v2.2 是 `phrasing-bank-003`。素材与版本号是**双射**，由
+#: `test_retail_ops_r7_rebuild.py::test_each_phrasing_bank_maps_to_exactly_one_dataset_version`
+#: 在已提交的构建配置上断言。
+OodDatasetVersion = Literal[
+    "retail_ops_ood_v1_20260815",
+    "retail_ops_ood_v2_20260817",
+    "retail_ops_ood_v2_2_20260817",
+]
+
+_ALLOWED_DATASET_VERSIONS: tuple[str, ...] = get_args(OodDatasetVersion)
+
 
 class OodTaskManifest(StrictModel):
     """分布外任务集的公开 manifest。
@@ -61,9 +75,11 @@ class OodTaskManifest(StrictModel):
     #: 也声称自己属于 `retail_ops_ood_v1_20260815`——两个不同数据集的读数
     #: （v1 的 0.8667 与 v2 的 1.0000）在同一张表里挂着同一个数据集版本号，
     #: 恰好违反项目自己的配对前提。外部审阅指出后改为两个版本并存的判别式。
-    dataset_version: Literal["retail_ops_ood_v1_20260815", "retail_ops_ood_v2_20260817"] = (
-        "retail_ops_ood_v1_20260815"
-    )
+    #:
+    #: **2026-08-17 再补**：v2 内部同样需要判别式。两份措辞池构建出的任务集，
+    #: `task_ids` 逐条相同（那个哈希只依赖位置），若再共用一个 `dataset_version`，
+    #: 两批内容完全不同的评测集在 manifest 层就无法区分。
+    dataset_version: OodDatasetVersion = "retail_ops_ood_v1_20260815"
     generator_id: str = Field(min_length=1)
     bundle_id: str = Field(min_length=1)
     bundle_version: str = Field(min_length=1)
@@ -110,11 +126,17 @@ def _validate(
 
 @dataclass(frozen=True, slots=True)
 class OodPhrasingSpec:
-    """v2 用哪一份措辞池的哪个分片。`bank_sha256` 是声明值，加载时比对。"""
+    """v2 用哪一份措辞池的哪个分片。`bank_sha256` 是声明值，加载时比对。
+
+    `dataset_version` 必须由调用方给出而不是取模块常量：一份素材一个版本号是
+    **双射**，而模块常量会让第二份素材静默挂上第一份的版本号。取值受
+    `OodTaskManifest.dataset_version` 的 `Literal` 约束，写错会在构造 manifest 时报错。
+    """
 
     index: Mapping[str, Sequence[PhrasingRecord]]
     partition: str
     bank_sha256: str
+    dataset_version: str
 
 
 def build_ood_task_set(
@@ -136,9 +158,17 @@ def build_ood_task_set(
     if phrasing is None:
         tasks = build_ood_tasks(seed)
         generator_id = OOD_GENERATOR_ID
+        dataset_version = OOD_DATASET_VERSION
     else:
         tasks = build_ood_v2_tasks(phrasing.index, seed)
         generator_id = OOD_V2_GENERATOR_ID
+        dataset_version = phrasing.dataset_version
+        if dataset_version not in _ALLOWED_DATASET_VERSIONS:
+            raise ValueError(
+                f"未知的 OOD dataset_version: {dataset_version!r}——"
+                f"新素材要先在 OodDatasetVersion 里登记，"
+                f"随手写一个版本号就能造出'新数据集'的话，它就不是受控字段了"
+            )
     _validate(
         tasks,
         bundle,
@@ -151,9 +181,7 @@ def build_ood_task_set(
     tasks_path = output_dir / "tasks.jsonl"
     write_jsonl(tasks_path, (task.model_dump(mode="json") for task in tasks))
     manifest = OodTaskManifest(
-        dataset_version=(
-            "retail_ops_ood_v1_20260815" if phrasing is None else "retail_ops_ood_v2_20260817"
-        ),
+        dataset_version=cast(OodDatasetVersion, dataset_version),
         generator_id=generator_id,
         bundle_id=bundle.bundle.bundle_id,
         bundle_version=bundle.bundle.bundle_version,

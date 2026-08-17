@@ -24,6 +24,7 @@
 pipeline: ood_build
 bundle_dir: domains/retail_ops/v1
 phrasing:
+  dataset_version: retail_ops_ood_v2_20260817
   bank_relpath: phrasing/phrasing-bank-002/phrasings.jsonl
   bank_sha256: "dffaa6f9818299930e9d896631a18f492e889eec5f05c3e1869c652591deb060"
   partition: ood_sealed

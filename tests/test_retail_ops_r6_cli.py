@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -167,11 +168,46 @@ def test_the_fifth_candidate_is_sft_008_not_sft_006() -> None:
     assert fifth["merged_from"]["adapter_file_sha256"] == sft008["adapter"]["file_sha256"]
 
 
-def test_the_fifth_observation_was_declared_before_it_ran() -> None:
-    """内容与判读必须写在跑之前，且三种结果都要预先写明——否则「按规则跑」无从验证。"""
+def test_the_pending_observation_is_declared_before_it_runs() -> None:
+    """内容与判读必须写在跑之前，且至少三种结果都要预先写明。
+
+    **这条测试此前钉的是第五次观测的那几句原话**（"运行内容（三个，固定，不得增减）"
+    等等）。第六次观测把那一节换掉之后，它就在强制一段已经不再描述当前边界的措辞——
+    与 2026-08-17 外部审阅抓到的 `test_r6_never_claims_a_release_decision` 是同一个
+    失败模式：**断言"某句话必须在场"的测试，会在那句话过期时把它焊死。**
+
+    现在断言的是**结构**而不是措辞：判读规则一节里至少有三个加粗的结果分支。
+    结果叫什么名字（GO / NO-GO / 复现 / 不复现 / …）由当轮决定，
+    "必须预先写明三种以上结果"这条纪律不由当轮决定。
+    """
     plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
-    assert "第五次封存 holdout 观测：内容与判读**在跑之前写定**" in plan
-    assert "运行内容（三个，固定，不得增减）" in plan
-    for verdict in ("**GO**", "NO-GO / 延迟类", "NO-GO / 任务或安全类"):
-        assert verdict in plan, verdict
-    assert "不得再改部署形态去凑" in plan
+
+    section = re.search(r"^###+ 判读规则.*?$(.*?)^###? ", plan, re.MULTILINE | re.DOTALL)
+    assert section is not None, "task_plan.md 缺少「判读规则」一节"
+
+    branches = re.findall(r"^\d+\.\s+\*\*(.+?)\*\*", section.group(1), re.MULTILINE)
+    assert len(branches) >= 3, f"判读规则只写了 {len(branches)} 种结果：{branches}"
+
+
+def test_every_declared_run_directory_is_actually_declared() -> None:
+    """跑了但没在计划里声明过的运行 = 事后挑选的机会。
+
+    同样只断言语义：**本轮已落盘的运行目录，每一个都必须出现在 `task_plan.md` 里。**
+    目录还没生成时这条自动为真（没有运行 = 没有未声明的运行），
+    生成之后它才开始有约束力——这正是"先写定再跑"在文件系统上的可验证投影。
+    """
+    plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
+    # 本轮的命名空间。写成显式 glob 而不是"整个 r6 目录"，是因为 r6 下还住着
+    # 上一轮的产物（`train-export-006` 等），把它们一起拉进来只会逼人放宽断言。
+    globs = (
+        "reports/retail_ops/v1/ood-v2.2/sealed/*",
+        "reports/retail_ops/v1/r6/*rebuild-seed1*",
+        "reports/retail_ops/v1/r6/holdout-*-006",
+        "reports/retail_ops/v1/r6/formal-release-006*",
+    )
+    for pattern in globs:
+        for path in sorted(REPO_ROOT.glob(pattern)):
+            if not path.is_dir():
+                continue
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            assert relative in plan, f"{relative} 已落盘，但 task_plan.md 里没有声明过它"

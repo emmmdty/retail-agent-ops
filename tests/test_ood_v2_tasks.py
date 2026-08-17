@@ -34,28 +34,36 @@ from veritool_rl.retail_ops.domain.ood_v2_tasks import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_DIR = REPO_ROOT / "domains" / "retail_ops" / "v1"
 _FROZEN_DATASET = "retail_ops_v1_r2_20260722"
-BANK_PATH = (
-    REPO_ROOT
-    / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
-    / "phrasing/phrasing-bank-002/phrasings.jsonl"
-)
+_PRIVATE_ROOT = REPO_ROOT / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
+
+#: 两份措辞池。bank-003 是 R7 为「换一份素材还成不成」新生成的一批，
+#: 与 bank-002 零重叠。**它必须受与 bank-002 完全相同的一套契约约束**——
+#: 新素材如果适用一套更松的检查，"同一个评测集换素材"这句话就是假的。
+BANKS = {
+    "bank-002": _PRIVATE_ROOT / "phrasing/phrasing-bank-002/phrasings.jsonl",
+    "bank-003": _PRIVATE_ROOT / "phrasing/phrasing-bank-003/phrasings.jsonl",
+}
+
+#: 全部**评测**分片。bank-003 只用它的 `ood_sealed`——另外两个分片存在但不参与任何用途。
+SHARDS = (("bank-002", "ood_dev"), ("bank-002", "ood_sealed"), ("bank-003", "ood_sealed"))
 
 
-def _index(partition: str):  # type: ignore[no-untyped-def]
-    if not BANK_PATH.is_file():
+def _index(bank: str, partition: str):  # type: ignore[no-untyped-def]
+    path = BANKS[bank]
+    if not path.is_file():
         pytest.skip("措辞池是 ignored 私有产物，未同步到本机时跳过")
-    return intent_index(load_phrasing_bank(BANK_PATH), partition)  # type: ignore[arg-type]
+    return intent_index(load_phrasing_bank(path), partition)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_oracle_reaches_the_target_state(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_oracle_reaches_the_target_state(bank: str, partition: str) -> None:
     """按 gold 调用序列执行，最终状态必须等于 `target_state`。
 
     `refund_recovery` 的第一次 refund 会被注入的瞬时故障挡掉，第二次才成功——
     这正是 `expected_calls` 里有两次 refund 的原因。
     """
     bundle = load_bundle(BUNDLE_DIR)
-    tasks = build_ood_v2_tasks(_index(partition))
+    tasks = build_ood_v2_tasks(_index(bank, partition))
     for task in tasks:
         env = RetailOpsEnv(task, bundle)
         for call in task.expected_calls:
@@ -70,19 +78,19 @@ def test_oracle_reaches_the_target_state(partition: str) -> None:
         )
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_deny_scenarios_must_not_change_state(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_deny_scenarios_must_not_change_state(bank: str, partition: str) -> None:
     """拒绝类的 `target_state` 必须与 `initial_state` 相同——正确行为是不动状态。"""
-    tasks = build_ood_v2_tasks(_index(partition))
+    tasks = build_ood_v2_tasks(_index(bank, partition))
     for task in tasks:
         if task.expected_decision in (ExpectedDecision.DENY, ExpectedDecision.INFORM):
             assert task.target_state == task.initial_state, task.metadata["ood_category"]
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_six_scenarios_ten_each(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_six_scenarios_ten_each(bank: str, partition: str) -> None:
     """六个场景同时在场，是为了让「见谁都退款」这条捷径当场暴露。"""
-    tasks = build_ood_v2_tasks(_index(partition))
+    tasks = build_ood_v2_tasks(_index(bank, partition))
     counts: dict[str, int] = {}
     for task in tasks:
         counts[str(task.metadata["ood_category"])] = (
@@ -91,17 +99,17 @@ def test_six_scenarios_ten_each(partition: str) -> None:
     assert counts == {scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS}
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_no_user_request_leaks_the_order_state(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_no_user_request_leaks_the_order_state(bank: str, partition: str) -> None:
     """顾客说破订单状态 = 不查订单也能猜对。整份评测会因此变成读理解。"""
-    for task in build_ood_v2_tasks(_index(partition)):
+    for task in build_ood_v2_tasks(_index(bank, partition)):
         assert LEAKAGE_PATTERN.search(task.user_request) is None, task.user_request
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_generation_is_deterministic(partition: str) -> None:
-    first = build_ood_v2_tasks(_index(partition))
-    second = build_ood_v2_tasks(_index(partition))
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_generation_is_deterministic(bank: str, partition: str) -> None:
+    first = build_ood_v2_tasks(_index(bank, partition))
+    second = build_ood_v2_tasks(_index(bank, partition))
     assert [task.model_dump(mode="json") for task in first] == [
         task.model_dump(mode="json") for task in second
     ]
@@ -109,8 +117,13 @@ def test_generation_is_deterministic(partition: str) -> None:
 
 def test_dev_and_sealed_share_no_phrasing() -> None:
     """两个评测分片逐条互斥——否则「只观测一次」的那一份早就被看过了。"""
-    dev = {task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index("ood_dev"))}
-    sealed = {task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index("ood_sealed"))}
+    dev = {
+        task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index("bank-002", "ood_dev"))
+    }
+    sealed = {
+        task.metadata["phrasing_id"]
+        for task in build_ood_v2_tasks(_index("bank-002", "ood_sealed"))
+    }
     assert dev & sealed == set()
 
 
@@ -120,13 +133,18 @@ def test_evaluation_sets_never_use_the_training_partition() -> None:
     取 `train_aug` 的**全部意图**——早期版本只取了 `refund_request` 一个，
     那样 `status_inquiry` 与 `refund_request_retry` 的重叠会漏检。
     """
-    train_index = _index("train_aug")
-    train = {record.phrasing_id for bucket in train_index.values() for record in bucket}
-    assert len(train) > 100, "train_aug 分片过小，这条断言会变得没有意义"
-    for partition in ("ood_dev", "ood_sealed"):
-        used = {task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index(partition))}
-        assert used, partition
-        assert used & train == set(), partition
+    for bank in BANKS:
+        train_index = _index(bank, "train_aug")
+        train = {record.phrasing_id for bucket in train_index.values() for record in bucket}
+        assert len(train) > 100, f"{bank} 的 train_aug 分片过小，这条断言会变得没有意义"
+        for shard_bank, partition in SHARDS:
+            if shard_bank != bank:
+                continue
+            used = {
+                task.metadata["phrasing_id"] for task in build_ood_v2_tasks(_index(bank, partition))
+            }
+            assert used, (bank, partition)
+            assert used & train == set(), (bank, partition)
 
 
 def test_no_evaluation_phrasing_appears_in_the_actual_training_file() -> None:
@@ -155,24 +173,24 @@ def test_no_evaluation_phrasing_appears_in_the_actual_training_file() -> None:
 
     assert len(trained_requests) > 100, "训练集里的说法太少，这条断言会变得没有意义"
 
-    for partition in ("ood_dev", "ood_sealed"):
-        for task in build_ood_v2_tasks(_index(partition)):
+    for bank, partition in SHARDS:
+        for task in build_ood_v2_tasks(_index(bank, partition)):
             normalized = re.sub(r"O-[A-Z0-9]+", "<OID>", task.user_request)
             assert normalized not in trained_requests, (
-                f"{partition} 的这句话在真实训练文件里出现过：{normalized}"
+                f"{bank}/{partition} 的这句话在真实训练文件里出现过：{normalized}"
             )
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_only_real_tools_appear_in_gold_calls(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_only_real_tools_appear_in_gold_calls(bank: str, partition: str) -> None:
     bundle = load_bundle(BUNDLE_DIR)
     allowed = {tool.name for tool in bundle.tools}
-    for task in build_ood_v2_tasks(_index(partition)):
+    for task in build_ood_v2_tasks(_index(bank, partition)):
         assert {call.name for call in task.expected_calls} <= allowed
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_the_state_space_matches_the_frozen_contract(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_the_state_space_matches_the_frozen_contract(bank: str, partition: str) -> None:
     """状态空间必须与冻结契约同宽——否则「唯一自变量是说法」这句话是假的。
 
     2026-08-17 的外部审阅发现第一版在三个维度上都更窄：每条状态只有 1 个订单
@@ -193,7 +211,7 @@ def test_the_state_space_matches_the_frozen_contract(partition: str) -> None:
         for split in (task_set.train, task_set.dev, task_set.holdout)
         for record in split
     ]
-    ood = build_ood_v2_tasks(_index(partition))
+    ood = build_ood_v2_tasks(_index(bank, partition))
 
     def order_counts(tasks: list[TaskSpec]) -> set[int]:
         return {len(task.initial_state["orders"]) for task in tasks}
@@ -225,11 +243,11 @@ def test_the_state_space_matches_the_frozen_contract(partition: str) -> None:
     )
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_the_per_scenario_semantics_match_the_frozen_contract(partition: str) -> None:
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_the_per_scenario_semantics_match_the_frozen_contract(bank: str, partition: str) -> None:
     """逐场景核对语义形状，确认 v2 改的是说法而不是任务。"""
     tasks: dict[str, list[TaskSpec]] = {}
-    for task in build_ood_v2_tasks(_index(partition)):
+    for task in build_ood_v2_tasks(_index(bank, partition)):
         tasks.setdefault(str(task.metadata["ood_category"]), []).append(task)
 
     def primary(task: TaskSpec) -> dict:
@@ -248,9 +266,9 @@ def test_the_per_scenario_semantics_match_the_frozen_contract(partition: str) ->
         assert task.transient_failures == {"refund_order": 1}
 
 
-@pytest.mark.parametrize("partition", ["ood_dev", "ood_sealed"])
-def test_user_requests_are_distinct_within_a_set(partition: str) -> None:
-    tasks = build_ood_v2_tasks(_index(partition))
+@pytest.mark.parametrize(("bank", "partition"), SHARDS)
+def test_user_requests_are_distinct_within_a_set(bank: str, partition: str) -> None:
+    tasks = build_ood_v2_tasks(_index(bank, partition))
     requests = {task.user_request for task in tasks}
     assert len(requests) == len(tasks)
 
@@ -277,7 +295,7 @@ def test_the_built_artifacts_match_the_generator() -> None:
         if not manifest_path.is_file():
             pytest.skip("OOD v2.1 产物是 ignored 运行产物，未生成时跳过")
         manifest = load_ood_manifest(manifest_path)
-        rebuilt = build_ood_v2_tasks(_index(partition))
+        rebuilt = build_ood_v2_tasks(_index("bank-002", partition))
 
         assert manifest.task_ids == [task.task_id for task in rebuilt]
         assert manifest.dataset_version == OOD_V2_DATASET_VERSION
@@ -295,7 +313,7 @@ def test_the_built_artifacts_match_the_generator() -> None:
 
 def test_recovery_target_state_is_refunded() -> None:
     """`refund_recovery` 的正确终局是退款成功，不是「试过了就算」。"""
-    tasks = build_ood_v2_tasks(_index("ood_dev"))
+    tasks = build_ood_v2_tasks(_index("bank-002", "ood_dev"))
     recovery = next(
         task
         for task in tasks

@@ -43,6 +43,7 @@ R0–R6 已完成，阶段状态以 `docs/EXECUTION_PLAN.md` 为准，历史任�
 
 | # | 运行 | 用途 | 产物目录 |
 |---|---|---|---|
+| R-0 | 构建 OOD v2.2 sealed 任务集（CPU，不是模型运行） | 判据 B 的评测集 | `reports/retail_ops/v1/ood-v2.2/sealed/tasks` |
 | R-1 | 换 seed 重训（`--seed 1`，配置一字不改） | 重建 `sft-008` | `reports/retail_ops/v1/r6/sft-008-rebuild-seed1` |
 | R-2 | dev 60 配对评测（重建候选） | 判据 A | `reports/retail_ops/v1/r6/candidate-r6-rebuild-seed1` |
 | R-3 | OOD v2.2 sealed：零训练基座 | 判据 B 的对照 | `reports/retail_ops/v1/ood-v2.2/sealed/base` |

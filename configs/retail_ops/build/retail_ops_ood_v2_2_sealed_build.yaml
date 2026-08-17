@@ -1,0 +1,39 @@
+# OOD v2.2（sealed）：**第二份素材**上的同一个评测集。
+#
+# 相对 `retail_ops_ood_v2_sealed_build.yaml` 只差 `phrasing` 一段——生成器、状态空间、
+# 六场景 × 10 的配额、判定逻辑与 verifier 逐字段相同。**唯一的自变量是措辞池是哪一份。**
+# 由 `tests/test_retail_ops_r7_rebuild.py::test_the_v22_sealed_config_differs_from_v21_only_by_the_bank`
+# 断言。
+#
+# ## 为什么需要第二份素材
+#
+# R6 的头条读数（封存分片 1.0000）只来自 `phrasing-bank-002` 的一个分片：
+# 单一 provider、单一 prompt、单一批次。"换一种说法还成不成"这个问题，
+# 此前只在**一批**说法上被回答过。一份素材上的满分，可能是模型鲁棒，
+# 也可能是那一批说法恰好好做——两者在单份素材上不可区分。
+#
+# `phrasing-bank-003` 是完全重新生成的一批（268 条，$0.0061）。实测互斥性：
+# 它的 `ood_sealed` 分片与 bank-002 的三个分片、与它自己的 `train_aug`、
+# 以及与**真实训练文件** `train-export-007/sft.jsonl` 的 184 种说法，交集**全部为 0**。
+#
+# 它的风格覆盖比 bank-002 的封存分片更宽：八种风格全部在场，最小格 n=5；
+# 而 bank-002 的封存分片 `terse` **一条都没有**、`typo` 只有 2 条。
+# 也就是说这一份能测到上一份测不到的东西。
+#
+# ## 观测纪律
+#
+# 这个分片**只观测一次**，运行内容（零训练基座 / `sft-008` / 换 seed 重建的候选）
+# 与判读规则在观测**之前**写定并提交（`task_plan.md`，commit `2c2c73b`）。
+# **不得因为读数不好看而再生成 bank-004 重测**——那就是对着封存集调参。
+# 台账见 `docs/OOD_SEALED_LEDGER.md`。
+#
+# `dataset_version` 必须与 v2.1 不同：`task_id` 是 `sha256(f"oodv2:{seed}:{scenario}:{index}")`，
+# **只依赖位置**，两份素材的 `task_ids` 逐条相同。共用一个版本号的话，
+# 两批内容完全不同的评测集在 manifest 层就无法区分。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v1
+phrasing:
+  dataset_version: retail_ops_ood_v2_2_20260817
+  bank_relpath: phrasing/phrasing-bank-003/phrasings.jsonl
+  bank_sha256: "b421caa4c0a6b3df5ba9a48e2b7007446a81c96ff0d24cba12cd74f62f228f82"
+  partition: ood_sealed

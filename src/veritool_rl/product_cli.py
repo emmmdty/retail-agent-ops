@@ -1551,13 +1551,17 @@ def _ood_phrasing_spec(config: dict[str, Any], private_root: Path | None) -> Ood
 
     `partition` 必须显式写出来，且只能是两个**评测**分片之一：
     拿 `train_aug` 当评测集，就是在测模型有没有背下训练数据。
+
+    `dataset_version` 同样必填、同样不给默认值。给默认值的话，第二份措辞池会静默挂上
+    第一份的版本号，而产物看起来完全正常——两批内容不同的评测集因此在同一张表里
+    被当成同一个数据集，配对前提当场失效。这与外部审阅在 v1/v2 上抓到的是同一类错误。
     """
     value = config.get("phrasing")
     if value is None:
         return None
     if not isinstance(value, dict):
         raise ValueError("phrasing 必须是 mapping 或 null")
-    missing = {"bank_relpath", "bank_sha256", "partition"} - set(value)
+    missing = {"bank_relpath", "bank_sha256", "partition", "dataset_version"} - set(value)
     if missing:
         raise ValueError(f"phrasing 缺少必填键: {sorted(missing)}")
     partition = value["partition"]
@@ -1580,8 +1584,14 @@ def _ood_phrasing_spec(config: dict[str, Any], private_root: Path | None) -> Ood
     actual = bank_sha256(records)
     if actual != declared:
         raise ValueError(f"措辞池哈希与配置声明不一致: declared={declared}, actual={actual}")
+    dataset_version = value["dataset_version"]
+    if not isinstance(dataset_version, str) or not dataset_version:
+        raise ValueError("phrasing.dataset_version 必须是非空字符串")
     return OodPhrasingSpec(
-        index=intent_index(records, partition), partition=partition, bank_sha256=actual
+        index=intent_index(records, partition),
+        partition=partition,
+        bank_sha256=actual,
+        dataset_version=dataset_version,
     )
 
 

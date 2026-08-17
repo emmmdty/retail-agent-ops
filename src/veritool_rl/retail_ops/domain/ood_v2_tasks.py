@@ -50,6 +50,16 @@ from veritool_rl.retail_ops.build.phrasing_bank import (
 )
 
 OOD_V2_DATASET_VERSION = "retail_ops_ood_v2_20260817"
+
+#: 第二份措辞池（`phrasing-bank-003`）构建出的分片。
+#:
+#: 生成器、状态空间、场景配额与判定逻辑与上一版**逐字段相同**，唯一的差别是素材。
+#: 它必须有自己的版本号，否则两批内容完全不同的任务集会挂同一个 `dataset_version`——
+#: 而 `task_id` 是 `sha256(f"oodv2:{seed}:{scenario}:{index}")`，**只依赖位置**，
+#: 两份素材的 `task_ids` 逐条相同。仅凭这两个字段，两份评测集看起来一模一样。
+#: 这与外部审阅在 v1/v2 上抓到的是同一类错误，只是发生在 v2 内部。
+OOD_V2_2_DATASET_VERSION = "retail_ops_ood_v2_2_20260817"
+
 OOD_V2_GENERATOR_ID = "ood_phrasing_bank_v2_full_state_space"
 
 #: 每个场景的任务数。六场景 × 10 = 60，与 dev 同量级。
