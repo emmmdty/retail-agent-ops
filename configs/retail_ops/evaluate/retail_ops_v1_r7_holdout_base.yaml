@@ -1,0 +1,37 @@
+# 第六次封存 holdout 观测的 **base 侧**（零训练基座）。
+#
+# 与第五次 base 配置的唯一差别是 attempt_id（005 -> 006）；模型 pin、生成参数、
+# receipt、bundle、seed 全部逐字段相同，由 tests/test_retail_ops_r7_rebuild.py 断言。
+#
+# 为什么又要重跑 base：`code_commit` 与 `uv_lock_sha256` 都在 `SEALED_PAIRING_FIELDS` 内，
+# R7 之后 commit 已变，第五次的 base 证据与新候选**不可配对**。
+#
+# 本次候选是**换 seed 重建出的 sft-008**。观测次数已不再受限（用户 2026-08-17），
+# 但**结果永远不得反馈进开发、调参、候选选择或 prompt/parser 修改**——
+# 那条限制来自统计学，不来自资源稀缺。判据 C 的判读在观测之前写定于 task_plan.md。
+pipeline: formal_holdout_base
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-base-006
+model:
+  repo: Qwen/Qwen3-4B
+  revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  local_dir: Qwen3-4B-pinned
+  file_sha256:
+    LICENSE: "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+    README.md: "71add1cd091c309b1cb1a6b943f2476eb2b004124b3bd1d32dcd0b24cc1abc47"
+    config.json: "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    configuration.json: "f888421726665e8a84b738eed42a64875aed79de8be7daade851ac8bf4c0cef9"
+    generation_config.json: "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    merges.txt: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    model-00001-of-00003.safetensors: "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    model-00002-of-00003.safetensors: "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    model-00003-of-00003.safetensors: "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    model.safetensors.index.json: "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+generation:
+  max_new_tokens: 256

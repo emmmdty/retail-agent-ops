@@ -253,6 +253,50 @@ def test_the_rebuild_uses_the_untouched_training_config() -> None:
     assert len(committed) == 1, f"训练配置被改过 {len(committed)} 次：{committed}"
 
 
+def test_the_sixth_holdout_base_differs_from_the_fifth_only_by_attempt_id() -> None:
+    """base 侧必须重跑（`code_commit` 在 `SEALED_PAIRING_FIELDS` 内），但除 ID 外一个字不改。"""
+    fifth = _load(EVAL / "retail_ops_v1_r6_holdout_base.yaml")
+    sixth = _load(EVAL / "retail_ops_v1_r7_holdout_base.yaml")
+    assert _diff(fifth, sixth) == {"attempt_id"}
+    assert sixth["attempt_id"] == "qwen3-4b-holdout-base-006"
+
+
+def test_the_sixth_candidate_differs_only_by_being_another_set_of_weights() -> None:
+    """候选侧的差别必须**全部**是"这是另一份权重"的直接后果，不含任何别的东西。
+
+    生成参数、receipt、bundle、dataset_version 一个字不同都会让第五次与第六次
+    不可比，而"重建复现了吗"这个问题的全部意义就在于两次可比。
+    """
+    fifth = _load(EVAL / "retail_ops_v1_r6_holdout_merged_candidate.yaml")
+    sixth = _load(EVAL / "retail_ops_v1_r7_holdout_merged_candidate.yaml")
+    assert _diff(fifth, sixth) == {"attempt_id", "merged_from", "model"}
+    assert fifth["generation"] == sixth["generation"]
+    assert fifth["holdout_receipt_path"] == sixth["holdout_receipt_path"]
+    assert fifth["dataset_version"] == sixth["dataset_version"]
+
+
+def test_the_sixth_candidate_lineage_is_recomputable() -> None:
+    """自己声明一个 merged_revision 等于没有证明——它必须能从基座与 adapter 复算。"""
+    from veritool_rl.core.agent.qwen import derive_merged_revision
+
+    config = _load(EVAL / "retail_ops_v1_r7_holdout_merged_candidate.yaml")
+    lineage = config["merged_from"]
+    assert (
+        derive_merged_revision(lineage["base_revision"], lineage["adapter_file_sha256"])
+        == lineage["merged_revision"]
+        == config["model"]["revision"]
+    )
+
+
+def test_the_sixth_candidate_is_the_rebuild_not_the_original() -> None:
+    """第六次观测的候选必须是**换 seed 重建出的**那一份，不是已经拿过 GO 的原候选。"""
+    sixth = _load(EVAL / "retail_ops_v1_r7_holdout_merged_candidate.yaml")
+    rebuild = _load(EVAL / "retail_ops_v1_r7_rebuild_seed1_candidate.yaml")
+    original = _load(EVAL / "retail_ops_v1_r6b_candidate.yaml")
+    assert sixth["merged_from"]["adapter_file_sha256"] == rebuild["adapter"]["file_sha256"]
+    assert sixth["merged_from"]["adapter_file_sha256"] != original["adapter"]["file_sha256"]
+
+
 def test_the_built_v22_artifacts_match_the_generator() -> None:
     """已落盘的 v2.2 任务集必须与当前代码重算的结果逐字节一致。
 

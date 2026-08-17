@@ -1,0 +1,46 @@
+# 第六次封存 holdout 观测的**候选侧：换 seed 重建出的 `sft-008` 的合并部署形态**。
+#
+# 相对第五次候选配置的差别只有三处，全部是"这是另一份权重"的直接后果：
+# attempt_id（005 -> 006）、merged_from.adapter_file_sha256、model 段（revision 与
+# file_sha256）。生成参数、receipt、bundle、dataset_version 逐字段相同，
+# 由 tests/test_retail_ops_r7_rebuild.py 断言。
+#
+# 为什么候选侧仍用合并形态：与第五次同一个理由，且**这个选择是沿用而不是新挑的**——
+# 未合并形态的延迟代价已被归因为部署实现开销而非模型能力（LOG-20260815-04）。
+#
+# merged_revision 可从「基座 revision + adapter 逐文件哈希」复算，配对校验会重算它。
+#
+# 判据 C 的判读在观测之前写定于 task_plan.md（commit 2c2c73b），且**判据 C 刻意不参与
+# 「是否复现」的认定**：p95 比值受共享 GPU 上他人占用影响，把它写进复现判据
+# 等于让科学结论依赖别人的负载。
+pipeline: formal_holdout_merged_candidate
+bundle_dir: domains/retail_ops/v1
+dataset_version: retail_ops_v1_r2_20260722
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-merged-candidate-006
+merged_from:
+  base_repo: Qwen/Qwen3-4B
+  base_revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  merged_revision: "29c7b92c0fe2f45723f2e450dcefdf6bc6bd834c22936d268740754e6d6610e1"
+  adapter_file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "66673d75210d1169cf3ce36d8a13fe8bb86dbe3039a12bb0bf408f3f0c473a36"
+    adapter_model.safetensors: "1a2c3d16a9f1fb28a6390717a4cd979e960d27958cb07da353adc922fd65ca48"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "ba256ff3bbd0c6253a9fee86110bd973f8883f21eb4e1cbef62a651a4936f591"
+model:
+  repo: local/Qwen3-4B-sft-008-rebuild-seed1-merged
+  revision: "29c7b92c0fe2f45723f2e450dcefdf6bc6bd834c22936d268740754e6d6610e1"
+  local_dir: Qwen3-4B-sft-008-rebuild-seed1-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "081087b84995c5e120163dfaba436644ada7360c5c6203d3c17cf5e2fb5bf1d3"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
