@@ -96,12 +96,12 @@ git diff --check
 - **R0–R6 全部已完成**（R5 于 2026-08-16 收口，R6 泛化修复于 2026-08-17 收口）。12 周计划走完，
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
-- 当前基线：**1073 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(86)、
+- 当前基线：**1089 tests passed**；`ruff check`、**`ruff format --check`**、`mypy`(86)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
 ### 结论摘要（引用时必须带条件）
 
-- **封存 holdout 已消耗五次观测**：前三次 `NO-GO`（第一次输在 `success_delta` −0.0333，
+- **封存 holdout 的观测次数以 `docs/HOLDOUT_LEDGER.md` 为准**：前三次 `NO-GO`（第一次输在 `success_delta` −0.0333，
   第二、三次候选做到 120/120、`success_delta` +0.1417 但输在延迟），
   **第四次 `GO` / candidate**——候选是同一份权重的**合并部署形态**，p95 比值 2.03 → 1.13。
   **GO 归因于部署形态，不是模型**：未合并形态对同一 base 重算仍 FAIL 1.9219。
@@ -145,7 +145,7 @@ git diff --check
   从未用于选择）`expression_ood` **0.00 → 1.00**、总分 0.5833 → 0.8667。
   **代价必须一起说**：dev 新增 2 次政策违规、OOD v1 的 `scenario_ood` 0.75 → 0.60
   （`partial_refund` 1.00 → 0.00）——模型更倾向执行，两处同一机制。
-  **本轮未消耗第五次封存 holdout 观测。**
+  **R6 那一轮的 OOD 结论不依赖封存 holdout；它随后才被单独观测。**
 - **评测集的新纪律（ADR 0005）**：判断泛化的评测集必须①素材按哈希切分不由人挑、
   ②训练与评测素材逐条互斥且代码断言、③留一个只观测一次的分片、
   ④素材经语义回环校验。手写的 OOD v1 已退出选择流程，只作独立迁移检查。

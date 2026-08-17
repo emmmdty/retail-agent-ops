@@ -92,7 +92,7 @@ base_evaluation.py:666 declared_settings != config.generation → 拒绝
 ## 这份读数**不**声称什么
 
 1. **它不是发布判定**，dev 与 OOD 都不是封存集合。封存 holdout 上的 vLLM 判定会是
-   **第五次**观测，需用户单独决策。
+   **再消耗一次**封存 holdout 观测，需用户单独决策。
 2. **两侧不同 commit**：HF 侧 `d57f17f` / `007e506`，vLLM 侧 `b573f23` / `d1f37bc`。
    期间的改动是新增 vLLM 后端与硬件 provider，未触碰 transformers 评测路径，
    但严格说这不是同 commit 配对——按项目自己的标准，它属于**跨形态对照**而非配对判定。

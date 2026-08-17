@@ -344,3 +344,64 @@ def test_the_dataset_version_distinguishes_v1_from_v2() -> None:
     if not manifest_path.is_file():
         pytest.skip("OOD v2.1 产物是 ignored 运行产物，未生成时跳过")
     assert load_ood_manifest(manifest_path).dataset_version == OOD_V2_DATASET_VERSION
+
+
+# ---------------------------------------------------------------------------
+# 公开可核对的互斥性：把最强的那条经验断言从"要有私有产物"降级为"要有算术"
+# ---------------------------------------------------------------------------
+
+_EXCLUSIVITY_MANIFEST = REPO_ROOT / "manifests/retail_ops/v1/phrasing_exclusivity.json"
+
+
+def test_the_committed_phrasing_digests_are_disjoint() -> None:
+    """**这一条在干净 clone 上也能跑。**
+
+    「训练与评测的措辞逐条互斥」是 R6 全部分布外结论的前提，而验证它的那条测试
+    读的是 gitignored 私有产物——2026-08-17 外部审阅第五轮指出：
+    **最关键的经验性断言，外部读者恰恰验不了。**
+
+    现在两侧的归一化文本 SHA-256 都进了 Git（`manifests/.../phrasing_exclusivity.json`）。
+    交集为空因此是**公开的集合算术**，不需要相信作者；
+    原文仍然不出仓（SHA-256 不可逆）。
+    """
+    manifest = json.loads(_EXCLUSIVITY_MANIFEST.read_text(encoding="utf-8"))
+    training = set(manifest["training_request_sha256"])
+    assert len(training) > 100, "训练集里的说法太少，这条断言会变得没有意义"
+
+    evaluation = manifest["evaluation_request_sha256"]
+    assert set(evaluation) == {
+        "phrasing-bank-002/ood_dev",
+        "phrasing-bank-002/ood_sealed",
+        "phrasing-bank-003/ood_sealed",
+    }, "评测分片清单与已提交的构建配置对不上"
+
+    for name, digests in evaluation.items():
+        assert digests, name
+        assert len(digests) == len(set(digests)), f"{name}: 清单里有重复"
+        assert training & set(digests) == set(), f"{name}: 与训练集有交集"
+
+    # 两个封存分片之间也必须零重叠——否则"换一份全新素材"是假的。
+    first = set(evaluation["phrasing-bank-002/ood_sealed"])
+    second = set(evaluation["phrasing-bank-003/ood_sealed"])
+    assert first & second == set(), "两份封存分片之间有重叠，第二次测量不是独立的"
+
+
+def test_the_committed_phrasing_digests_match_the_artifacts() -> None:
+    """持有私有产物时，清单必须与产物重算结果**逐条相同**。
+
+    没有这一条，上面那份清单就只是一组作者写下的数字。
+    有了它，公开算术与私有产物之间就被钉死了：清单造假会在这里红。
+    """
+    from scripts.ops.export_phrasing_exclusivity import build_manifest
+
+    private_root = _PRIVATE_ROOT
+    if not (private_root / "train-export/train-export-007/sft.jsonl").is_file():
+        pytest.skip("训练集是 ignored 私有产物，未同步到本机时跳过")
+    if not all(path.is_file() for path in BANKS.values()):
+        pytest.skip("措辞池是 ignored 私有产物，未同步到本机时跳过")
+
+    committed = json.loads(_EXCLUSIVITY_MANIFEST.read_text(encoding="utf-8"))
+    assert build_manifest(private_root) == committed, (
+        "已提交的互斥性清单与私有产物重算结果不一致——"
+        "换过训练集或措辞池就必须重新导出 manifests/retail_ops/v1/phrasing_exclusivity.json"
+    )

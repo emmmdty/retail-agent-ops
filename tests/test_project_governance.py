@@ -146,13 +146,28 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
         "docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
     )
 
-    assert "当前阶段：`R5` 公开交付与求职收口**已完成**" in agents
+    # 「当前阶段」必须与阶段状态的唯一事实源一致。
+    #
+    # 这里此前钉的是 `"当前阶段：`R5` …已完成"` 这一句原话，于是 R6 完成之后
+    # 它在强制一个过期的阶段号（LOG-20260817-06 的同一个失败模式，第四次出现）。
+    # 现在断言的是**一致性**：AGENTS.md 声明的阶段，在 EXECUTION_PLAN.md 的阶段表里
+    # 必须存在且被标为「已完成」。阶段号换了多少次都不需要改这条测试。
+    phase = re.search(r"当前阶段：`([^`]+)`", agents)
+    assert phase is not None, "AGENTS.md 没有声明当前阶段"
+    plan = _read("docs/EXECUTION_PLAN.md")
+    phase_rows = [line for line in plan.splitlines() if line.startswith(f"| {phase.group(1)} ")]
+    assert phase_rows, f"EXECUTION_PLAN.md 的阶段表里没有 {phase.group(1)}"
+    assert all("已完成" in row for row in phase_rows), (
+        f"AGENTS.md 声称 {phase.group(1)} 已完成，但阶段状态源里不是：{phase_rows}"
+    )
+
     assert "R2 已完成方案审批" in agents
     assert "正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认" in agents
     # 候选结论必须以 dev / holdout 口径分别陈述，不得被写成 release 判定
     assert "不得把 dev 读数写成 release 判定" in agents
-    # 封存 holdout 的消耗状态是不可逆资源，必须在接管文档里显式可见
-    assert "封存 holdout 已消耗五次观测" in agents
+    # 封存 holdout 是不可逆资源，接管文档必须指向台账（次数本身不得复述，
+    # 由 test_no_active_doc_restates_the_sealed_holdout_total_count 保证）
+    assert "docs/HOLDOUT_LEDGER.md" in agents
     # 观测次数不再是硬约束，但纪律必须同时在场——只写前半句会读成「随便测」。
     assert "观测次数不再是硬约束" in agents
     assert "结果永远不得反馈进开发" in agents
@@ -1039,6 +1054,160 @@ def test_release_configs_declare_their_gate_schema_version() -> None:
         assert parsed["gate_schema_version"] in {"1.0", "1.1"}, path.name
 
 
+#: 不受「不得复述观测总数」约束的文件。
+#:
+#: - `HOLDOUT_LEDGER.md` 是唯一事实源，次数**只能**写在那里；
+#: - `PROJECT_LOG.md`、`docs/archive/`、`docs/handoffs/` 记录的是当时的事实，按协议不得改写；
+#: - `progress.md` / `findings.md` 是逐次运行的工作台账，同样只记已发生的事。
+_COUNT_EXEMPT_FILES = frozenset(
+    {
+        "docs/HOLDOUT_LEDGER.md",
+        "docs/PROJECT_LOG.md",
+        "progress.md",
+        "findings.md",
+    }
+)
+_COUNT_EXEMPT_PREFIXES = ("docs/archive/", "docs/handoffs/")
+
+_CJK_NUMERAL = "一二三四五六七八九十两"
+
+#: **总数复述**的形状。相对指代（前/头/第/下/每/本/这/那/上 N 次）不在内——
+#: 「前三次判定都是 NO-GO」描述的是历史上的头三次，永远为真，不会过期。
+_TOTAL_COUNT_PATTERNS = (
+    re.compile(rf"(?:已消耗|消耗了|一共|总共)(?:\d+|[{_CJK_NUMERAL}])次(?:观测|运行)"),
+    re.compile(rf"(?:整个开发期|全程)[^。\n]{{0,10}}?观测了?(?:\d+|[{_CJK_NUMERAL}])次"),
+    re.compile(
+        rf"(?<![前头第下每本这那上何任另各同])(?:\d+|[{_CJK_NUMERAL}])次(?:发布|release)?判定"
+    ),
+    re.compile(rf"(?:\d+|[{_CJK_NUMERAL}])次观测均?已消耗"),
+    re.compile(
+        rf"(?:holdout|封存)[^。\n]{{0,6}}?(?<![前头第下每本这那上何任另各同])(?:\d+|[{_CJK_NUMERAL}])次观测"
+    ),
+)
+
+#: **前瞻式序数**：「下一次会是第 N 次」这一类。它必然会在下一次观测之后过期，
+#: 而且过期时没有任何机制会提醒——除非像这样把整个形状禁掉。
+_FORWARD_ORDINAL_PATTERN = re.compile(
+    rf"(?:下一次|下次|会是|将是|都是|等于|等同于)[^。\n]{{0,24}}?第(?:\d+|[{_CJK_NUMERAL}])次"
+)
+
+
+def _tracked_markdown_files() -> list[str]:
+    """从 `git ls-files` 派生扫描范围。
+
+    **这是本组测试与它的前身最重要的差别。** 前身维护一份手写的 `checked` 列表，
+    于是新增文档默认不在扫描内——2026-08-16 的 `AGENTS.md`/`CLAUDE.md`、
+    2026-08-17 的四份 R6 文档、以及 `docs/ENGINE_SUBSTITUTION.md`，
+    都是这样漏掉的。**列表是黑名单，`git ls-files` 是全集。**
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "*.md"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    ).stdout.split()
+    return [
+        name
+        for name in listed
+        if name not in _COUNT_EXEMPT_FILES and not name.startswith(_COUNT_EXEMPT_PREFIXES)
+    ]
+
+
+def _normalized(name: str) -> str:
+    """去掉 Markdown 强调标记与空白，让 `**5 次**` 与 `5次` 是同一个东西。"""
+    return re.sub(r"[*`\s]+", "", _read(name))
+
+
+def test_no_active_doc_restates_the_sealed_holdout_total_count() -> None:
+    """**活动文档一律不得复述封存 holdout 的观测/判定总数，必须指向台账。**
+
+    这条替换掉的机制是一张**手工维护的过期字符串黑名单**（"已消耗两次观测"、
+    "已消耗三次观测"、…）。那张表有两个结构性缺陷，2026-08-17 的外部审阅第五轮
+    两个都点到了：
+
+    1. **它永远落后当前状态一代**——它保护的恰恰是"次数"这个每轮都会变的量，
+       而新的过期表述只有在有人先想到它、再把它写进表里之后才拦得住；
+    2. **它的扫描范围也是手写列表**，于是新增文档默认不在保护内。
+
+    现在的形状是：**扫描范围由 `git ls-files` 派生**（全集，不是列表），
+    **规则是"不得出现总数"而不是"不得出现某个具体的数"**。
+    没有数字需要同步，这个失败模式就不再有生长的地方。
+
+    相对指代（"前三次判定都是 NO-GO"）不受限——它描述的是历史上的头三次，永远为真。
+    """
+    offenders: list[str] = []
+    for name in _tracked_markdown_files():
+        text = _normalized(name)
+        for pattern in _TOTAL_COUNT_PATTERNS:
+            for match in pattern.finditer(text):
+                start = max(0, match.start() - 20)
+                offenders.append(f"{name}: …{text[start : match.end() + 12]}…")
+    assert offenders == [], (
+        "活动文档复述了封存 holdout 的观测/判定总数。总数只能写在 docs/HOLDOUT_LEDGER.md，"
+        "其它文档一律改成指向台账（这样它永远不会过期）：\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_no_active_doc_predicts_which_observation_comes_next() -> None:
+    """**活动文档不得对"下一次观测是第几次"做序数预言。**
+
+    「下一次会是第五次观测」这类句子在下一次观测发生的**当天**就变成假的，
+    而且没有任何机制会提醒——2026-08-17 外部审阅第四轮抓到过一次，
+    第五轮又在四份文档里抓到（`ENGINE_SUBSTITUTION` / `EXECUTION_PLAN` /
+    `INTERVIEW_PREP` / `MODEL_CARD` / `SERVING_FORM_COMPARISON`）。
+
+    禁掉整个形状比逐条追更可靠：**台账只记已经发生的事，文档只引用台账。**
+    要表达"这件事需要再消耗一次观测"，就照这么写，不要写它是第几次。
+    """
+    offenders: list[str] = []
+    for name in _tracked_markdown_files():
+        text = _normalized(name)
+        for match in _FORWARD_ORDINAL_PATTERN.finditer(text):
+            start = max(0, match.start() - 20)
+            offenders.append(f"{name}: …{text[start : match.end() + 8]}…")
+    assert offenders == [], (
+        "活动文档预言了下一次观测是第几次。改成「再消耗一次封存 holdout 观测」这类"
+        "不带序数的说法——序数会在下一次观测当天过期：\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_overturned_judgement_count_matches_the_table() -> None:
+    """「被自己实验推翻的 N 个判断」这个数必须等于那张表实际有几行。
+
+    2026-08-17 外部审阅第五轮发现这里同时存在**四个**不同的值：标题写"七个"、
+    表里 8 行、面试话术写"五次"、定稿简历 bullet 写"五个"。
+    一个"我很诚实地记录了自己被推翻多少次"的卖点，自己数不清楚，
+    是最容易被面试官一句话戳破的地方。
+
+    **绑到表本身**，因此加一行就必须改标题，改不了就红。
+    """
+    text = _read("docs/RESUME_EVIDENCE.md")
+
+    heading = re.search(r"### 1\.4 被自己实验推翻的 \*\*(\d+)\*\* 个判断", text)
+    assert heading is not None, "§1.4 的标题没有写出可核对的条数"
+    declared = int(heading.group(1))
+
+    section = text.split("### 1.4 ")[1].split("\n### ")[0]
+    rows = [
+        line
+        for line in section.splitlines()
+        if line.startswith("|") and not line.startswith("|---") and "推翻方式" not in line
+    ]
+    assert declared == len(rows), f"§1.4 标题写 {declared} 个，表里有 {len(rows)} 行"
+
+    # 文中其它处引用同一个数时也必须一致——散落的复述正是上一轮漂移的来源。
+    for pattern in (
+        r"被自己的实验推翻 \*\*(\d+)\*\* 个判断",
+        r"被自己的实验推翻了 (\d+) 次",
+    ):
+        for match in re.finditer(pattern, text):
+            assert int(match.group(1)) == declared, (
+                f"§1.4 声称 {declared} 个，但另一处写 {match.group(1)}：{match.group(0)}"
+            )
+
+
 def test_no_active_doc_restates_a_stale_observation_count() -> None:
     """观测次数只能出现在台账里。
 
@@ -1170,6 +1339,30 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
         assert "0/20" in text or "0.00" in text, (
             f"{name}: 提到 GO 就必须给出表达变化类的读数（0/20 或 0.00）"
         )
+
+        # 2026-08-17 再加强：只要求"同一份文件里都出现过"仍然太松——
+        # 那两个数可以躲在文末的索引表里，离 GO 十万八千里。
+        # 现在要求**同一个二级/三级小节内**共现：读者顺着读的时候必须看得见。
+        # 台账本身就是那个"记着它的地方"，不必自我引用。
+        if name == "docs/HOLDOUT_LEDGER.md":
+            continue
+
+        # 围栏代码块（mermaid 图、命令示例）里的 GO 是**机制标签**，不是结果声称。
+        prose = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+        sections = re.split(r"^#{1,6} ", prose, flags=re.MULTILINE)
+        for section in sections:
+            # 「GO/NO-GO 门禁」是在讲**机制**，不是在声称一个判定结果。
+            # 先把这两种写法连同 NO-GO 一起去掉，剩下的 GO 才是"拿到了 GO"。
+            claim = re.sub(r"GO\s*/\s*NO-GO|NO-GO", "", section)
+            if "GO" not in claim:
+                continue
+            # 只是引用别处（"见 …GO…"）或列在目录里的小节不强求
+            if "0.5833" in section or "分布外" in section or "out-of-distribution" in section:
+                continue
+            head = section.splitlines()[0] if section.splitlines() else ""
+            assert "HOLDOUT_LEDGER" in section or "OOD" in section or "台账" in section, (
+                f"{name} 的小节「{head[:40]}」提到 GO，却既没有给分布外读数、也没有指向记着它的台账"
+            )
 
     ood = _read("docs/OOD_EVALUATION.md")
     for expected in ("0.5833", "0.2167", "expression_ood", "code_switch", "LOG-20260816-01"):
@@ -1395,10 +1588,26 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         gain_markers = ("1.0000", "0.00 → 1.00", "0.8667")
         if not any(marker in text for marker in gain_markers):
             continue
-        cost_markers = ("0.60", "政策违规", "policy violation", "partial_refund")
+
+        # **代价必须是量化的读数，不是"政策违规"这四个字。**
+        # 2026-08-17 外部审阅第五轮指出：旧的 `cost_markers` 里有「政策违规」，
+        # 而这四个字在这些文档里到处都是，于是断言退化成"文件里出现过这个词"——
+        # 它给了作者"有测试兜着"的错觉，而定稿简历 bullet 里恰恰出现了
+        # 只报较好那次读数的写法，**这条测试全程是绿的**。
+        # 现在要求的是**具体的坏数字**：安全代价的两次读数、或分布外那一类的退化值。
+        cost_markers = (
+            "7 次",  # 封存 120 条上那次运行的政策违规数（较差的一次）
+            "113/120",  # 同上，任务成功率
+            "2 与 7",  # 两次运行并列的写法
+            "2 and 7",
+            "0.75 → 0.60",  # OOD v1 的 scenario_ood 退化
+            "0.75 → **0.60**",
+            "partial_refund",
+        )
         assert any(marker in text for marker in cost_markers), (
             f"{name}: 提到了 R6 的收益（{[m for m in gain_markers if m in text]}）"
-            f"却没有给出任何一项代价"
+            f"却没有给出任何一个**量化**的代价读数。"
+            f"「政策违规」这四个字不算——它在这些文档里到处都是。"
         )
 
 

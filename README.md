@@ -6,6 +6,11 @@
 
 **可验证性的准确边界**：CPU 全链路**任何人 clone 下来就能复现并断言内容哈希**（一条命令，见下）。GPU 侧的数字（120 条 holdout、dev、分布外）追溯到运行证据的 `run_id`——那是该份证据全字段的自哈希，但**证据文件与模型权重不随仓库分发**（`reports/retail_ops/` 与 `models/` 均 gitignore，理由见 [`NOTICE.md`](./NOTICE.md)）。换句话说：链路和门禁你能自己跑，我这一次跑出来的具体轨迹你不能重放。
 
+**有一条例外，而且是最要紧的那条**：「训练素材与评测素材零重叠」是全部分布外结论的前提，
+它的两侧哈希清单**进了 Git**（[`manifests/retail_ops/v1/phrasing_exclusivity.json`](manifests/retail_ops/v1/phrasing_exclusivity.json)）。
+交集为空因此是**你可以自己算的集合算术**，不需要相信我；原文仍不出仓（SHA-256 不可逆）。
+持有私有产物时另有一条测试钉住「清单 == 产物重算结果」，所以清单也造不了假。
+
 [English](./README.en.md) ｜ [产品规格](./SPEC.md) ｜ [模型卡](./docs/MODEL_CARD_sft-006.md) ｜
 [系统卡](./docs/SYSTEM_CARD.md) ｜ [面试材料](./docs/INTERVIEW_PREP.md)
 
@@ -110,6 +115,9 @@ flowchart LR
 > 简历取数口径见 [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md)。本节是摘录。
 
 ### 封存 120 条 holdout（Qwen3-4B）
+
+> 逐次读数、判定与每个 GO 必须一起说的限制，见
+> [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)（唯一事实源）。
 
 | 观测 | 候选 | task_success | 政策违规 | 非法调用 | p95 比值 | 判定 |
 |---|---|---|---|---|---|---|
@@ -266,7 +274,7 @@ OOD v1 的 `scenario_ood` 从 0.75 掉到 **0.60**（`partial_refund` 1.00 → *
 | QLoRA 训练（全 linear，`sft-006` 配置的**三次**运行） | 单卡 3 epoch / 75 steps。时长 `sft-006` **293.7 s** / 重建 A **242.3 s** / 重建 B **242.2 s**（差异是共享 GPU 上他人占用，**不是配置差异**）；三次 `cuda_peak_allocated` 均 **5.65 GB**；adapter 三次**逐字节同尺寸** **66,127,776 B（63 MiB）** |
 | 评测推理峰值显存 | 4-bit NF4，**2.95–3.04 GB** |
 | serving 四档吞吐 | 合并 + vLLM 相对当前服务栈 **3.32×**，且是**乘性两段**：去掉 NF4 得 1.64×（不需新依赖），再换引擎得 2.02×（[详情](docs/SERVING_FORM_COMPARISON.md)） |
-| 工程基线 | **1073 tests passed**；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 |
+| 工程基线 | **1089 tests passed**；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 |
 
 ---
 
@@ -369,10 +377,14 @@ domains/retail_ops/{v1,v2}/                          工具 schema、业务政�
 
 ## 结果边界（必须一起说的话）
 
-- **候选没有"可以上线"。** 第四次是**自动门禁 GO**，SPEC §6 第 6 条的独立重建复验
+- **候选没有"可以上线"。** 拿到的是**自动门禁 GO**（逐次判定见
+  [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)），SPEC §6 第 6 条的独立重建复验
   已完成（[`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md)），
   但任务集是 2 工具 / 6 类 / 单一中文零售退款场景，每类 20 条，`ci95` 在满分时是
   [1.0, 1.0] 的退化区间——那不是显著性证据。
+  **同一个候选在分布外只有 0.5833、表达变化一类 0/20**；修好之后的候选在封存 120 条上
+  **仍有 2–7 次政策违规**（同配置两次运行），全部是「给已过退款期限的订单退款」。
+  **门禁比的是与 base 的差，因此一个违规更多的候选照样能过——这不是可以上线。**
 - **通过门禁的是合并部署形态**，不是前三次被拒的那个形态。两者是同一份权重的两种加载方式。
 - **合并形态的门禁余量只有 1–3%**，而 base 侧 p95 在两次观测间有 9% 的波动——
   不得表述为"延迟问题已解决"。

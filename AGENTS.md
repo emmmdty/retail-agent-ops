@@ -36,12 +36,12 @@
 
 ## 当前状态
 
-- 当前阶段：`R5` 公开交付与求职收口**已完成**（2026-08-16）；R0–R4.5 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
+- 当前阶段：`R6` 泛化修复与收口（含最终候选的独立重建复验）**已完成**（2026-08-17）；R0–R5 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
 - R2 已完成方案审批，批准的正式规格与计划位于 `docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
 - 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。
-- **封存 holdout 已消耗五次观测**，逐次读数与判定见 `docs/HOLDOUT_LEDGER.md`（唯一事实源）。
+- **封存 holdout 的观测次数、逐次读数与判定见 `docs/HOLDOUT_LEDGER.md`（唯一事实源，本文件不复述次数）。**
   **观测次数不再是硬约束**（用户 2026-08-17），但**结果永远不得反馈进开发**。
-- 四次 release 判定：**前三次 NO-GO / baseline**（第一次输在 `success_delta` −0.0333，第二、三次候选做到 120/120、`success_delta` +0.1417 但输在延迟）；**第四次 `GO` / candidate**，候选是同一份权重的**合并部署形态**（p95 比值 2.03 → 1.13）。发布门禁阈值一个字未改，有测试锁定。
+- release 判定：**前三次 NO-GO / baseline**（第一次输在 `success_delta` −0.0333，第二、三次候选做到 120/120、`success_delta` +0.1417 但输在延迟）；此后转为 `GO` / candidate，候选是同一份权重的**合并部署形态**（p95 比值 2.03 → 1.13）。发布门禁阈值一个字未改，有测试锁定。逐次判定见台账。
 - **引用那个 GO 必须同时给出分布外读数**：同一候选在模板外 60 条上只有 0.5833、表达变化类 0/20，比零训练基座还差（`docs/OOD_EVALUATION.md`）。120/120 不是泛化，有测试强制两者成对出现。
 - **SPEC §6 六条门禁已全部满足**，第 6 条「独立重建复验」见 `docs/REBUILD_VERIFICATION.md`。同时发现**训练不可逐位复现**：同 seed 重跑得到 58/60，dev 读数须表述为「58–60/60，三次同配置运行」。
 - R4 的两条结论都经过跨规模检验并被限缩，引用时必须带规模条件：**LoRA 容量须与模型规模匹配**（4B 上全 linear 最好，1.7B 上 attention-only 最好、全 linear 让拒绝类由 30/30 崩到 15/30）；**提示词干预是规模依赖的**（对 4B 有效、对 1.7B 完全无效）。见 LOG-20260814-05。

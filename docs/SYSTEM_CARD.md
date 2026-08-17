@@ -18,7 +18,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 |---|---|---|
 | `build` | 生成/导入轨迹，执行校验、去重、覆盖与划分审计 | 240/60/120 冻结数据集 + teacher 采集 + SFT 导出 + QLoRA 训练 |
 | `evaluate` | 在冻结任务上跑 base/candidate，输出可比证据 | dev 报告（1.7B/4B base、候选、合并版）、封存 holdout sealed 报告 ×7 |
-| `release` | 按版本化策略产出 GO/NO-GO | 四次判定：前三次 **NO-GO / baseline**，第四次（合并部署形态）**GO / candidate**。门禁语义与 sealed 证据契约均已版本化 |
+| `release` | 按版本化策略产出 GO/NO-GO | 前三次判定 **NO-GO / baseline**，此后转为 **GO / candidate**（合并部署形态）。逐次判定见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。门禁语义与 sealed 证据契约均已版本化 |
 | `serve` | 加载通过门禁的模型，暴露受控服务 | 按 NO-GO 回滚加载纯基座，三条演示流程 + 并发保护；2026-08-15 补齐自由请求端点、鉴权、结构化日志与 `/metrics` |
 
 两条平行轨道共用同一实现：**qualification 轨道**（12 条确定性 fixture、规则策略、纯 CPU）
@@ -38,7 +38,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | 原子发布 | 多文件产物走 staging + rename，任何后续步骤失败整体回滚，不留半成品 |
 | 不可覆盖 | 每次正式运行必须新输出目录，`create_output_dir` 对已存在目录直接失败 |
 
-**holdout 使用状态**：已消耗 **4 次**观测、共 **9 次运行**（2026-08-11、-14、-15 ×2），不再有"未观测"状态。
+**holdout 使用状态**：已被多次观测，**次数、日期与逐次读数以 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 为准**（本卡不复述），不再有"未观测"状态。
 逐次读数、失败门禁与口径边界见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)——**那是唯一事实源，
 本卡不复述次数与判定**。此外有一次运行被机器重启中断、**零产出**，未消耗盲性，因此不计入
 （判据是"有没有数字落盘并被读取"，不是跑了多久）。

@@ -12,6 +12,15 @@ and model weights are not distributed with the repository** (`reports/retail_ops
 are gitignored; see [`NOTICE.md`](./NOTICE.md)). So: you can run the pipeline and the gates
 yourself; you cannot replay the specific trajectories from my runs.
 
+**One exception, and it is the one that matters most**: "training material and evaluation
+material are disjoint" underpins every out-of-distribution claim in this project, and the
+SHA-256 digests of *both* sides are **committed to Git**
+([`manifests/retail_ops/v1/phrasing_exclusivity.json`](manifests/retail_ops/v1/phrasing_exclusivity.json)).
+The empty intersection is therefore **set arithmetic you can run yourself** — no trust in me
+required; the plaintext still never leaves my machine (SHA-256 is one-way). Where the private
+artifacts *are* present, a second test pins "manifest == recomputed from artifacts", so the
+manifest cannot be fabricated either.
+
 [中文](./README.md) ｜ [Spec](./SPEC.md) ｜ [Model card](./docs/MODEL_CARD_sft-006.md) ｜
 [System card](./docs/SYSTEM_CARD.md) ｜ [Interview notes](./docs/INTERVIEW_PREP.md)
 
@@ -127,6 +136,9 @@ direction `product_cli → retail_ops.* → core.*` is locked by a governance te
 > [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md).
 
 ### Sealed 120-task holdout (Qwen3-4B)
+
+> Per-observation readings, decisions and the caveats that must accompany every `GO`
+> live in [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md) (single source of truth).
 
 | Obs. | Candidate | task_success | Policy violations | Invalid calls | p95 ratio | Decision |
 |---|---|---|---|---|---|---|
@@ -278,7 +290,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **1073 tests passed**; Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit all green |
+| Engineering baseline | **1089 tests passed**; Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit all green |
 
 ---
 
