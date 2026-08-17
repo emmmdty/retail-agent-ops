@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **1046** tests passed；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
+| 工程基线 | **1047** tests passed；Ruff / `ruff format --check` / mypy(86 源文件) / `uv lock --check` / 公开发布审计全绿 | 每次收口均重跑 |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -293,7 +293,7 @@ OOD v1 的 `scenario_ood` 0.75 → **0.60**（`partial_refund` 1.00 → **0.00**
 
 > **RetailAgentOps｜零售工具 Agent 的单卡适配与发布流水线**（个人项目，Python/PyTorch/FastAPI）
 > - 设计并实现 `build / evaluate / release / serve` 四接口流水线，覆盖轨迹数据执行式质检、
->   冻结任务配对评测、版本化发布门禁与单卡服务；**1046** 项测试、Ruff/mypy/依赖锁/公开发布
+>   冻结任务配对评测、版本化发布门禁与单卡服务；**1047** 项测试、Ruff/mypy/依赖锁/公开发布
 >   审计全绿，一条命令可在纯 CPU 环境复现全链路并断言内容哈希等于冻结期望值。
 > - 建立**不可伪造的证据链**：运行报告以全字段自哈希为 ID、逐产物 SHA-256 绑定、
 >   配对比较前强制校验模型/生成参数/数据/commit/依赖锁/prompt 哈希同条件，任一字段被改动

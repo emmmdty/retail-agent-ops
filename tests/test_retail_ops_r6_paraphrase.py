@@ -73,8 +73,38 @@ def test_paraphrase_multiplies_only_the_sft_rows() -> None:
 
 
 def test_disabling_paraphrase_reproduces_the_old_behaviour() -> None:
+    """关掉增强必须产出**逐字段相同**的样本，不只是相同的行数。
+
+    早期版本只断言 `len(baseline) == len(records)`——名字说「复现旧行为」，
+    实现只比了行数。行数相同而内容变了，正是这条测试本该拦下的情况。
+    （这类「名字承诺了但实现没做」的测试，2026-08-17 的外部审阅在别处抓到过一个。）
+    """
     records, (_, _, _, baseline) = _export(None)
     assert len(baseline) == len(records)
+
+    # 开启增强后，**原始那一份**必须与关闭时逐字段相同：
+    # 增强只能是「多产出几条」，不能顺手改动原样本。
+    _, (_, _, _, augmented) = _export(_plan())
+    original_by_task = {row["task_id"]: row for row in baseline}
+    for row in augmented:
+        original = original_by_task[row["task_id"]]
+        user = next(m for m in row["messages"] if m["role"] == "user")
+        base_user = next(m for m in original["messages"] if m["role"] == "user")
+        if user["content"] == base_user["content"]:
+            assert row == original, "未被改写的那一条与关闭增强时不逐字段相同"
+
+
+def test_enabling_paraphrase_leaves_every_non_message_field_untouched() -> None:
+    """除 `messages` 外的字段（task_id / scenario / tools …）一个都不能变。"""
+    _, (_, _, _, baseline) = _export(None)
+    _, (_, _, _, augmented) = _export(_plan())
+    base_by_task = {row["task_id"]: row for row in baseline}
+    for row in augmented:
+        original = base_by_task[row["task_id"]]
+        for key in set(original) | set(row):
+            if key == "messages":
+                continue
+            assert row.get(key) == original.get(key), key
 
 
 def test_only_the_first_user_message_changes() -> None:
