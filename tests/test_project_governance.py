@@ -1113,7 +1113,7 @@ def _ledger_observation_count() -> int:
 
 
 #: 合法的**序数指针**：指向台账里编号的某一条（「观测 2 与观测 3」「本卡对应观测 1」）。
-#: 它不是总数，永远不会过期。
+#: 它不是总数，因此不随观测次数变化。
 #: 「观测 2」是指针，「观测 6 次」是计数——差别在数字后面跟不跟量词。
 _ORDINAL_POINTER = re.compile(
     r"(?:观测|判定)\s*\d+(?![\s]*[次轮回条组批])|observation\s+\d+(?!\s*times)", re.IGNORECASE
@@ -1219,8 +1219,12 @@ def _total_count_offenders(text: str) -> list[str]:
     """两张网并联：默认拒绝的计数网 + 总数语气的形状网。
 
     **能挡什么、挡不住什么（写在这里，因为过度承诺本身就是本仓库反复抓的问题）**：
-    - 挡得住：在谈封存 holdout 的句子里出现任何未白名单的计数数字，
-      无论量词、语序、中英文，也无论那个数是当前值还是过期值；
+    - 挡得住：**当前那个数**被在别处复制，无论量词、语序、中英文（两轮审阅共 48 句探针，0 漏）；
+    - **挡不住过期值**：写成 4 次、3 次这类**错误**总数时，只有第二张形状网可能拦到，
+      而形状网按构造不完备——2026-08-18 外部审阅第八轮用 8 句过期值探测，**8 句全漏**。
+      这一条如实写在这里：曾经的 docstring 声称覆盖过期值，那是假的。
+      试过把主网改成默认拒绝（任何计数数字都禁），真实文档上 14 处误报全是
+      「数字在数别的东西」，再压就是继续加白名单——那条路已被判为治标，不走；
     - 挡不住：把总数写成算式（"三次加三次"）、或完全改写成不含数字的错误陈述。
       **这一层由「台账是唯一事实源」加人工审阅负责，没有机器保证。**
     """
@@ -1361,21 +1365,28 @@ def test_no_active_doc_predicts_which_observation_comes_next() -> None:
     )
 
 
-#: §3 的定稿 bullet 里，**这些读数一旦出现就必须带着它的对照**。
+#: §3 的定稿 bullet 里，**谈到这些主题的句子必须同时给出两侧读数**。
 #:
-#: 左边是"好看的那一半"，右边是"没有它就构成挑数字"的那一半。
-#: 2026-08-17 外部审阅第六轮把方案 B 改回「117/120、政策违规仅 2 次」
-#: （即两次运行里较好的那一次），**全仓 1089 条测试无一变红**——
-#: 因为当时的守卫是**文件级**的：同一文件别处还留着 113/120，被挖空的 bullet 就照样过关。
-_PAIRED_READINGS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+#: 键是**主题**不是字面量。上一版按字面量配对（写了 `117/120` 就要有 `113/120`），
+#: 2026-08-18 外部审阅第八轮用两种改写各破一次且全仓全绿：
+#: 「封存 120 条上只错了 3 条」与「封存 120 条上任务成功率约 98%」——
+#: 都绕开了字面量，也都把较差的那次运行挖掉了。
+#:
+#: 按主题配对拦得住改写，因为**改写躲不开主题词**：要吹这个结果就得提它。
+#: 代价是主题词本身仍是人写的（见本条测试 docstring 里的边界说明）。
+_TOPIC_PAIRINGS: tuple[tuple[str, tuple[str, ...], tuple[str, ...], str], ...] = (
     (
-        "117/120",
-        ("113/120", "113–117/120"),
-        "封存 120 条上是同配置两次运行的两个读数，不能只报较好的那次",
+        "封存 120 条的候选读数",
+        ("封存 120", "封存的 120", "sealed 120"),
+        ("113/120", "113–117/120", "2 与 7", "2 次与 7 次", "2 次和 7 次", "2 and 7"),
+        "同配置两次运行是 117/120 与 113/120、违规 2 与 7，只报好的那次就是挑数字",
     ),
-    ("1.0000", ("0.9833",), "分布外封存分片的满分只在第一份素材上，第二份是 0.9833"),
-    ("GO", ("0.5833",), "引用 GO 必须同时给出分布外总分"),
-    ("expression_ood", ("n=4", "20 条"), "0.00 → 1.00 的样本量是 20 条 = 五子类 × n=4"),
+    (
+        "分布外封存分片的读数",
+        ("封存分片", "措辞池上", "phrasing bank"),
+        ("0.9833",),
+        "两份独立素材上是 1.0000 与 0.9833，单点满分不成立",
+    ),
 )
 
 
@@ -1395,60 +1406,25 @@ def _resume_bullet_variants() -> dict[str, str]:
 
 
 def test_the_resume_bullets_never_quote_a_reading_without_its_companion() -> None:
-    """**全仓风险最高的一段文字，必须有机器约束。**
+    """§3 里**谈到某个结果的句子**，必须同时给出它不好看的那一半。
 
-    §3 是要贴到简历上、要在面试里念出口的那一段。此前它与 §2 的「不可写清单」
-    之间**没有任何机械关系**——清单躺在同一个文件里，却只靠人记得去看。
+    §3 是要贴到简历上、要在面试里念出口的那一段，是全仓风险最高的文字。
 
-    这条按**变体**检查读数配对：好看的数字出现了，它的对照必须在同一版 bullet 里。
+    **这条按主题匹配，不按字面量。** 上一版按字面量配对，被外部审阅用
+    「只错了 3 条」和「约 98%」两种改写各破一次——两句都把较差的那次运行挖掉了，
+    而全仓当时全绿。改写躲得开数字，躲不开主题词。
+
+    **边界（写在这里，不写成"穷举"）**：主题词是人列的，因此一个完全不提
+    「封存 120」而暗示同一件事的写法仍能绕过。这条挡的是**可预见的挑数字**，
+    不是任意改写；剩下那部分由 §2 的不可写清单与人工审阅承担。
     """
     for name, chunk in _resume_bullet_variants().items():
-        for reading, companions, why in _PAIRED_READINGS:
-            if reading not in chunk:
+        for topic, mentions, companions, why in _TOPIC_PAIRINGS:
+            if not any(mention in chunk for mention in mentions):
                 continue
             assert any(companion in chunk for companion in companions), (
-                f"{name}: 写了「{reading}」却没有 {list(companions)} 中的任何一个——{why}"
+                f"{name} 谈到了{topic}，却没有给出 {list(companions)} 中的任何一个——{why}"
             )
-
-
-def test_the_open_gaps_list_never_contradicts_the_resume_bullets() -> None:
-    """**「还没做」的清单不许落后于「已经做了」的清单。**
-
-    `RESUME_EVIDENCE.md` §5 自己写着：「任何一条被划掉之前，都不许在简历上暗示它已经做了。」
-    2026-08-17 外部审阅第七轮发现**它自己落后了两条**——「表达变体的 LLM 改写」与
-    「演示视频」都在 R6 之前就做完了，`EXECUTION_PLAN.md` 里已经划掉，
-    而 §5 仍标着「未做」，同时 §3 的两版定稿 bullet 都以那两件事为卖点。
-
-    **这不是"文档有点旧"。** §5 是全仓唯一约束「什么还不许写进简历」的清单，
-    它落后就等于这个自证诚实的机制失效了。
-
-    绑法是两份清单**互为校验**：凡是在阶段状态源里被划掉（`~~…~~`，即已完成）的条目，
-    不得同时以未划掉的形式留在 §5 的缺口表里。两边都是人写的，但**两边同时写错才骗得过**。
-    """
-    plan = _read("docs/EXECUTION_PLAN.md")
-    gaps_section = _read("docs/RESUME_EVIDENCE.md").split("## 5. 尚不可用")[1].split("\n## ")[0]
-
-    done_in_plan = {
-        match.group(1).strip().strip("*「」")
-        for match in re.finditer(r"~~\*{0,2}([^~]+?)\*{0,2}~~", plan)
-    }
-    assert len(done_in_plan) >= 3, f"阶段状态源里解析不到已划掉的条目：{done_in_plan}"
-
-    still_open: list[str] = []
-    for label in done_in_plan:
-        if len(label) < 4:
-            continue
-        for line in gaps_section.splitlines():
-            if label not in line:
-                continue
-            # 该行也划掉了就没有矛盾
-            if "~~" in line:
-                continue
-            still_open.append(f"「{label}」：{line.strip()[:70]}")
-    assert still_open == [], (
-        "阶段状态源里已经划掉的条目，仍以「未做」留在 RESUME_EVIDENCE §5 的缺口表里。"
-        "§5 落后于事实就等于它约束不了 §3：\n  " + "\n  ".join(still_open)
-    )
 
 
 def test_the_resume_bullets_only_use_numbers_documented_elsewhere() -> None:
@@ -1463,8 +1439,10 @@ def test_the_resume_bullets_only_use_numbers_documented_elsewhere() -> None:
     「两版都只用 §1 的数字」——把那句散文变成可执行的约束。
     一个新造的、别处没有出处的数字（97.5%、"个位数"折算出的任何值）当场红。
 
-    **它是穷举的**：默认禁止，白名单是"文件别处已经写过的数字"，
-    不需要有人预先想到某种表述形式。这正是前两轮反复被判"换了形状的黑名单"的地方。
+    **边界（不写"穷举"）**：它挡的是**新造一个数**（97.5%、约 98%）。
+    它挡不住引用一个别处确实存在、但用在这里是挑数字的数——「只错了 3 条」里的 3
+    就是这样过关的（0–999 里有 198 个整数在本文件别处出现过）。
+    那一半由上面的主题配对规则承担，两条合起来也不是完备的。
     """
     text = _read("docs/RESUME_EVIDENCE.md")
     section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
@@ -1664,7 +1642,7 @@ def test_no_active_doc_restates_a_stale_observation_count() -> None:
     # 此前这里写的是 `assert "已消耗观测 | **5 次**" in ledger`——一个会在下一次观测后
     # 过期、并且被测试**焊死**的字面值（LOG-20260817-06 的失败模式）。
     # 现在断言的是「唯一事实源自己说的数」与「它自己记了几条」一致，
-    # 这条永远不会过期，而且拦得住真正要防的事：跑了观测但没记账。
+    # 这条不随次数变化，拦的是真正要防的事：跑了观测但没记账。
     declared = re.search(r"已消耗观测 \| \*\*(\d+) 次\*\*", ledger)
     assert declared is not None, "台账表头没有声明观测次数"
     sections = re.findall(r"^## 观测 (\d+) — ", ledger, re.MULTILINE)

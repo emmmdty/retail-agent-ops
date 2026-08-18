@@ -209,8 +209,12 @@ batch of phrasings happened to be easy", which is why there are two:
 
 **The defensible phrasing is therefore "1.0000 and 0.9833 on two independently generated
 phrasing banks", not a single perfect score.** The `bank-003` partition covers all eight
-phrasing styles (smallest cell n=3); `bank-002`'s covered only seven and contained no `terse`
-item at all — it structurally could not test what the new one tests. An earlier version of
+phrasing styles; `bank-002`'s covered only seven and contained no `terse`
+item at all — it structurally could not test what the new one tests. **But the sample is far
+smaller than the task count suggests**: the 60 tasks draw on only **35 distinct phrasings**,
+and after de-duplicating, the smallest per-style cell is **n=1** (the four `terse` tasks are
+one sentence paired with four different order ids). The task-level "n=3" is the number that
+overstates it; for the claim "unseen phrasings", the real floor is one. An earlier version of
 this partition was **defective** (narrower state space than training/dev, i.e. easier, while
 four files claimed "the only independent variable is how the customer phrases it"); that was
 found by external review, and the retired readings are kept in
@@ -292,7 +296,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **1095 tests passed** (author's machine, with the private artifacts present); **on a clean clone it is 1050 passed / 45 skipped / 0 failed** — all 45 skips are tests that need artifacts not distributed with the repo, or the ignored BFCL checkout. Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit are green in both environments |
+| Engineering baseline | **1094 tests passed** (author's machine, with the private artifacts present); **on a clean clone it is 1049 passed / 45 skipped / 0 failed** — all 45 skips are tests that need artifacts not distributed with the repo, or the ignored BFCL checkout. Ruff / `ruff format --check` / mypy (86 files) / `uv lock --check` / public-release audit are green in both environments |
 
 ---
 
