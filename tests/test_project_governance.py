@@ -3,7 +3,10 @@
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1071,34 +1074,90 @@ _COUNT_EXEMPT_PREFIXES = ("docs/archive/", "docs/handoffs/")
 
 _CJK_NUMERAL = "一二三四五六七八九十两"
 
-#: **总数复述**的形状。相对指代（前/头/第/下/每/本/这/那/上 N 次）不在内——
-#: 「前三次判定都是 NO-GO」描述的是历史上的头三次，永远为真，不会过期。
-_TOTAL_COUNT_PATTERNS = (
-    re.compile(rf"(?:已消耗|消耗了|一共|总共)(?:\d+|[{_CJK_NUMERAL}])次(?:观测|运行)"),
-    re.compile(rf"(?:整个开发期|全程)[^。\n]{{0,10}}?观测了?(?:\d+|[{_CJK_NUMERAL}])次"),
-    re.compile(
-        rf"(?<![前头第下每本这那上何任另各同])(?:\d+|[{_CJK_NUMERAL}])次(?:发布|release)?判定"
-    ),
-    re.compile(rf"(?:\d+|[{_CJK_NUMERAL}])次观测均?已消耗"),
-    re.compile(
-        rf"(?:holdout|封存)[^。\n]{{0,6}}?(?<![前头第下每本这那上何任另各同])(?:\d+|[{_CJK_NUMERAL}])次观测"
-    ),
+#: 英文数词。中英文必须用**同一套**规则——2026-08-17 外部审阅第五轮已经因为
+#: 「扫描列表覆盖了文件、词表却没覆盖它的语言」抓到过一次；第六轮又在结构化检查上
+#: 抓到同一件事：新规则全是 CJK，英文退回到手写黑名单。
+_EN_NUMERAL = "one|two|three|four|five|six|seven|eight|nine|ten"
+
+#: 句子**确实在谈封存 holdout** 才受约束。
+#:
+#: 这一层是关键：不加限定地禁掉「数量 + 次」会误伤大量合法表述
+#: （「只观测一次」说的是 OOD 分片、「两次观测间有 9% 波动」是相对比较）。
+#: 限定到封存 holdout 之后，剩下的合法需求几乎为零——**次数只该写在台账里**。
+_SEALED_SCOPE = re.compile(
+    r"封存\s*holdout|sealed\s+holdout|holdout\s*观测|holdout observation", re.IGNORECASE
 )
+
+#: 在数**观测/判定**的数量。数违规、数运行、数场景都不算——
+#: 「2 次与 7 次政策违规」「同配置两次运行」是读数，不是观测总数。
+#:
+#: 每个分支都必须把数词捕获成 `num`，允许判定要看的是**紧挨着数词**的那个字。
+_OBSERVATION_QUANTITY = re.compile(
+    rf"(?P<num>\d+|[{_CJK_NUMERAL}])\s*次\s*[^。\n]{{0,12}}?(?:观测|(?:发布|release)\s*)?判定"
+    rf"|(?P<num2>\d+|[{_CJK_NUMERAL}])\s*次\s*[^。\n]{{0,12}}?观测"
+    rf"|(?:观测|判定)\s*了?\s*(?P<num3>\d+|[{_CJK_NUMERAL}])\s*次"
+    rf"|观测总数\s*(?:为|是)?\s*(?P<num4>\d+|[{_CJK_NUMERAL}])"
+    rf"|(?P<num5>\d+|{_EN_NUMERAL})\s+(?:observations?|decisions?)"
+    rf"|observed\s+(?:only\s+|just\s+|a\s+total\s+of\s+)?(?P<num6>\d+|{_EN_NUMERAL})\s+times",
+    re.IGNORECASE,
+)
+
+#: **相对/序数指代是允许的**——「前三次判定都是 NO-GO」描述历史上的头三次，
+#: 永远为真，不会过期；「再消耗一次观测」不含总数。
+#:
+#: 注意这是一个**白名单**，而且只认**紧挨着数词**的那一个字：
+#: 上一版把「上」也算进来，于是「封存 holdout **上**跑通了四次发布判定」
+#: 因为句中另有一个方位词「上」而被放行。位置比字符集更重要。
+_ADJACENT_MARKERS = frozenset("前头第上历另任何各同每本这那")
+_NEARBY_MARKERS = ("再", "另")
+_EN_MARKERS = re.compile(r"(?:first|another|the)\s*$", re.IGNORECASE)
+
+
+def _numeral_start(match: re.Match[str]) -> int:
+    for name in ("num", "num2", "num3", "num4", "num5", "num6"):
+        if match.group(name) is not None:
+            return match.start(name)
+    return match.start()
+
+
+def _total_count_offenders(text: str) -> list[str]:
+    """找出「在谈封存 holdout 时复述观测/判定总数」的句子。"""
+    offenders: list[str] = []
+    for match in _OBSERVATION_QUANTITY.finditer(text):
+        window = text[max(0, match.start() - 45) : match.end() + 45]
+        if not _SEALED_SCOPE.search(window):
+            continue
+        cursor = _numeral_start(match)
+        before = text[max(0, cursor - 6) : cursor]
+        if before[-1:] in _ADJACENT_MARKERS:
+            continue
+        if any(marker in before for marker in _NEARBY_MARKERS):
+            continue
+        if _EN_MARKERS.search(before):
+            continue
+        offenders.append(window.strip())
+    return offenders
+
 
 #: **前瞻式序数**：「下一次会是第 N 次」这一类。它必然会在下一次观测之后过期，
 #: 而且过期时没有任何机制会提醒——除非像这样把整个形状禁掉。
+#: 英文同形（`will be the fifth`）一并拦，否则又是"规则只覆盖一种语言"。
 _FORWARD_ORDINAL_PATTERN = re.compile(
-    rf"(?:下一次|下次|会是|将是|都是|等于|等同于)[^。\n]{{0,24}}?第(?:\d+|[{_CJK_NUMERAL}])次"
+    rf"(?:下一次|下次|会是|将是|都是|等于|等同于)[^。\n]{{0,24}}?第\s*(?:\d+|[{_CJK_NUMERAL}])\s*次"
+    rf"|(?:will be|would be|is|becomes)\s+the\s+"
+    rf"(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    rf"\s+observation",
+    re.IGNORECASE,
 )
 
 
 def _tracked_markdown_files() -> list[str]:
     """从 `git ls-files` 派生扫描范围。
 
-    **这是本组测试与它的前身最重要的差别。** 前身维护一份手写的 `checked` 列表，
+    **这是本组检查与它的前身最重要的差别之一。** 前身维护一份手写的 `checked` 列表，
     于是新增文档默认不在扫描内——2026-08-16 的 `AGENTS.md`/`CLAUDE.md`、
-    2026-08-17 的四份 R6 文档、以及 `docs/ENGINE_SUBSTITUTION.md`，
-    都是这样漏掉的。**列表是黑名单，`git ls-files` 是全集。**
+    2026-08-17 的四份 R6 文档、以及 `docs/ENGINE_SUBSTITUTION.md`，都是这样漏掉的。
+    **列表是黑名单，`git ls-files` 是全集。**
     """
     listed = subprocess.run(
         ["git", "ls-files", "*.md"],
@@ -1115,39 +1174,63 @@ def _tracked_markdown_files() -> list[str]:
     ]
 
 
-def _normalized(name: str) -> str:
-    """去掉 Markdown 强调标记与空白，让 `**5 次**` 与 `5次` 是同一个东西。"""
-    return re.sub(r"[*`\s]+", "", _read(name))
+def _normalized_text(text: str) -> str:
+    """去掉 Markdown 强调标记、压缩空白。
 
-
-def test_no_active_doc_restates_the_sealed_holdout_total_count() -> None:
-    """**活动文档一律不得复述封存 holdout 的观测/判定总数，必须指向台账。**
-
-    这条替换掉的机制是一张**手工维护的过期字符串黑名单**（"已消耗两次观测"、
-    "已消耗三次观测"、…）。那张表有两个结构性缺陷，2026-08-17 的外部审阅第五轮
-    两个都点到了：
-
-    1. **它永远落后当前状态一代**——它保护的恰恰是"次数"这个每轮都会变的量，
-       而新的过期表述只有在有人先想到它、再把它写进表里之后才拦得住；
-    2. **它的扫描范围也是手写列表**，于是新增文档默认不在保护内。
-
-    现在的形状是：**扫描范围由 `git ls-files` 派生**（全集，不是列表），
-    **规则是"不得出现总数"而不是"不得出现某个具体的数"**。
-    没有数字需要同步，这个失败模式就不再有生长的地方。
-
-    相对指代（"前三次判定都是 NO-GO"）不受限——它描述的是历史上的头三次，永远为真。
+    英文不能把空白删掉（`six times` 会变成 `sixtimes`），因此只压缩不删除。
     """
-    offenders: list[str] = []
-    for name in _tracked_markdown_files():
-        text = _normalized(name)
-        for pattern in _TOTAL_COUNT_PATTERNS:
-            for match in pattern.finditer(text):
-                start = max(0, match.start() - 20)
-                offenders.append(f"{name}: …{text[start : match.end() + 12]}…")
-    assert offenders == [], (
-        "活动文档复述了封存 holdout 的观测/判定总数。总数只能写在 docs/HOLDOUT_LEDGER.md，"
-        "其它文档一律改成指向台账（这样它永远不会过期）：\n  " + "\n  ".join(offenders)
-    )
+    text = re.sub(r"[*`]+", "", text)
+    return re.sub(r"[ \t]+", " ", text)
+
+
+def _normalized(name: str) -> str:
+    return _normalized_text(_read(name))
+
+
+#: 这条检查**自己的回归语料**。
+#:
+#: 一个基于模式的检测器需要它自己的测试，否则"它到底拦得住什么"只是一句声称。
+#: 下面每一句都来自 2026-08-17 外部审阅第六轮的探测——**它们当时全部漏检**，
+#: 其中最刺眼的是英文侧（结构化规则当时全是 CJK）与动宾倒装（"观测了六次"）。
+_MUST_BE_CAUGHT = (
+    "封存 holdout 至今观测了六次。",
+    "封存 holdout 累计观测 6 次。",
+    "封存 holdout 的观测总数为 6。",
+    "封存 holdout 已消耗五次观测。",
+    "整个开发期封存 holdout 只被观测了四次。",
+    "封存 holdout 上跑通了四次发布判定。",
+    "The sealed holdout has been observed six times.",
+    "We consumed 6 observations on the sealed holdout in total.",
+    "Of four observations on the sealed holdout, the first three were NO-GO.",
+    "The sealed holdout was observed only four times.",
+)
+
+#: 反例：这些**必须放行**，否则检查会逼人删掉正确的相对指代。
+_MUST_BE_ALLOWED = (
+    "封存 holdout 上前三次观测都是 NO-GO。",
+    "第六次封存 holdout 观测拿到 GO。",
+    "验证它要再消耗一次封存 holdout 观测。",
+    "封存 holdout 上同配置两次运行分别有 2 次与 7 次政策违规。",
+    "OOD 封存分片只观测一次。",
+    "base 侧 p95 在两次观测间有 9% 的波动。",
+    "The first three observations on the sealed holdout were all NO-GO.",
+)
+
+
+def test_the_total_count_detector_catches_what_it_claims_to() -> None:
+    """**给检测器本身上测试。**
+
+    第六轮外部审阅的原话是：新规则"本质仍是黑名单，只是带了通配符"，
+    并用 14 句自然的同类表述探出 **12 句漏检**。修法不是再补几条正则，
+    而是把判别式反过来——**限定到"在谈封存 holdout"，白名单化相对/序数形式，
+    其余一律禁**——并且把当时漏掉的每一句钉成回归语料。
+
+    没有这一组，"这次真的结构化了"就仍然只是一句声称。
+    """
+    for sentence in _MUST_BE_CAUGHT:
+        assert _total_count_offenders(_normalized_text(sentence)) != [], f"漏检：{sentence}"
+    for sentence in _MUST_BE_ALLOWED:
+        assert _total_count_offenders(_normalized_text(sentence)) == [], f"误伤：{sentence}"
 
 
 def test_no_active_doc_predicts_which_observation_comes_next() -> None:
@@ -1171,6 +1254,96 @@ def test_no_active_doc_predicts_which_observation_comes_next() -> None:
         "活动文档预言了下一次观测是第几次。改成「再消耗一次封存 holdout 观测」这类"
         "不带序数的说法——序数会在下一次观测当天过期：\n  " + "\n  ".join(offenders)
     )
+
+
+#: §3 的定稿 bullet 里，**这些读数一旦出现就必须带着它的对照**。
+#:
+#: 左边是"好看的那一半"，右边是"没有它就构成挑数字"的那一半。
+#: 2026-08-17 外部审阅第六轮把方案 B 改回「117/120、政策违规仅 2 次」
+#: （即两次运行里较好的那一次），**全仓 1089 条测试无一变红**——
+#: 因为当时的守卫是**文件级**的：同一文件别处还留着 113/120，被挖空的 bullet 就照样过关。
+_PAIRED_READINGS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    (
+        "117/120",
+        ("113/120", "113–117/120"),
+        "封存 120 条上是同配置两次运行的两个读数，不能只报较好的那次",
+    ),
+    ("1.0000", ("0.9833",), "分布外封存分片的满分只在第一份素材上，第二份是 0.9833"),
+    ("GO", ("0.5833",), "引用 GO 必须同时给出分布外总分"),
+    ("expression_ood", ("n=4", "20 条"), "0.00 → 1.00 的样本量是 20 条 = 五子类 × n=4"),
+)
+
+
+def _resume_bullet_variants() -> dict[str, str]:
+    """把 §3 的两版定稿 bullet 各自切出来。
+
+    **按变体切、不按文件切**：一版不能借另一版的免责声明过关。
+    """
+    text = _read("docs/RESUME_EVIDENCE.md")
+    section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
+    variants: dict[str, str] = {}
+    for chunk in re.split(r"^### ", section, flags=re.MULTILINE)[1:]:
+        head = chunk.splitlines()[0].strip()
+        variants[head] = chunk
+    assert variants, "§3 里找不到任何一版定稿 bullet"
+    return variants
+
+
+def test_the_resume_bullets_never_quote_a_reading_without_its_companion() -> None:
+    """**全仓风险最高的一段文字，必须有机器约束。**
+
+    §3 是要贴到简历上、要在面试里念出口的那一段。此前它与 §2 的「不可写清单」
+    之间**没有任何机械关系**——清单躺在同一个文件里，却只靠人记得去看。
+
+    这条按**变体**检查读数配对：好看的数字出现了，它的对照必须在同一版 bullet 里。
+    """
+    for name, chunk in _resume_bullet_variants().items():
+        for reading, companions, why in _PAIRED_READINGS:
+            if reading not in chunk:
+                continue
+            assert any(companion in chunk for companion in companions), (
+                f"{name}: 写了「{reading}」却没有 {list(companions)} 中的任何一个——{why}"
+            )
+
+
+def test_the_resume_bullets_never_use_a_phrasing_the_project_forbids() -> None:
+    """§2 的「不可写」清单**直接绑到** §3。
+
+    清单第一列里带引号的那些句子是机器完全可读的字符串表，
+    把它绑到 §3 是十几行的事——而 2026-08-17 外部审阅第六轮能把
+    「120/120 证明模型泛化」「候选可以上线」原样塞进定稿 bullet 而全仓测试全绿。
+
+    **注意这条能挡的边界**：它挡的是**逐字**复用被禁的说法，挡不住改写。
+    改写那一半由上面的读数配对检查与人工审阅负责。两条都不是完备的，
+    但"完全没有机械约束"与"挡得住逐字复用"之间的差别是实打实的。
+    """
+    listed = _read("docs/RESUME_EVIDENCE.md").split("## 2. 明确不可写的表述")[1].split("\n## ")[0]
+    forbidden = {
+        match.group(1).strip()
+        for match in re.finditer(r"^\|\s*[\"“]([^\"”]+)[\"”]", listed, re.MULTILINE)
+    }
+    assert len(forbidden) >= 15, f"只解析出 {len(forbidden)} 条不可写表述，清单解析大概率坏了"
+
+    for name, chunk in _resume_bullet_variants().items():
+        used = sorted(phrase for phrase in forbidden if phrase in chunk)
+        assert used == [], f"{name} 用了 §2 明令不可写的表述：{used}"
+
+
+#: 「候选在封存 120 条上**不是满分**」这个事实的语义匹配。
+#:
+#: 此前两处直接钉字面量 `"117/120"`——那是 LOG-20260817-06 记的失败模式：
+#: 读数一旦改成区间（现在是「113–117/120，同配置两次运行」），
+#: 测试就会强制一个已经不完整的旧数字。现在断言的是**语义**：
+#: 文中必须给出一个分母 120、分子小于 120 的读数。
+_NOT_A_PERFECT_SEALED_SCORE = re.compile(r"(?<!\d)(\d{1,3})(?:–(\d{1,3}))?/120")
+
+
+def _states_the_sealed_score_is_not_perfect(text: str) -> bool:
+    for match in _NOT_A_PERFECT_SEALED_SCORE.finditer(text):
+        for group in match.groups():
+            if group is not None and int(group) < 120:
+                return True
+    return False
 
 
 def test_the_overturned_judgement_count_matches_the_table() -> None:
@@ -1445,14 +1618,16 @@ def test_the_documented_test_count_matches_reality() -> None:
     这个项目在 R5 之前已经有过 698 / 884 / 885 / 901 / 907 五个版本散落在不同文档里。
     与其每次手改，不如把它绑到 pytest 实际收集到的数量上：改了测试忘了改文档，这条就红。
     """
+    # 用**当前解释器**跑，不要往 PATH 前面硬塞 `ROOT/.venv/bin`：
+    # 那个目录在一个干净 clone 上并不存在，于是这条测试会以"找不到 python"失败，
+    # 而它报出来的却像是"文档数字对不上"（2026-08-17 外部审阅第六轮在 clone 上撞到）。
     collected = subprocess.run(
-        ["python", "-m", "pytest", "--collect-only", "-q"],
+        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=True,
         timeout=300,
-        env={**os.environ, "PATH": f"{ROOT / '.venv' / 'bin'}{os.pathsep}{os.environ['PATH']}"},
     )
     match = re.search(r"(\d+) tests collected", collected.stdout)
     assert match is not None, f"无法从 pytest 输出里解析收集数：{collected.stdout[-500:]}"
@@ -1475,6 +1650,29 @@ def test_the_documented_test_count_matches_reality() -> None:
                 f"{name}: 文档写 {value} tests，实际收集 {actual}。"
                 f"改了测试就要同步这个数字（或者别在文档里写死它）。"
             )
+
+
+def test_the_author_environment_baseline_never_appears_without_the_clean_clone_one() -> None:
+    """写"N tests passed 全绿"的地方，必须同时写干净 clone 上的真实基线。
+
+    2026-08-17 外部审阅第六轮把仓库 clone 到独立目录跑了一遍：**6 failed**，
+    而 README 与定稿简历 bullet 写着"全绿"。数字本身没造假（作者环境确实全过），
+    但**没有任何一处披露这个差异**——面试官拿到仓库的第一个动作就是 clone + pytest。
+
+    那 6 条已经修掉（缺产物改为 skip 并说明原因、一条硬编码 venv 路径的真 bug 已改），
+    现在干净 clone 是 0 failed。**但"两个环境跑出不同数字"这件事本身仍然要说**，
+    这条测试就是防止那句披露在下一次改文档时被顺手删掉。
+    """
+    for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
+        text = _read(name)
+        if not re.search(
+            r"\*\*\d+\*\*? tests passed|\*\*\d+ tests passed\*\*|\*\*\d+\*\* 项测试", text
+        ):
+            continue
+        assert "干净 clone" in text or "clean clone" in text, (
+            f"{name}: 写了作者环境的测试基线，却没有给出干净 clone 上的基线。"
+            f"两者不同是事实，藏起来会在面试官 clone 的三分钟内被撞见"
+        )
 
 
 def test_the_two_teacher_batches_are_never_conflated() -> None:
@@ -1551,7 +1749,9 @@ def test_the_numbers_guide_covers_every_suspiciously_perfect_number() -> None:
     # 它的样本量（20 条 = 五子类 × n=4）也必须一起写。
     assert "0.00 涨到 1.00" in guide or "`expression_ood` 从 0.00 涨到 1.00" in guide
     assert "n=4" in guide, "expression_ood 的子类样本量必须写明"
-    assert "117/120" in guide, "封存 holdout 上并非满分，这一条必须在场"
+    assert _states_the_sealed_score_is_not_perfect(guide), (
+        "封存 holdout 上并非满分，这一条必须在场（给出一个分子小于 120 的 N/120 读数）"
+    )
 
     # 每个高分都必须配一个「旁边那个不好看的数」
     for pairing in ("旁边那个不好看的数", "不能支持什么", "哪些数字低得可疑"):
@@ -1609,6 +1809,46 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
             f"却没有给出任何一个**量化**的代价读数。"
             f"「政策违规」这四个字不算——它在这些文档里到处都是。"
         )
+
+
+def test_the_ledger_discloses_distinct_phrasings_not_just_task_counts() -> None:
+    """封存分片的逐风格样本量必须披露**去重后的措辞数**，不能只写任务数。
+
+    2026-08-17 外部审阅第六轮自己按 `phrasing_id` 去重后发现：
+    bank-003 的 60 条任务只用到 **35 条不同措辞**，而 `terse` 那一格
+    **只有 1 条措辞配了 4 个订单号**。台账当时特意点名表扬「`terse` 4/4 全对」——
+    对「没见过的措辞」这个命题，那句话的证据是 n=1，不是 n=4。
+
+    这个项目在披露最小格样本量上是全仓最讲究的地方之一，恰恰在这里少披露了一层。
+    这条测试把披露的数字**绑到真实产物上**：改了分片却忘了改表，它会红。
+    """
+    from veritool_rl.retail_ops.build.phrasing_bank import intent_index, load_phrasing_bank
+    from veritool_rl.retail_ops.domain.ood_v2_tasks import build_ood_v2_tasks
+
+    ledger = _read("docs/OOD_SEALED_LEDGER.md")
+    assert "不同措辞数" in ledger, "台账只写了任务数，没有披露去重后的措辞数"
+
+    bank_path = (
+        ROOT
+        / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
+        / "phrasing/phrasing-bank-003/phrasings.jsonl"
+    )
+    if not bank_path.is_file():
+        pytest.skip("措辞池是 ignored 私有产物，未同步到本机时跳过")
+
+    tasks = build_ood_v2_tasks(intent_index(load_phrasing_bank(bank_path), "ood_sealed"))
+    distinct = len({task.metadata["phrasing_id"] for task in tasks})
+    per_style: dict[str, set[str]] = {}
+    for task in tasks:
+        per_style.setdefault(str(task.metadata["ood_kind"]), set()).add(
+            str(task.metadata["phrasing_id"])
+        )
+    smallest = min(len(ids) for ids in per_style.values())
+
+    assert f"只用到 {distinct} 条不同措辞" in ledger, (
+        f"台账写的去重措辞总数与实际（{distinct}）对不上"
+    )
+    assert f"真实最小格是 **n={smallest}**" in ledger, f"台账写的最小格与实际（n={smallest}）对不上"
 
 
 def test_the_sealed_partition_has_a_ledger_not_just_a_sentence() -> None:
@@ -1691,7 +1931,9 @@ def test_r6_states_the_current_release_boundary() -> None:
 
     # 边界一：通过门禁 ≠ 可以上线，且必须给出「不是满分」这个事实
     assert "通过了发布门禁 ≠ 可以上线" in fix
-    assert "117/120" in fix, "拿到 GO 的候选不是满分，这一条必须在场"
+    assert _states_the_sealed_score_is_not_perfect(fix), (
+        "拿到 GO 的候选不是满分，这一条必须在场（给出一个分子小于 120 的 N/120 读数）"
+    )
 
     # 边界二：观测次数不再是硬约束，但纪律不变——两句都必须在场，
     # 只说前半句会读成「随便测」，只说后半句会与台账的当前状态冲突。

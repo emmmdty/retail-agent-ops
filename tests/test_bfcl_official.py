@@ -6,12 +6,25 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+#: 上游 BFCL 的自包含 checkout。它是 ignored 的（固定 commit，按 BFCL_PIN.txt 重建），
+#: 因此在一个干净 clone 上并不存在——那时这两条应当 **skip 并说明原因**，
+#: 而不是红成"测试挂了"。2026-08-17 外部审阅第六轮在干净 clone 上撞到的就是这个。
+_BFCL_REPO = "data/external_repos/gorilla/berkeley-function-call-leaderboard"
+
 
 def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
     tmp_path: Path,
 ) -> None:
     python = Path("tools/bfcl_eval/.venv/bin/python")
-    assert python.is_file(), "请先运行 uv sync --project tools/bfcl_eval --frozen"
+    if not python.is_file():
+        pytest.skip(
+            "BFCL evaluator 的独立 venv 未安装（uv sync --project tools/bfcl_eval --frozen）"
+        )
     model_dir = tmp_path / "results/Qwen_Qwen3-1.7B-FC/non_live"
     model_dir.mkdir(parents=True)
     rows = [
@@ -49,11 +62,16 @@ def test_official_bfcl_ast_subset_runner_accepts_correct_and_rejects_wrong(
         encoding="utf-8",
     )
 
+    if not (ROOT / _BFCL_REPO).is_dir():
+        pytest.skip(
+            "上游 BFCL checkout 是 ignored 的自包含目录（按 data/external_repos/BFCL_PIN.txt 重建）"
+        )
+
     command = [
         str(python),
         "scripts/legacy/bfcl/run_bfcl_official_ast.py",
         "--bfcl-repo",
-        "data/external_repos/gorilla/berkeley-function-call-leaderboard",
+        _BFCL_REPO,
         "--expected-commit",
         "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
         "--manifest",
@@ -97,7 +115,10 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
     tmp_path: Path,
 ) -> None:
     python = Path("tools/bfcl_eval/.venv/bin/python")
-    assert python.is_file(), "请先运行 uv sync --project tools/bfcl_eval --frozen"
+    if not python.is_file():
+        pytest.skip(
+            "BFCL evaluator 的独立 venv 未安装（uv sync --project tools/bfcl_eval --frozen）"
+        )
     model_dir = tmp_path / "results/Qwen_Qwen3-1.7B-FC/non_live"
     model_dir.mkdir(parents=True)
     rows = [
@@ -136,11 +157,16 @@ def test_official_bfcl_ast_runner_accepts_sft_manifest_without_holdout(
         ),
         encoding="utf-8",
     )
+    if not (ROOT / _BFCL_REPO).is_dir():
+        pytest.skip(
+            "上游 BFCL checkout 是 ignored 的自包含目录（按 data/external_repos/BFCL_PIN.txt 重建）"
+        )
+
     command = [
         str(python),
         "scripts/legacy/bfcl/run_bfcl_official_ast.py",
         "--bfcl-repo",
-        "data/external_repos/gorilla/berkeley-function-call-leaderboard",
+        _BFCL_REPO,
         "--expected-commit",
         "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
         "--manifest",

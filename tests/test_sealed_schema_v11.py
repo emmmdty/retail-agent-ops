@@ -62,6 +62,12 @@ def test_every_sealed_report_on_disk_still_loads_and_verifies() -> None:
     `load_sealed_evaluation_report` 会**重算** report_id 并逐字比对，因此这不只是
     "能反序列化"，而是"自哈希仍然成立"。
     """
+    # 产物根整个不存在 = 干净 clone，**跳过并说明**；
+    # 根在、却一份都加载不出来 = 真的坏了，仍然红。
+    # 这个区分是 2026-08-17 外部审阅第六轮在干净 clone 上撞到 5 red 之后加的：
+    # `assert checked >= 1` 拒绝空过是对的，但它把"产物不随仓库分发"也报成了失败。
+    if not (ROOT / "reports" / "retail_ops").is_dir():
+        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
     checked = 0
     for relative in _ON_DISK:
         path = ROOT / relative

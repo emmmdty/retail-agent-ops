@@ -75,6 +75,12 @@ def _pair(*, merged: bool, candidate_latency: float = 1000.0) -> tuple[Any, Any]
 
 def test_old_release_reports_still_load() -> None:
     """契约扩展不得让任何一份已产出的发布判定失效。"""
+    # 产物根整个不存在 = 干净 clone，**跳过并说明**；
+    # 根在、却一份都加载不出来 = 真的坏了，仍然红。
+    # 这个区分是 2026-08-17 外部审阅第六轮在干净 clone 上撞到 5 red 之后加的：
+    # `assert checked >= 1` 拒绝空过是对的，但它把"产物不随仓库分发"也报成了失败。
+    if not (ROOT / "reports" / "retail_ops").is_dir():
+        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
     checked = 0
     for relative in _ON_DISK_RELEASES:
         path = ROOT / relative
