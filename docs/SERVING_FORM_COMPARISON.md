@@ -1,9 +1,18 @@
 # 部署形态对照：未合并 LoRA vs 合并回基座权重
 
-**这不是发布判定，无论 dev 还是 holdout 侧。** 合并版没有 adapter、且是不同的
-`ModelArtifact`，`require_comparable_sealed_runs` 会（正确地）拒绝把它当作 candidate
-——封存判定的契约要求 candidate = 同一基座 + adapter。**第三次的正式判定跑的是
-未合并候选，两套口径都是 NO-GO**（见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 观测 3）。
+> **2026-08-17 补记（全文时态更正）**：本文件写于 2026-08-15 观测 3 当天，
+> 当时 sealed 证据契约还不能表达"合并型候选"，因此文中多处写着合并形态
+> **「根本无法获得判定」**。**这句话现在是假的**——同一天晚些时候的 sealed 契约
+> v1.1（`06e4cc2`）就是为此做的，而观测 4 正是合并形态拿到的项目第一个 `GO`
+> （见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)）。
+> 下文保留当时的表述与读数不改写，但**凡是「无法获得判定」一类的现在时陈述，
+> 一律读作「在 2026-08-15 观测 3 那个契约版本下无法」**。
+> 这处过期是外部审阅第七轮发现的：它承载的恰好是「GO 归因于部署形态」这条头条论证。
+
+**本文件里的对照本身不是发布判定，无论 dev 还是 holdout 侧。** 当时合并版没有 adapter、
+且是不同的 `ModelArtifact`，`require_comparable_sealed_runs` 会（正确地）拒绝把它
+当作 candidate——那一版封存判定的契约要求 candidate = 同一基座 + adapter。
+**第三次的正式判定跑的是未合并候选，两套口径都是 NO-GO**（观测 3）。
 
 本文件先给 dev 侧的对照（§"三档对照"，dev 已被用于候选选择、带选择偏差），
 再给 2026-08-15 第三次观测里的 holdout 侧对照（文末）。
@@ -92,8 +101,8 @@ HF `generate` 逐 episode 串行；全仓无 `merge_and_unload`、无 vLLM/SGLan
 是部署实现的。同一份权重、同一套行为，换一种加载方式，单次调用耗时从 3063.9 ms
 降到 1653.7 ms（**−46%**），吞吐从 28.38 回到 50.74 tok/s。
 
-这不等于候选可以上线：正式判定仍是 NO-GO，而且合并形态在当前契约下**根本无法**
-获得判定。它等于：**在讨论"这个模型是不是太慢"之前，先要确认测的是模型还是部署形态。**
+这不等于候选可以上线：**当时**的正式判定仍是 NO-GO，而且合并形态**在当时那一版契约下**
+无法获得判定（v1.1 之后可以，见文首补记）。它等于：**在讨论"这个模型是不是太慢"之前，先要确认测的是模型还是部署形态。**
 
 ## 封存 holdout 上的同一对照（2026-08-15，观测 3）
 
@@ -117,9 +126,10 @@ dev 的结论在 holdout 上**复现了，且更接近门槛**。三档同 commi
 把候选侧换成合并版后，v1.0 与 v1.1 的门禁算术**全部通过**（`p95_latency_ratio`
 1.2141、`per_call_latency_ratio` 1.2364、`latency_per_success_ratio` 1.2167）。
 
-**但这不是发布判定，也不能是。** 合并版没有 adapter、且是不同的 `ModelArtifact`，
-`require_comparable_sealed_runs` 会（正确地）拒绝把它当作 candidate——该契约要求
-candidate = 同一基座 + adapter。第三次的**正式判定**是未合并候选，两套口径都是
+**但这不是发布判定**（在写下它的那个契约版本下**也不能是**）。合并版没有 adapter、
+且是不同的 `ModelArtifact`，当时的 `require_comparable_sealed_runs` 会（正确地）
+拒绝把它当作 candidate——那一版契约要求 candidate = 同一基座 + adapter。
+**契约 v1.1 之后这条限制已解除**，见文首补记。第三次的**正式判定**是未合并候选，两套口径都是
 **NO-GO**。逐项读数见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
 
 **余量必须一起说**：1.2141 与 1.2364 对阈值 1.25，只剩 3% 和 1%；而 base 侧 p95 在

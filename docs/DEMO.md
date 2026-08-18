@@ -29,7 +29,7 @@ qualification 轨道走**完全相同的代码路径**，只是策略是确定�
 
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
-.venv/bin/pytest -q          # 期望 844 passed
+.venv/bin/pytest -q          # 作者环境 1095 passed；干净 clone 1050 passed / 45 skipped
 
 R=reports/retail_ops/v1/demo
 .venv/bin/retail-agent-ops build    --config configs/retail_ops/build/retail_ops_v1_build.yaml \

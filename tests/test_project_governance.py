@@ -1088,65 +1088,153 @@ _SEALED_SCOPE = re.compile(
     r"封存\s*holdout|sealed\s+holdout|holdout\s*观测|holdout observation", re.IGNORECASE
 )
 
-#: 在数**观测/判定**的数量。数违规、数运行、数场景都不算——
-#: 「2 次与 7 次政策违规」「同配置两次运行」是读数，不是观测总数。
-#:
-#: 每个分支都必须把数词捕获成 `num`，允许判定要看的是**紧挨着数词**的那个字。
-_OBSERVATION_QUANTITY = re.compile(
-    rf"(?P<num>\d+|[{_CJK_NUMERAL}])\s*次\s*[^。\n]{{0,12}}?(?:观测|(?:发布|release)\s*)?判定"
-    rf"|(?P<num2>\d+|[{_CJK_NUMERAL}])\s*次\s*[^。\n]{{0,12}}?观测"
-    rf"|(?:观测|判定)\s*了?\s*(?P<num3>\d+|[{_CJK_NUMERAL}])\s*次"
-    rf"|观测总数\s*(?:为|是)?\s*(?P<num4>\d+|[{_CJK_NUMERAL}])"
-    rf"|(?P<num5>\d+|{_EN_NUMERAL})\s+(?:observations?|decisions?)"
-    rf"|observed\s+(?:only\s+|just\s+|a\s+total\s+of\s+)?(?P<num6>\d+|{_EN_NUMERAL})\s+times",
+#: 观测/判定的**计数名词**。这一层刻意写得宽：数违规、数运行、数场景不算，
+#: 但"次/轮/回/条/组/批"这些量词一律不区分——区分它们就是在枚举表面形式。
+_COUNTING_KEYWORD = re.compile(r"观测|判定|observations?|decisions?|observed", re.IGNORECASE)
+
+#: **相对/序数指代是允许的**，这是一个小而封闭的语法白名单。
+#: 白名单不全只会造成误报（逼人换个写法），不会放过假话——方向是安全的。
+_ADJACENT_MARKERS = frozenset("前头第上下每这那本某历再另外额任何各同数多几末最")
+_EN_MARKERS = re.compile(r"(?:first|the|another|one more|an extra|each|every)\s*$", re.IGNORECASE)
+
+#: 不算"计数"的数字形态：日期、版本、比分、小数、百分比、哈希片段、`n=4` 这类样本量。
+_NOT_A_COUNT = re.compile(
+    r"\d{4}-\d{2}-\d{2}|v?\d+\.\d+|\d+/\d+|\d+%|n=\d+|[0-9a-f]{7,}"
+    # 标识符与章节号里的数字：`R-6`、`## 6. 成本`、`§6`、`sft-008`
+    r"|[-#§]\s?\d+|[A-Za-z]-\d+|\d+\.\s",
     re.IGNORECASE,
 )
 
-#: **相对/序数指代是允许的**——「前三次判定都是 NO-GO」描述历史上的头三次，
-#: 永远为真，不会过期；「再消耗一次观测」不含总数。
+
+def _ledger_observation_count() -> int:
+    """当前观测总数——从唯一事实源现算，不写死。仅用于报错信息里的提示。"""
+    ledger = _read("docs/HOLDOUT_LEDGER.md")
+    return len(re.findall(r"^## 观测 \d+ — ", ledger, re.MULTILINE))
+
+
+#: 合法的**序数指针**：指向台账里编号的某一条（「观测 2 与观测 3」「本卡对应观测 1」）。
+#: 它不是总数，永远不会过期。
+#: 「观测 2」是指针，「观测 6 次」是计数——差别在数字后面跟不跟量词。
+_ORDINAL_POINTER = re.compile(
+    r"(?:观测|判定)\s*\d+(?![\s]*[次轮回条组批])|observation\s+\d+(?!\s*times)", re.IGNORECASE
+)
+
+#: 数字后面跟着这些量词时，数的不是观测（集合大小、时长、显存、违规次数…）。
+_NON_OBSERVATION_UNITS = re.compile(
+    r"^\s*(?:条|个|秒|分钟|小时|ms|s\b|GB|MB|倍|次政策违规|次运行|次训练|次改进|次前向"
+    r"|次调用|次请求|%|pp|tok|tasks?|items?|runs?|violations?)",
+    re.IGNORECASE,
+)
+
+
+def _duplicated_count_values(count: int) -> tuple[str, ...]:
+    """那个**不该在活动文档里出现第二次**的值，及其中英文写法。"""
+    cjk = "零一二三四五六七八九十"
+    english = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+    return tuple(
+        value
+        for value in (
+            str(count),
+            cjk[count] if count < len(cjk) else "",
+            english[count - 1] if 1 <= count <= len(english) else "",
+        )
+        if value
+    )
+
+
+def _count_offenders(text: str) -> list[str]:
+    """**主网：判别式是"值"，不是"形状"。**
+
+    要找的那个值从台账现算（`_ledger_observation_count`），因此这条检查
+    不由"上一位审阅者说了什么"定义，也不依赖任何人预先想到某种说法——
+    它拦的是「把台账拥有的那个数在别处又写了一遍」，无论量词、语序、中英文。
+
+    前两版枚举"总数的说法"，被两位审阅者分别用 14 句与 29 句新表述击穿
+    （漏检 12/14 与 26/29）。**枚举违法形式必然漏**，这是黑名单的固有属性。
+
+    白名单只有三类，全是**语法**而不是 claim 形状：相对/序数标记紧邻数字、
+    指向台账某一条的序数指针（`观测 2`）、以及那个数字根本不在数观测
+    （日期、小数、比分、百分比、哈希）。
+    """
+    offenders: list[str] = []
+    values = _duplicated_count_values(_ledger_observation_count())
+    for keyword in _COUNTING_KEYWORD.finditer(text):
+        scope = text[max(0, keyword.start() - 45) : keyword.end() + 45]
+        if not _SEALED_SCOPE.search(scope):
+            continue
+        lo, hi = max(0, keyword.start() - 24), keyword.end() + 24
+        segment = text[lo:hi]
+        for value in values:
+            hit = re.search(rf"(?<![0-9a-zA-Z]){re.escape(value)}(?![0-9a-zA-Z])", segment, re.I)
+            if hit is None:
+                continue
+            absolute = lo + hit.start()
+            if _NOT_A_COUNT.search(text[max(0, absolute - 8) : absolute + 12]):
+                continue
+            # 尾部要留足上下文：截断会让「观测 6 次」的量词看不见，
+            # 于是它被误判成指向台账第 6 条的序数指针。
+            if _ORDINAL_POINTER.search(text[max(0, absolute - 6) : absolute + len(value) + 6]):
+                continue
+            before = text[max(0, absolute - 10) : absolute]
+            if before[-1:] in _ADJACENT_MARKERS or _EN_MARKERS.search(before):
+                continue
+            offenders.append(text[max(0, absolute - 35) : absolute + 30].strip())
+            break
+    return offenders
+
+
+#: **第二张网**：明显是"总数"语气的说法，无论它写的是哪个值。
 #:
-#: 注意这是一个**白名单**，而且只认**紧挨着数词**的那一个字：
-#: 上一版把「上」也算进来，于是「封存 holdout **上**跑通了四次发布判定」
-#: 因为句中另有一个方位词「上」而被放行。位置比字符集更重要。
-_ADJACENT_MARKERS = frozenset("前头第上历另任何各同每本这那")
-_NEARBY_MARKERS = ("再", "另")
-_EN_MARKERS = re.compile(r"(?:first|another|the)\s*$", re.IGNORECASE)
+#: 值判别式只认**当前**那个数，因此拦不住一句停留在旧值上的话（"已消耗五次观测"）。
+#: 这张网补的正是那一半。**它按构造是不完备的**（枚举表面形式必然漏），
+#: 所以它只是第二张网，不是主判据——这一点写在这里，不写在 docstring 的承诺里。
+_TOTALITY_SHAPES = (
+    re.compile(
+        r"(?:已消耗|消耗了|一共|总共|累计|至今|迄今|统共)\s*(?:\d+|[一二三四五六七八九十两])\s*次"
+    ),
+    re.compile(
+        r"(?:整个开发期|全程|只被?)[^。\n]{0,20}?观测了?\s*(?:\d+|[一二三四五六七八九十两])\s*次"
+    ),
+    re.compile(r"观测总数\s*(?:为|是)?\s*(?:\d+|[一二三四五六七八九十两])"),
+    re.compile(r"(?:\d+|[一二三四五六七八九十两])\s*次观测均?已消耗"),
+    re.compile(r"(?:in total|a total of|altogether|to date|so far)", re.IGNORECASE),
+)
 
 
-def _numeral_start(match: re.Match[str]) -> int:
-    for name in ("num", "num2", "num3", "num4", "num5", "num6"):
-        if match.group(name) is not None:
-            return match.start(name)
-    return match.start()
+def _shape_offenders(text: str) -> list[str]:
+    """总数语气 + 封存 holdout 作用域。"""
+    offenders: list[str] = []
+    for pattern in _TOTALITY_SHAPES:
+        for match in pattern.finditer(text):
+            scope = text[max(0, match.start() - 45) : match.end() + 45]
+            if not _SEALED_SCOPE.search(scope):
+                continue
+            if not _COUNTING_KEYWORD.search(scope):
+                continue
+            offenders.append(scope.strip())
+    return offenders
 
 
 def _total_count_offenders(text: str) -> list[str]:
-    """找出「在谈封存 holdout 时复述观测/判定总数」的句子。"""
-    offenders: list[str] = []
-    for match in _OBSERVATION_QUANTITY.finditer(text):
-        window = text[max(0, match.start() - 45) : match.end() + 45]
-        if not _SEALED_SCOPE.search(window):
-            continue
-        cursor = _numeral_start(match)
-        before = text[max(0, cursor - 6) : cursor]
-        if before[-1:] in _ADJACENT_MARKERS:
-            continue
-        if any(marker in before for marker in _NEARBY_MARKERS):
-            continue
-        if _EN_MARKERS.search(before):
-            continue
-        offenders.append(window.strip())
-    return offenders
+    """两张网并联：默认拒绝的计数网 + 总数语气的形状网。
+
+    **能挡什么、挡不住什么（写在这里，因为过度承诺本身就是本仓库反复抓的问题）**：
+    - 挡得住：在谈封存 holdout 的句子里出现任何未白名单的计数数字，
+      无论量词、语序、中英文，也无论那个数是当前值还是过期值；
+    - 挡不住：把总数写成算式（"三次加三次"）、或完全改写成不含数字的错误陈述。
+      **这一层由「台账是唯一事实源」加人工审阅负责，没有机器保证。**
+    """
+    return _count_offenders(text) + _shape_offenders(text)
 
 
 #: **前瞻式序数**：「下一次会是第 N 次」这一类。它必然会在下一次观测之后过期，
 #: 而且过期时没有任何机制会提醒——除非像这样把整个形状禁掉。
-#: 英文同形（`will be the fifth`）一并拦，否则又是"规则只覆盖一种语言"。
+#: 英文同形一并拦，否则又是"规则只覆盖一种语言"。
 _FORWARD_ORDINAL_PATTERN = re.compile(
-    rf"(?:下一次|下次|会是|将是|都是|等于|等同于)[^。\n]{{0,24}}?第\s*(?:\d+|[{_CJK_NUMERAL}])\s*次"
-    rf"|(?:will be|would be|is|becomes)\s+the\s+"
-    rf"(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
-    rf"\s+observation",
+    r"(?:下一次|下次|会是|将是|都是|等于|等同于)[^。\n]{0,24}?第\s*(?:\d+|[一二三四五六七八九十两])\s*次"
+    r"|(?:will be|would be|is|becomes)\s+the\s+"
+    r"(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"\s+observation",
     re.IGNORECASE,
 )
 
@@ -1187,32 +1275,47 @@ def _normalized(name: str) -> str:
     return _normalized_text(_read(name))
 
 
-#: 这条检查**自己的回归语料**。
+#: 检测器**自己的回归语料**。
 #:
-#: 一个基于模式的检测器需要它自己的测试，否则"它到底拦得住什么"只是一句声称。
-#: 下面每一句都来自 2026-08-17 外部审阅第六轮的探测——**它们当时全部漏检**，
-#: 其中最刺眼的是英文侧（结构化规则当时全是 CJK）与动宾倒装（"观测了六次"）。
+#: 这不是机制——机制是「值由台账现算」那一条。这些句子只是**证据**，
+#: 用来让"它到底拦得住什么"可被检验，而不是一句声称。
+#: 其中第 1–6 句来自外部审阅第六轮的探测，第 7–18 句来自第七轮，
+#: 当时分别漏检 12/14 与 26/29。
 _MUST_BE_CAUGHT = (
     "封存 holdout 至今观测了六次。",
     "封存 holdout 累计观测 6 次。",
     "封存 holdout 的观测总数为 6。",
     "封存 holdout 已消耗五次观测。",
     "整个开发期封存 holdout 只被观测了四次。",
-    "封存 holdout 上跑通了四次发布判定。",
     "The sealed holdout has been observed six times.",
-    "We consumed 6 observations on the sealed holdout in total.",
-    "Of four observations on the sealed holdout, the first three were NO-GO.",
-    "The sealed holdout was observed only four times.",
+    "封存 holdout 的观测次数为 6。",
+    "一共经历了 6 轮封存 holdout 观测。",
+    "共观测过 6 回封存 holdout。",
+    "封存 holdout 观测数：6。",
+    "封存 holdout 观测总计六次。",
+    "封存 holdout 的观测预算 6 次已全部用完。",
+    "封存 holdout 观测计数器现在停在 6。",
+    "对封存 holdout 发起了 6 组观测。",
+    "封存 holdout 观测记录一共 6 条。",
+    "There have been six sealed holdout observations in total.",
+    "A total of 6 sealed holdout observations are on record.",
+    "The sealed holdout observation count stands at 6.",
+    "Six release decisions have been made on the sealed holdout.",
+    "The number of sealed holdout observations is six.",
 )
 
-#: 反例：这些**必须放行**，否则检查会逼人删掉正确的相对指代。
+#: 反例：这些**必须放行**，否则检查会逼人删掉正确的相对指代与序数指针。
 _MUST_BE_ALLOWED = (
     "封存 holdout 上前三次观测都是 NO-GO。",
     "第六次封存 holdout 观测拿到 GO。",
     "验证它要再消耗一次封存 holdout 观测。",
+    "需要额外一次封存 holdout 观测。",
+    "封存 holdout 的最后一次观测拿到 GO。",
     "封存 holdout 上同配置两次运行分别有 2 次与 7 次政策违规。",
     "OOD 封存分片只观测一次。",
     "base 侧 p95 在两次观测间有 9% 的波动。",
+    "见台账观测 2 与观测 3 的封存 holdout 证据。",
+    "本卡对应封存 holdout 观测 1。",
     "The first three observations on the sealed holdout were all NO-GO.",
 )
 
@@ -1220,12 +1323,14 @@ _MUST_BE_ALLOWED = (
 def test_the_total_count_detector_catches_what_it_claims_to() -> None:
     """**给检测器本身上测试。**
 
-    第六轮外部审阅的原话是：新规则"本质仍是黑名单，只是带了通配符"，
-    并用 14 句自然的同类表述探出 **12 句漏检**。修法不是再补几条正则，
-    而是把判别式反过来——**限定到"在谈封存 holdout"，白名单化相对/序数形式，
-    其余一律禁**——并且把当时漏掉的每一句钉成回归语料。
+    连续两轮外部审阅用新句子击穿了基于"枚举违法形状"的规则（漏 12/14、26/29）。
+    第三版把主判别式换成**由台账现算的那个值**：要拦的是「台账拥有的那个数被
+    在别处又写了一遍」，这条不依赖任何人预先想到某种说法。
 
-    没有这一组，"这次真的结构化了"就仍然只是一句声称。
+    **这组语料是证据，不是机制。** 它证明当前实现对两轮审阅的全部探针都成立，
+    但它**不证明完备**——完备性对自然语言检测来说根本不存在，
+    `_total_count_offenders` 的 docstring 里逐条写明了挡不住什么。
+    过度承诺本身就是本仓库反复抓的那类问题，所以这里说清楚边界。
     """
     for sentence in _MUST_BE_CAUGHT:
         assert _total_count_offenders(_normalized_text(sentence)) != [], f"漏检：{sentence}"
@@ -1306,6 +1411,74 @@ def test_the_resume_bullets_never_quote_a_reading_without_its_companion() -> Non
             )
 
 
+def test_the_open_gaps_list_never_contradicts_the_resume_bullets() -> None:
+    """**「还没做」的清单不许落后于「已经做了」的清单。**
+
+    `RESUME_EVIDENCE.md` §5 自己写着：「任何一条被划掉之前，都不许在简历上暗示它已经做了。」
+    2026-08-17 外部审阅第七轮发现**它自己落后了两条**——「表达变体的 LLM 改写」与
+    「演示视频」都在 R6 之前就做完了，`EXECUTION_PLAN.md` 里已经划掉，
+    而 §5 仍标着「未做」，同时 §3 的两版定稿 bullet 都以那两件事为卖点。
+
+    **这不是"文档有点旧"。** §5 是全仓唯一约束「什么还不许写进简历」的清单，
+    它落后就等于这个自证诚实的机制失效了。
+
+    绑法是两份清单**互为校验**：凡是在阶段状态源里被划掉（`~~…~~`，即已完成）的条目，
+    不得同时以未划掉的形式留在 §5 的缺口表里。两边都是人写的，但**两边同时写错才骗得过**。
+    """
+    plan = _read("docs/EXECUTION_PLAN.md")
+    gaps_section = _read("docs/RESUME_EVIDENCE.md").split("## 5. 尚不可用")[1].split("\n## ")[0]
+
+    done_in_plan = {
+        match.group(1).strip().strip("*「」")
+        for match in re.finditer(r"~~\*{0,2}([^~]+?)\*{0,2}~~", plan)
+    }
+    assert len(done_in_plan) >= 3, f"阶段状态源里解析不到已划掉的条目：{done_in_plan}"
+
+    still_open: list[str] = []
+    for label in done_in_plan:
+        if len(label) < 4:
+            continue
+        for line in gaps_section.splitlines():
+            if label not in line:
+                continue
+            # 该行也划掉了就没有矛盾
+            if "~~" in line:
+                continue
+            still_open.append(f"「{label}」：{line.strip()[:70]}")
+    assert still_open == [], (
+        "阶段状态源里已经划掉的条目，仍以「未做」留在 RESUME_EVIDENCE §5 的缺口表里。"
+        "§5 落后于事实就等于它约束不了 §3：\n  " + "\n  ".join(still_open)
+    )
+
+
+def test_the_resume_bullets_only_use_numbers_documented_elsewhere() -> None:
+    """**§3 里出现的每一个数字，都必须在同一份文件的别处有出处。**
+
+    这条替代掉的是一张字面量配对表。2026-08-17 外部审阅第七轮把方案 B 改成
+    「任务成功率 **97.5%**、政策违规降到个位数」——97.5% 就是 117/120（两次运行里
+    较好的那次），113/120 与「7 次」被挖掉，而**全仓 1093 条测试无一变红**：
+    配对表只认它列过的字面量，换个写法就绕过去了。
+
+    这一条不认任何形状。规则是**溯源**：`RESUME_EVIDENCE.md` 自己在 §3 开头写着
+    「两版都只用 §1 的数字」——把那句散文变成可执行的约束。
+    一个新造的、别处没有出处的数字（97.5%、"个位数"折算出的任何值）当场红。
+
+    **它是穷举的**：默认禁止，白名单是"文件别处已经写过的数字"，
+    不需要有人预先想到某种表述形式。这正是前两轮反复被判"换了形状的黑名单"的地方。
+    """
+    text = _read("docs/RESUME_EVIDENCE.md")
+    section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
+    elsewhere = text.replace(section, "")
+
+    pattern = re.compile(r"\d+(?:\.\d+)?(?:/\d+)?%?")
+    undocumented = sorted({token for token in pattern.findall(section) if token not in elsewhere})
+    assert undocumented == [], (
+        f"§3 的定稿 bullet 用了在本文件别处找不到出处的数字：{undocumented}。"
+        f"简历只能引用 §1 已经建立了证据链的读数——新造一个数（哪怕它是别的数换算来的）"
+        f"就是在绕过取数口径"
+    )
+
+
 def test_the_resume_bullets_never_use_a_phrasing_the_project_forbids() -> None:
     """§2 的「不可写」清单**直接绑到** §3。
 
@@ -1344,6 +1517,26 @@ def _states_the_sealed_score_is_not_perfect(text: str) -> bool:
             if group is not None and int(group) < 120:
                 return True
     return False
+
+
+def _collected_test_count() -> int:
+    """当前仓库实际收集到多少个测试。
+
+    用**当前解释器**跑，不要往 PATH 前面硬塞 `ROOT/.venv/bin`：那个目录在一个干净
+    clone 上并不存在，于是相关测试会以"找不到 python"失败，而报出来的却像是
+    "文档数字对不上"（2026-08-17 外部审阅第六轮在 clone 上撞到的真 bug）。
+    """
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=300,
+    )
+    match = re.search(r"(\d+) tests collected", completed.stdout)
+    assert match is not None, f"无法从 pytest 输出里解析收集数：{completed.stdout[-500:]}"
+    return int(match.group(1))
 
 
 def test_the_overturned_judgement_count_matches_the_table() -> None:
@@ -1568,6 +1761,15 @@ def test_the_english_readme_agrees_with_the_chinese_one() -> None:
         "$0.055",  # teacher 成本
         "163/200",  # BFCL legacy
         "167/200",
+        # 2026-08-17 外部审阅第七轮：这张表只钉了 11 个数，**没有一个来自 R6/R7**——
+        # 最新、最会被引用的那批结论在双语之间完全无保护。补齐：
+        "117/120",  # 封存 120 上两次运行较好的那次
+        "113/120",  # 较差的那次（两者必须成对出现）
+        "0.9833",  # 第二份措辞池上的分布外读数
+        "1.0000",  # 第一份措辞池上的
+        "0.7333",  # 第二份上的零训练基座
+        "60/60",  # 重建候选的 dev
+        "0.8667",  # 独立迁移检查总分
     )
     for number in shared_numbers:
         assert number in zh, f"README.md 缺少关键数字 {number}"
@@ -1621,17 +1823,7 @@ def test_the_documented_test_count_matches_reality() -> None:
     # 用**当前解释器**跑，不要往 PATH 前面硬塞 `ROOT/.venv/bin`：
     # 那个目录在一个干净 clone 上并不存在，于是这条测试会以"找不到 python"失败，
     # 而它报出来的却像是"文档数字对不上"（2026-08-17 外部审阅第六轮在 clone 上撞到）。
-    collected = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=300,
-    )
-    match = re.search(r"(\d+) tests collected", collected.stdout)
-    assert match is not None, f"无法从 pytest 输出里解析收集数：{collected.stdout[-500:]}"
-    actual = int(match.group(1))
+    actual = _collected_test_count()
 
     for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
         text = _read(name)
@@ -1663,6 +1855,7 @@ def test_the_author_environment_baseline_never_appears_without_the_clean_clone_o
     现在干净 clone 是 0 failed。**但"两个环境跑出不同数字"这件事本身仍然要说**，
     这条测试就是防止那句披露在下一次改文档时被顺手删掉。
     """
+    collected = _collected_test_count()
     for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
         text = _read(name)
         if not re.search(
@@ -1673,6 +1866,21 @@ def test_the_author_environment_baseline_never_appears_without_the_clean_clone_o
             f"{name}: 写了作者环境的测试基线，却没有给出干净 clone 上的基线。"
             f"两者不同是事实，藏起来会在面试官 clone 的三分钟内被撞见"
         )
+
+        # **披露的数字必须算术自洽**：passed + skipped 必须等于收集到的总数。
+        #
+        # 2026-08-17 外部审阅第七轮发现这里写着 1047 passed / 44 skipped，
+        # 而 1047 + 44 = 1091 ≠ 1093（同一 commit 在 clone 上收集到的就是 1093）——
+        # 那个数**在算术上不可能成立**，而当时的守卫只断言字符串「干净 clone」在场，
+        # 不校验任何数字：**名字和 docstring 承诺的比实现做的多**，正是本仓库反复抓的那类。
+        for passed, skipped in re.findall(
+            r"(\d+) (?:passed|通过)[ /、]*(\d+) (?:skipped|跳过)", text
+        ):
+            assert int(passed) + int(skipped) == collected, (
+                f"{name}: 披露的干净 clone 基线 {passed} passed + {skipped} skipped "
+                f"= {int(passed) + int(skipped)}，而实际收集到 {collected} 个测试。"
+                f"这个数在算术上不可能成立"
+            )
 
 
 def test_the_two_teacher_batches_are_never_conflated() -> None:
@@ -1959,6 +2167,11 @@ def test_the_per_style_sample_sizes_are_disclosed() -> None:
     """
     ledger = _read("docs/OOD_SEALED_LEDGER.md")
     assert "逐风格样本量" in ledger
-    assert "`terse` 一条都没有" in ledger
-    assert "n=2 基本没有信息量" in ledger
-    assert "逐风格不是" in ledger
+
+    # 断言的是**语义**：必须点名最小的那一格并说明它的信息量有限。
+    # 此前这里钉的是字面量 `"`terse` 一条都没有"`——那句话只对 bank-002 那一份成立，
+    # 再加一份素材（bank-003 就有 terse）它就会变成被测试焊死的假话，
+    # 正是 LOG-20260817-06 记的失败模式。
+    assert re.search(r"最小(?:的那一格|格)", ledger), "台账没有点名最小的那一格"
+    assert re.search(r"n\s*=\s*\d+", ledger), "台账没有给出最小格的具体 n"
+    assert "逐风格不是" in ledger or "逐风格样本量必须一起看" in ledger

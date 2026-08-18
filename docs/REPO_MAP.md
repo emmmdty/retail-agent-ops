@@ -23,7 +23,7 @@
 | `domains/retail_ops/v2/` | 活动 | 领域 bundle v2：政策规则**可执行**、`refund_order` 增必填 `idempotency_key`。见 [`DOMAIN_BUNDLE_V2.md`](./DOMAIN_BUNDLE_V2.md)。正式数据集轨道仍只接受 v1 |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
-| `tests/` | 活动 | 885 项测试，含治理契约测试 |
+| `tests/` | 活动 | 治理契约测试与领域契约测试；条数以 `README.md` 的工程基线一行为准，本表不复述 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |

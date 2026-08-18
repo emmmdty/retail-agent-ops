@@ -147,7 +147,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
-.venv/bin/pytest -q          # 844 passed
+.venv/bin/pytest -q          # 作者环境 1095 passed；干净 clone 1050 passed / 45 skipped
 # build → evaluate(base/oracle/fault) → release(GO/NO-GO) → serve
 # 六条命令见 README「本地 CPU 演示」
 ```
