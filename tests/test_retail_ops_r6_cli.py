@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -192,22 +192,36 @@ def test_the_pending_observation_is_declared_before_it_runs() -> None:
 def test_every_declared_run_directory_is_actually_declared() -> None:
     """跑了但没在计划里声明过的运行 = 事后挑选的机会。
 
-    同样只断言语义：**本轮已落盘的运行目录，每一个都必须出现在 `task_plan.md` 里。**
+    **本轮已落盘的运行目录，每一个都必须出现在 `task_plan.md` 里。**
     目录还没生成时这条自动为真（没有运行 = 没有未声明的运行），
     生成之后它才开始有约束力——这正是"先写定再跑"在文件系统上的可验证投影。
+
+    **扫描范围从计划本身派生**，不再是测试里手写的一组 glob。此前每开一轮都要
+    改这几行（R6 那版写死了 `ood-v2.2` 与 `r6/*-006`），而"忘了改"的表现是
+    **测试仍然全绿**——它去检查上一轮的目录，对本轮零约束。
+    现在的做法是：把计划声明的每个产物目录的**父目录**当作本轮命名空间，
+    该命名空间下的每个子目录都必须被声明。
+
+    **边界**：命名空间若与旧轮次共用一个父目录（R6 的 `reports/.../r6/` 下就住着
+    上一轮的 `train-export-006`），这条会把旧产物也要求进计划。本轮起每轮用自己的
+    前缀（`r8`、`ood-v2.3`）来避免，这是约定而非机器保证。
     """
     plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
-    # 本轮的命名空间。写成显式 glob 而不是"整个 r6 目录"，是因为 r6 下还住着
-    # 上一轮的产物（`train-export-006` 等），把它们一起拉进来只会逼人放宽断言。
-    globs = (
-        "reports/retail_ops/v1/ood-v2.2/sealed/*",
-        "reports/retail_ops/v1/r6/*rebuild-seed1*",
-        "reports/retail_ops/v1/r6/holdout-*-006",
-        "reports/retail_ops/v1/r6/formal-release-006*",
-    )
-    for pattern in globs:
-        for path in sorted(REPO_ROOT.glob(pattern)):
+
+    declared = {
+        match.group(1) for match in re.finditer(r"`(reports/retail_ops/[A-Za-z0-9._/-]+)`", plan)
+    }
+    assert declared, "task_plan.md 里一个产物目录都没声明"
+
+    namespaces = {PurePosixPath(name).parent.as_posix() for name in declared}
+    for namespace in sorted(namespaces):
+        root = REPO_ROOT / namespace
+        if not root.is_dir():
+            continue
+        for path in sorted(root.iterdir()):
             if not path.is_dir():
                 continue
             relative = path.relative_to(REPO_ROOT).as_posix()
-            assert relative in plan, f"{relative} 已落盘，但 task_plan.md 里没有声明过它"
+            assert relative in declared, (
+                f"{relative} 已落盘，但 task_plan.md 的运行清单里没有声明过它"
+            )
