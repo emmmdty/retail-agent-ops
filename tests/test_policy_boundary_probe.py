@@ -213,9 +213,25 @@ def test_the_frozen_quota_guards_actually_reject_a_violation() -> None:
     with pytest.raises(ValueError, match="任务总数"):
         short.assert_exact_quotas()
 
-    # 2) 总数对但**分类配额**错：把 dev 的最后一条换成第一条的复制品，
-    #    于是某个场景多一条、另一个少一条，而总数不变。
-    skewed = task_set.model_copy(update={"dev": (*task_set.dev[:-1], task_set.dev[0])})
+    # 2) 总数对、family 结构不动，但**分类配额**错：把一条记录的 scenario 改成另一个。
+    #
+    # **`match=` 是这条测试的关键**，不是装饰。第一版用「复制 dev[0] 顶替 dev[-1]」
+    # 制造倾斜并写了裸 `pytest.raises(ValueError)`，看起来是绿的——但它红是因为
+    # 复制品让那个 family 有了三个变体，先撞上 family 守卫；把分类配额守卫短路掉，
+    # 它**照样绿**。外部评审 2026-08-19 复验时抓到了这一点。
+    # 教训：变异验证要确认**你想钉的那条守卫**变红，"有异常抛出"不算。
+    victim = task_set.dev[0]
+    other = next(s for s in formal_tasks._SCENARIOS if s is not victim.task.scenario)
+    skewed = task_set.model_copy(
+        update={
+            "dev": (
+                victim.model_copy(
+                    update={"task": victim.task.model_copy(update={"scenario": other})}
+                ),
+                *task_set.dev[1:],
+            )
+        }
+    )
     assert len(skewed.dev) == len(task_set.dev)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="类别配额"):
         skewed.assert_exact_quotas()

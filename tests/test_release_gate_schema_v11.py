@@ -480,7 +480,12 @@ def test_a_release_report_rejects_a_hand_edited_decision_or_deployment() -> None
     with pytest.raises(ValueError, match="不一致"):
         report(deployment="baseline")
 
-    # 3) 有门禁失败却仍写 GO / candidate
+    # 3) failed_gate_ids 与 gate 结果对不上（同一个 validator 的相邻一条）。
+    #    这条与下面那条会撞上不同的分支，因此 match= 分开写。
+    with pytest.raises(ValueError, match="failed_gate_ids"):
+        report(failed_gate_ids=[GATE_IDS[0]])
+
+    # 4) 有门禁失败却仍写 GO / candidate
     failing = [
         GateResult(
             gate_id=gate_id,
