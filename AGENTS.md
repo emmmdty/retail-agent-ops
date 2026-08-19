@@ -36,7 +36,9 @@
 
 ## 当前状态
 
-- 当前阶段：`R6` 泛化修复与收口（含最终候选的独立重建复验）**已完成**（2026-08-17）；R0–R5 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
+- 当前阶段：`R7 质量收口` **已完成**（2026-08-19）；R0–R6 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
+- **R7 的结论是一次判负**：政策边界探针把「该拒绝却执行」定位到单一状态格（`offset −14`，即 `refund_deadline` 比当天早 14 天）；针对性数据修复在同源措辞的评测面上改善、在**措辞分布外**的 `ood_dev` 上退化，按事先写定的规则判负，**发布候选仍是 `sft-008`**。见 `docs/POLICY_BOUNDARY.md` 与 LOG-20260819-01。
+- **由此得到的纪律**：任何数据侧修复的验收**必须同时给出一个措辞分布外的读数**，且分布外退化优先于分布内改善。只看同源评测面会看到一个不存在于分布外的改进。
 - R2 已完成方案审批，批准的正式规格与计划位于 `docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
 - 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。
 - **封存 holdout 的观测次数、逐次读数与判定见 `docs/HOLDOUT_LEDGER.md`（唯一事实源，本文件不复述次数）。**

@@ -28,7 +28,7 @@
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
-| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
+| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
 | `scripts/ci/` | 活动 | CPU 全链路复现校验（`verify_qualification_chain.py`），CI 与本地共用同一条命令 |
 | `.github/workflows/` | 活动 | CPU 质量门 workflow。**仓库无 remote，尚未真正运行过** |
 | `Dockerfile` | 活动 | CPU-only 镜像，刻意不含 torch（重依赖只在 GPU 主机装） |
@@ -102,6 +102,9 @@ src/veritool_rl/
 
 **分布外任务集**（`retail_ops_ood_v1_20260815`，60 条）走完全独立的
 build/evaluate 路径：它公开、可反复读、不封存，治理级别与封存 holdout 不同。
+**政策边界探针**（[`POLICY_BOUNDARY.md`](./POLICY_BOUNDARY.md)）沿「退款截止日 − 当天」扫描，把「该拒绝却执行」定位到单一状态格，并记录了一次**按事先规则判负、候选未更换**的针对性修复。它**不封存**，
+因此读数不能用来声称发布结论。
+
 读数见 [`OOD_EVALUATION.md`](./OOD_EVALUATION.md)——**引用第四次那个 GO 时必须
 同时给出它**。
 
