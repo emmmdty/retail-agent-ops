@@ -421,3 +421,75 @@ def test_v10_still_does_not_need_paired_evidence() -> None:
     )
     assert "success_delta_ci_lower" not in gates
     assert gates["success_delta"].passed is True
+
+
+def test_a_release_report_rejects_a_hand_edited_decision_or_deployment() -> None:
+    """**手改一份 GO 报告的结论或部署字段必须被拒。**
+
+    `ReleaseReport.validate_decision_consistency` 是「发布报告不可被手改成想要的
+    结论」这句话的执行者。外部评审 2026-08-19 用变异测试证明：把那条
+    decision↔deployment 的一致性判定短路掉，全仓测试全绿——相邻的 `GATE_IDS`
+    冻结契约校验有测试，这一条没有。
+
+    三种手改各测一次：门禁全过却写 NO-GO、门禁有失败却写 GO、
+    以及结论对但 `deployment` 与之矛盾（这一种最像"顺手改一个字段"）。
+    """
+    from veritool_rl.retail_ops.release.release import (
+        GateResult,
+        ReleaseDecision,
+        ReleaseReport,
+    )
+
+    def report(**overrides: object) -> ReleaseReport:
+        gates = [
+            GateResult(
+                gate_id=gate_id,
+                passed=overrides.pop("all_passed", True),  # type: ignore[arg-type]
+                observed=0,
+                threshold=0,
+                reason="x",
+            )
+            for gate_id in GATE_IDS
+        ]
+        payload: dict[str, object] = {
+            "schema_version": "1.0",
+            "decision": ReleaseDecision.GO,
+            "baseline_run_id": "a" * 64,
+            "candidate_run_id": "b" * 64,
+            "baseline_policy": "baseline",
+            "candidate_policy": "oracle",
+            "bundle_sha256": "c" * 64,
+            "task_manifest_sha256": "d" * 64,
+            "deployment": "candidate",
+            "gates": gates,
+            "failed_gate_ids": [],
+            "baseline_metrics": {},
+            "candidate_metrics": {},
+        }
+        payload.update(overrides)
+        return ReleaseReport(**payload)  # type: ignore[arg-type]
+
+    # 先确认这组基准参数本身是合法的，否则下面三条可能是因为别的原因红。
+    assert report().decision is ReleaseDecision.GO
+
+    # 1) 门禁全过，却把结论手改成 NO-GO
+    with pytest.raises(ValueError, match="不一致"):
+        report(decision=ReleaseDecision.NO_GO, deployment="baseline")
+
+    # 2) 结论是 GO，却把 deployment 手改成 baseline
+    with pytest.raises(ValueError, match="不一致"):
+        report(deployment="baseline")
+
+    # 3) 有门禁失败却仍写 GO / candidate
+    failing = [
+        GateResult(
+            gate_id=gate_id,
+            passed=gate_id != GATE_IDS[0],
+            observed=0,
+            threshold=0,
+            reason="x",
+        )
+        for gate_id in GATE_IDS
+    ]
+    with pytest.raises(ValueError, match="不一致"):
+        report(gates=failing, failed_gate_ids=[GATE_IDS[0]])

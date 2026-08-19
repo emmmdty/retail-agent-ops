@@ -30,6 +30,8 @@ from veritool_rl.retail_ops.build.formal_manifests import (
 from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
 from veritool_rl.retail_ops.evaluate.base_evaluation import ModelArtifact
+from veritool_rl.retail_ops.evaluate.candidate_evaluation import ComparisonError
+from veritool_rl.retail_ops.evaluate.sealed_evaluation import SEALED_PAIRING_FIELDS
 from veritool_rl.retail_ops.release.governance import EvidencePurpose
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -903,3 +905,57 @@ def test_release_cli_rejects_a_bundle_that_differs_from_the_sealed_evidence(
                 candidate_dir=workspace / "out-bad-bundle-candidate-001",
             )
         )
+
+
+def _mutated(value: Any) -> Any:
+    """给任意配对字段造一个"确实不同"的值，类型保持不变。
+
+    字段类型混杂（str / int / dict），因此不能沿用 dev 侧那个只处理字符串的
+    `_mutate`。类型不变是有意的：这里要检验的是**值不同就拒绝**，
+    而不是"塞一个类型错误的东西进去会不会炸"。
+    """
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, str):
+        return ("1" if value[:1] != "1" else "2") + value[1:]
+    if isinstance(value, dict):
+        return {**value, "__drifted__": 1}
+    if isinstance(value, tuple | list):
+        return [*value, "__drifted__"]
+    raise AssertionError(f"没有为类型 {type(value)!r} 定义变异方式：{value!r}")
+
+
+@pytest.mark.parametrize("field", SEALED_PAIRING_FIELDS)
+def test_sealed_comparison_rejects_every_mismatched_pairing_field(
+    workspace: Path, field: str
+) -> None:
+    """**封存侧的每一个配对字段**，不一致就必须拒绝比较。
+
+    这条补的是一个由外部评审的变异测试实证出来的缺口：把
+    `require_comparable_sealed_runs` 里那个逐字段比较循环整个短路掉
+    （`if base_value != candidate_value:` → `if False:`），全仓测试**全绿**。
+
+    dev 侧一直有对应的参数化测试（`test_candidate_evaluation.py`），
+    封存侧却没有——而封存侧才是全部 GO/NO-GO 判定的来源。此前覆盖到的
+    `model` / adapter 在场性 / merged 血统三项都在**循环之外**，所以循环失效不会红。
+
+    参数从 `SEALED_PAIRING_FIELDS` **派生**，不是手抄一份清单：
+    往那个常量里加字段时，这条测试自动跟上；dev 侧那份手写清单没有这个性质。
+    """
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import require_comparable_sealed_runs
+
+    base = _run_sealed(workspace, _sealed_config(workspace), "sealed-base-pairing")
+    candidate = _run_sealed(
+        workspace,
+        _sealed_config(workspace, adapter=_adapter_artifact(workspace)),
+        "sealed-candidate-pairing",
+    )
+    # 形态校验（`_require_valid_forms`）在字段循环之前，所以候选侧必须是真的候选形态；
+    # 拿 base 去冒充候选只会先撞上形态检查，那样这条测试就测不到循环本身。
+    assert require_comparable_sealed_runs(base, candidate) is None
+    drifted = candidate.model_copy(update={field: _mutated(getattr(candidate, field))})
+
+    with pytest.raises(ComparisonError, match=field):
+        require_comparable_sealed_runs(base, drifted)

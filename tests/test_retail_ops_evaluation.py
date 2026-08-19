@@ -354,3 +354,30 @@ def test_evaluation_refuses_to_overwrite_run_and_loader_detects_tamper(
     metrics_path.write_text(json.dumps(metrics) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match=r"评测证据 SHA-256 不匹配: metrics\.json"):
         load_run_evidence(output_dir / "run.json")
+
+
+def test_dev_run_evidence_rejects_a_tampered_field_via_its_self_hash(tmp_path: Path) -> None:
+    """**改 `run.json` 里任意一个被哈希的字段，加载必须失败。**
+
+    README 的机制表第 1 条写「运行报告的 ID 是它自己**全部字段**的自哈希，
+    改一字节即加载失败（已做篡改测试）」。在 2026-08-19 之前，dev 侧那句话只成立一半：
+    既有的篡改测试改的是磁盘上的 `metrics.json`，走的是**同目录产物 SHA-256** 那条路，
+    而 `run_id` 自哈希本身可以被短路掉（`if _run_id(values) != evidence.run_id:` → `if False:`）
+    而全仓全绿。sealed 侧的自哈希一直有测试，dev 侧没有——两侧对同一句话的支撑不对称。
+
+    这里只改 `run.json` 自己，不碰任何同目录产物，因此只有自哈希那条路能拦住它。
+    """
+    import json
+
+    from veritool_rl.retail_ops.evaluate.evaluation import load_run_evidence
+
+    _evidence, _build_dir, output_dir = _evaluate(tmp_path, "baseline")
+    run_path = output_dir / "run.json"
+
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    assert payload["seed"] == 0
+    payload["seed"] = 1  # 被哈希的字段，且与任何同目录产物无关
+    run_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="run_id 不匹配"):
+        load_run_evidence(run_path)

@@ -192,3 +192,30 @@ def test_every_probe_task_only_uses_tools_the_bundle_declares() -> None:
     for task in build_policy_boundary_tasks(seed=0):
         for call in task.expected_calls:
             assert call.name in declared, f"{task.task_id}: 未声明的工具 {call.name}"
+
+
+def test_the_frozen_quota_guards_actually_reject_a_violation() -> None:
+    """**冻结配额的两条守卫本身必须会红。**
+
+    `CLAUDE.md` 把 40/10/20 与 `dataset_version` 列为「改它会让已有全部评测证据的
+    可比性作废」的冻结契约，执行者是 `FormalTaskSet.assert_exact_quotas`。
+    真实数据当然满足配额，所以这两条守卫**平时永远不会触发**——
+    外部评审 2026-08-19 用变异测试证明：把总数校验或分类配额校验整个删掉，全仓全绿。
+    一条只在未来某次改动时才有价值的断言，如果它自己坏了没人知道，它就不存在。
+
+    这里不改被测代码，而是构造一个**确实违反配额**的任务集喂给它。
+    """
+    task_set = formal_tasks.build_formal_task_set("retail_ops_v1_r2_20260722", seed=0)
+    task_set.assert_exact_quotas()  # 真实数据先确认是通过的
+
+    # 1) 总数不足：dev 少一条
+    short = task_set.model_copy(update={"dev": task_set.dev[:-1]})
+    with pytest.raises(ValueError, match="任务总数"):
+        short.assert_exact_quotas()
+
+    # 2) 总数对但**分类配额**错：把 dev 的最后一条换成第一条的复制品，
+    #    于是某个场景多一条、另一个少一条，而总数不变。
+    skewed = task_set.model_copy(update={"dev": (*task_set.dev[:-1], task_set.dev[0])})
+    assert len(skewed.dev) == len(task_set.dev)
+    with pytest.raises(ValueError):
+        skewed.assert_exact_quotas()

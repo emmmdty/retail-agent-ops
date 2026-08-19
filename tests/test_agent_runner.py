@@ -32,6 +32,36 @@ def test_qwen_parser_rejects_multiple_or_malformed_tool_calls() -> None:
     assert malformed.parse_error == "invalid_tool_call_json"
 
 
+def test_qwen_parser_rejects_text_alongside_a_tool_call() -> None:
+    """**文本 + 工具调用同时出现 = 非法调用。**
+
+    这条判定塑造了整个 SFT 数据的形状：`CLAUDE.md`、`docs/AGENT_LOOP.md`、
+    teacher 导出代码与多份配置都引用它——「任何『先声明再执行』的数据方案都会把
+    `invalid_call` 从 0 打回去」。而在 2026-08-19 之前它**一条测试都没有**：
+    外部评审把 `parser.py` 里的 `if outside:` 短路掉，全仓测试全绿。
+    一个被六份文档奉为硬约束的不变量，实现可以被静默删除而无人知道。
+
+    三种位置都覆盖：调用之前说话、之后说话、前后都说。
+    """
+    from veritool_rl.core.agent.parser import parse_qwen_response
+
+    call = '<tool_call>{"name":"get_order","arguments":{"order_id":"O-1"}}</tool_call>'
+    for label, raw in (
+        ("前置文本", f"我先查一下这个订单。{call}"),
+        ("后置文本", f"{call}已经帮你查询了。"),
+        ("前后都有", f"稍等。{call}查询完成。"),
+        ("后置文本带结束符", f"{call}好的<|im_end|>"),
+    ):
+        output = parse_qwen_response(raw)
+        assert output.parse_error == "mixed_tool_call_content", label
+        assert output.tool_call is None, label
+
+    # 反向：纯工具调用（可带结束符与空白）必须仍然被接受，否则这条判定就成了误伤。
+    clean = parse_qwen_response(f"  {call}  <|im_end|>")
+    assert clean.parse_error is None
+    assert clean.tool_call is not None
+
+
 def test_oracle_runner_completes_all_scenarios() -> None:
     from veritool_rl.core.agent.policy import OraclePolicy
     from veritool_rl.core.agent.runner import run_episode
