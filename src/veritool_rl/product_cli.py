@@ -897,10 +897,12 @@ def _run_state_aug_export(
     动机与判读见 `docs/POLICY_BOUNDARY.md`。
     """
     from veritool_rl.retail_ops.build.state_augmentation import (
+        AugmentationRecord,
         build_augmentation_rows,
+        load_persisted_evidence,
+        persist_evidence,
         write_state_augmented_export,
     )
-    from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord
     from veritool_rl.retail_ops.domain.state_augmentation_tasks import (
         STATE_AUG_DATASET_VERSION,
         build_state_augmentation_tasks,
@@ -943,15 +945,25 @@ def _run_state_aug_export(
         max_request_attempts=max_request_attempts,
     )
 
-    evidences = [
-        collect_teacher_attempt(
-            FormalTaskRecord.from_task(task, task.metadata.get("variant_index", 0)),
-            client,
-            env_factory,
-            teacher_config,
+    # 断点续采：teacher 采集是付费动作，已落盘的证据不重采。
+    persisted = {
+        evidence.task_id: evidence
+        for evidence in load_persisted_evidence(args.input_dir, attempt_id)
+    }
+    evidences: list[TeacherAttemptEvidence] = []
+    for task in tasks:
+        existing = persisted.get(task.task_id)
+        if existing is not None and existing.accepted:
+            evidences.append(existing)
+            continue
+        evidence = collect_teacher_attempt(
+            AugmentationRecord.from_task(task), client, env_factory, teacher_config
         )
-        for task in tasks
-    ]
+        persist_evidence(evidence, args.input_dir, attempt_id)
+        evidences.append(evidence)
+
+    accepted = sum(1 for evidence in evidences if evidence.accepted)
+    print(f"state_aug_export: teacher 接受 {accepted}/{len(tasks)} 条增强任务")
 
     rows = build_augmentation_rows(tasks, evidences, env_factory, paraphrase)
     report = write_state_augmented_export(

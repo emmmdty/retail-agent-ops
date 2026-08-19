@@ -20,8 +20,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,25 @@ from veritool_rl.retail_ops.domain.state_augmentation_tasks import (
 )
 
 EnvFactory = Callable[[TaskSpec], Any]
+
+
+@dataclass(frozen=True)
+class AugmentationRecord:
+    """满足 `TeacherCollectable` 的最小载体。
+
+    状态增强任务落在冻结网格之外，按定义没有 family canonical payload，
+    因此不能构造 `FormalTaskRecord`。采集路径实际只需要任务与它的指纹。
+    """
+
+    task: TaskSpec
+    task_fingerprint: str
+
+    @classmethod
+    def from_task(cls, task: TaskSpec) -> AugmentationRecord:
+        digest = hashlib.sha256(
+            canonical_json({"task": task.model_dump(mode="json")}).encode("utf-8")
+        ).hexdigest()
+        return cls(task=task, task_fingerprint=digest)
 
 
 class StateAugmentationReport(StrictModel):
@@ -72,7 +93,70 @@ class StateAugmentationReport(StrictModel):
 
 
 class StateAugmentationGateError(RuntimeError):
-    """增强轨迹没有全部通过采集与 replay 校验。"""
+    """增强素材的覆盖没有达到闸门要求。"""
+
+
+#: 整体接受率下限。低于它说明采集这条路本身出了问题（凭据、路由、环境），
+#: 而不是个别任务难——那种情况下继续导出只会把一份残缺的训练集送进训练。
+MIN_ACCEPTANCE_RATE = 0.85
+
+
+def load_persisted_evidence(private_root: Path, attempt_id: str) -> list[TeacherAttemptEvidence]:
+    """读出已落盘的采集证据，用于断点续采。
+
+    teacher 采集是**付费**动作。第一版把证据只留在内存里，于是一次闸门失败
+    会连同已经成功的部分一起丢掉——重跑要再付一次钱。既有的 `teacher_collect`
+    有 checkpoint，这条路径此前没有，是实现漏了，不是设计如此。
+    """
+    attempt_dir = private_root / "state-augmentation" / attempt_id
+    if not attempt_dir.is_dir():
+        return []
+    evidences: list[TeacherAttemptEvidence] = []
+    for path in sorted(attempt_dir.glob("*.json")):
+        evidences.append(
+            TeacherAttemptEvidence.model_validate_json(path.read_text(encoding="utf-8"))
+        )
+    return evidences
+
+
+def persist_evidence(evidence: TeacherAttemptEvidence, private_root: Path, attempt_id: str) -> None:
+    """落盘一条证据。目录名与 `teacher-collection/` 分开，两批素材不混。"""
+    attempt_dir = private_root / "state-augmentation" / attempt_id
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+    target = attempt_dir / f"{evidence.task_id}.json"
+    if target.exists():
+        return
+    # 先写临时文件再改名：采集中途被打断时，目录里不会留下半条 JSON，
+    # 而半条 JSON 会让下一次续采在加载阶段直接崩掉。
+    staging = target.with_suffix(".json.partial")
+    staging.write_text(canonical_json(evidence.model_dump(mode="json")), encoding="utf-8")
+    staging.replace(target)
+
+
+def assert_cell_coverage(tasks: Sequence[TaskSpec], accepted_task_ids: set[str]) -> dict[str, int]:
+    """逐 (场景, deadline) 统计被接受数，任一格低于下限即失败。"""
+    per_cell: dict[tuple[str, int], int] = {}
+    for task in tasks:
+        key = (task.scenario.value, int(task.metadata["refund_deadline"]))
+        per_cell.setdefault(key, 0)
+        if task.task_id in accepted_task_ids:
+            per_cell[key] += 1
+
+    counts = {
+        f"{scenario}@{deadline}": count for (scenario, deadline), count in sorted(per_cell.items())
+    }
+    empty = sorted(cell for cell, count in counts.items() if count == 0)
+    if empty:
+        raise StateAugmentationGateError(
+            f"这些格子一条合格轨迹都没有，「补了这个区域」对它们是假话：{empty}"
+        )
+    rate = len(accepted_task_ids & {task.task_id for task in tasks}) / len(tasks)
+    if rate < MIN_ACCEPTANCE_RATE:
+        raise StateAugmentationGateError(
+            f"整体接受率 {rate:.1%} 低于 {MIN_ACCEPTANCE_RATE:.0%}——"
+            f"这更像采集路径本身出了问题，而不是个别任务难"
+        )
+    return counts
 
 
 def build_augmentation_rows(
@@ -83,8 +167,9 @@ def build_augmentation_rows(
 ) -> list[dict[str, Any]]:
     """把被接受的 teacher 轨迹转成 SFT 行（含措辞改写）。
 
-    任何一条任务没有被接受的轨迹就整体失败：**部分成功的增强集合会让
-    "补了哪些状态"与报告里写的不一致**，而那份报告正是这次改动的全部依据。
+    未被接受的任务直接跳过——但**逐格覆盖下限先过一遍**（`assert_cell_coverage`），
+    因此"某一格其实几乎没补上"不会静默通过。实际补了多少行、补在哪个 deadline，
+    逐格写进公开报告。
     """
     from veritool_rl.core.generators import trajectory_to_sft_example
 
@@ -93,16 +178,13 @@ def build_augmentation_rows(
         for evidence in evidences
         if evidence.accepted and evidence.trajectory is not None
     }
-    missing = [task.task_id for task in tasks if task.task_id not in accepted]
-    if missing:
-        raise StateAugmentationGateError(
-            f"{len(missing)}/{len(tasks)} 条增强任务没有被接受的 teacher 轨迹，"
-            f"不做部分导出：{missing[:5]}"
-        )
+    assert_cell_coverage(tasks, set(accepted))
 
     rows: list[dict[str, Any]] = []
     for task in tasks:
-        trajectory = accepted[task.task_id]
+        trajectory = accepted.get(task.task_id)
+        if trajectory is None:
+            continue
         if not validate_teacher_trajectory(trajectory, env_factory):
             raise StateAugmentationGateError(f"导出前独立 replay 校验失败: {task.task_id}")
         example = trajectory_to_sft_example(trajectory)

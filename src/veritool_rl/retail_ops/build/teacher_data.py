@@ -11,7 +11,7 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field
 
@@ -176,8 +176,27 @@ def _classify_outcome(trajectory: Trajectory) -> TeacherAttemptOutcome:
     return TeacherAttemptOutcome.STEP_LIMIT
 
 
+class TeacherCollectable(Protocol):
+    """采集一条轨迹**实际**需要的东西：一个任务和它的指纹。
+
+    此前这里的类型是 `FormalTaskRecord`，而那个类型的构造要求任务带
+    `metadata["formal_family"]`——冻结数据集的 family canonical payload。
+    R8 的状态增强任务落在冻结网格**之外**，按定义没有 family payload，
+    于是这条采集路径对它们不可用，尽管函数体从未用到那四个额外指纹。
+
+    放宽成 Protocol 是把函数的真实契约写出来，不是绕过检查：
+    `FormalTaskRecord` 仍然满足它，既有调用点一个字不改。
+    """
+
+    @property
+    def task(self) -> TaskSpec: ...
+
+    @property
+    def task_fingerprint(self) -> str: ...
+
+
 def collect_teacher_attempt(
-    record: FormalTaskRecord,
+    record: TeacherCollectable,
     client: TeacherClient,
     env_factory: EnvFactory,
     config: TeacherCollectionConfig,

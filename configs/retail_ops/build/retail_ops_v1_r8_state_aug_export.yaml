@@ -24,8 +24,9 @@ bundle_dir: domains/retail_ops/v1
 # 基底训练集：sft-008 用的那一份，一个字不改地作为前缀。
 base_attempt_id: train-export-007
 attempt_id: train-export-008
-max_episodes_per_task: 3
-max_request_attempts: 4
+# 上限由 TeacherCollectionConfig 约束（≤2 / ≤3），与既有 teacher 采集同口径。
+max_episodes_per_task: 2
+max_request_attempts: 3
 
 # 措辞改写走与既有 960 行**同一条**路径、同一份池子、同一个 train_aug 分片——
 # 否则表面形式会成为第二个变量，而 R6 的全部结论正建立在"只改说法"这个单变量上。

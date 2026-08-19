@@ -174,8 +174,12 @@ def test_a_probe_point_collision_is_rejected_at_construction_time() -> None:
         module.OFF_GRID_MARGINS = original
 
 
-def test_partial_teacher_coverage_refuses_to_export() -> None:
-    """有任务没采到合格轨迹时不做部分导出——报告会与实际补了什么不一致。"""
+def test_an_empty_cell_refuses_to_export() -> None:
+    """某个 (场景, deadline) 一条合格轨迹都没有时必须失败。
+
+    这是「补了这个区域」这句话的执行者：某一格薄一点是**已披露**的事实
+    （报告里逐格计数），但一格为空就让那句话对它变成假的。
+    """
     from veritool_rl.retail_ops.build.state_augmentation import (
         StateAugmentationGateError,
         build_augmentation_rows,
@@ -184,8 +188,34 @@ def test_partial_teacher_coverage_refuses_to_export() -> None:
     tasks = build_state_augmentation_tasks(0)
     bundle = _bundle()
 
-    with pytest.raises(StateAugmentationGateError, match="没有被接受"):
+    with pytest.raises(StateAugmentationGateError, match="一条合格轨迹都没有"):
         build_augmentation_rows(tasks, [], lambda task: RetailOpsEnv(task, bundle), _plan())
+
+
+def test_a_collapsed_acceptance_rate_refuses_to_export() -> None:
+    """整体接受率塌下去时失败——那更像采集路径坏了，而不是个别任务难。
+
+    构造：每格留一条被接受的轨迹（因此没有空格子），其余全部失败。
+    接受率 = 1/4 = 25%，远低于下限。
+    """
+    from veritool_rl.retail_ops.build.state_augmentation import (
+        MIN_ACCEPTANCE_RATE,
+        StateAugmentationGateError,
+        assert_cell_coverage,
+    )
+
+    tasks = build_state_augmentation_tasks(0)
+    seen: set[tuple[str, int]] = set()
+    kept: set[str] = set()
+    for task in tasks:
+        key = (task.scenario.value, int(task.metadata["refund_deadline"]))
+        if key not in seen:
+            seen.add(key)
+            kept.add(task.task_id)
+
+    assert len(kept) / len(tasks) < MIN_ACCEPTANCE_RATE
+    with pytest.raises(StateAugmentationGateError, match="整体接受率"):
+        assert_cell_coverage(tasks, kept)
 
 
 def _plan() -> Any:
@@ -249,3 +279,42 @@ def test_the_augmented_scenarios_are_only_the_two_the_diagnosis_points_at() -> N
         TaskScenario.REFUND_ELIGIBLE,
         TaskScenario.REFUND_DENIED_WINDOW,
     }
+
+
+def test_the_new_sft_config_changes_only_the_training_data() -> None:
+    """相对 `sft-008` 的 SFT 配置，唯一允许变的是 `data` 一段。
+
+    LoRA、超参、基座 pin 任何一处不同，"读数变化来自补了状态覆盖"就不再成立。
+    """
+    import yaml
+
+    base = yaml.safe_load(
+        (REPO_ROOT / "configs/retail_ops/build/retail_ops_v1_r6b_no_oversample_sft.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    variant = yaml.safe_load(
+        (REPO_ROOT / "configs/retail_ops/build/retail_ops_v1_r8_state_aug_sft.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(base) == set(variant)
+    differing = {key for key in base if base[key] != variant[key]}
+    assert differing == {"data"}, f"除 data 外还差了：{differing - {'data'}}"
+    assert variant["data"]["train_relpath"] == "train-export/train-export-008/sft.jsonl"
+    assert variant["data"]["eval_relpath"] == base["data"]["eval_relpath"]
+
+
+def test_the_sft_config_discloses_the_gradient_step_confound() -> None:
+    """行数变了，梯度步数就跟着变——这个混淆必须写在配置里，不能只在对话里说。
+
+    断言的是**这件事被承认了**，不是某一句原话：配置注释里要同时出现新旧行数
+    与"分不开"这个判断。R6 记过同一类混淆（LOG-20260817-01 的"自变量不纯"）。
+    """
+    text = (REPO_ROOT / "configs/retail_ops/build/retail_ops_v1_r8_state_aug_sft.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "960" in text and "1168" in text, "配置没有写出行数变化"
+    assert "分不开" in text, "配置没有承认步数与覆盖两个变量分不开"
