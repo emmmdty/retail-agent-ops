@@ -27,3 +27,6 @@ phrasing:
   bank_relpath: phrasing/phrasing-bank-002/phrasings.jsonl
   bank_sha256: "dffaa6f9818299930e9d896631a18f492e889eec5f05c3e1869c652591deb060"
   partition: ood_dev
+# `boundary` 是政策边界探针的开关，必须显式写出来（见 product_cli._run_ood_build）：
+# 漏写一个开关会让产物静默变成另一份数据集，而目录名与 manifest 结构看起来正常。
+boundary: false

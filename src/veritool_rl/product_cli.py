@@ -569,7 +569,7 @@ def _success_by_task(path: Path) -> dict[str, bool]:
 # R4.5 pipeline: 分布外任务集（build + evaluate）
 # ---------------------------------------------------------------------------
 
-_OOD_BUILD_KEYS = {"pipeline", "bundle_dir", "phrasing"}
+_OOD_BUILD_KEYS = {"pipeline", "bundle_dir", "phrasing", "boundary"}
 _OOD_EVAL_PIPELINES = ("ood_base", "ood_candidate", "ood_merged_candidate")
 _OOD_EVAL_BASE_KEYS = {
     "pipeline",
@@ -582,12 +582,31 @@ _OOD_EVAL_CANDIDATE_KEYS = _OOD_EVAL_BASE_KEYS | {"adapter"}
 
 
 def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    """生成分布外任务集。它是**独立 dataset artifact**，不碰冻结数据集的一个字节。"""
+    """生成任务集。它是**独立 dataset artifact**，不碰冻结数据集的一个字节。
+
+    `boundary` 与 `phrasing` 都必须显式写出来（可以是 `false` / `null`）。
+    不给默认值的理由与 `partition` 那条相同：一个漏写的开关会让产物静默变成另一份
+    数据集，而目录名、manifest 结构、报告字段全都看起来正常。
+    """
     _require_config_keys(config, _OOD_BUILD_KEYS)
+    boundary = config["boundary"]
+    if not isinstance(boundary, bool):
+        raise ValueError("boundary 必须是 bool（探针集写 true，其余写 false）")
     phrasing = _ood_phrasing_spec(config, args.input_dir)
-    if phrasing is None and args.input_dir is not None:
+    if boundary:
+        if phrasing is not None:
+            raise ValueError("boundary 与 phrasing 互斥：一次只能构建一种任务集")
+        if args.input_dir is not None:
+            raise ValueError("政策边界探针不读任何私有素材，因此不接受 --input_dir")
+    elif phrasing is None and args.input_dir is not None:
         raise ValueError("ood_build（v1，phrasing 为 null）不接受 --input_dir")
-    build_ood_task_set(_bundle_dir(config), args.seed, args.output_dir, phrasing=phrasing)
+    build_ood_task_set(
+        _bundle_dir(config),
+        args.seed,
+        args.output_dir,
+        phrasing=phrasing,
+        boundary=boundary,
+    )
 
 
 def _default_ood_backend(config: OodEvaluationConfig, models_root: Path) -> GenerationBackend:

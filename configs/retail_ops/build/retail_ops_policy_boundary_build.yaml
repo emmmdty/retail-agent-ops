@@ -1,0 +1,22 @@
+# 政策边界探针的构建配置。
+#
+# 它沿 `refund_deadline − current_day` 这一条轴扫描：15 个偏移量 × 8 个实例 = 120 条。
+# 正数 = 窗口内（应放行）、负数 = 已过期（应拒绝）、**0 = 恰好到期（政策判定为放行）**。
+#
+# 为什么需要它：冻结数据集把每个场景的 35 个 family 按哈希切成 20/5/10，
+# 而哈希切分**不对难度维度分层**。实测覆盖（纯由生成器代码算出，不涉及任何读数）：
+# `refund_denied_window` 的 dev 只覆盖 7 个 margin 档里的 4 档，
+# `refund_denied_duplicate` 只覆盖 2 档。dev 那 10 条**结构上**看不见 holdout 的一部分状态。
+#
+# 还有一个更直接的空洞：`offset = 0` 这一天，**整个冻结数据集从未生成过**
+# （eligible 用 20 + margin、denied 用 20 − margin，margin ≥ 1），
+# 而它恰好是政策的判定分界。
+#
+# 这个集合**不封存**：公开、可反复读、可用于迭代。正因如此，
+# 它的读数**不能**用来声称发布结论——那仍然只由封存 holdout 回答。
+# 它也**不是**分布外评测：措辞与冻结数据集同源，只是把状态空间在一条轴上加密。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v1
+# 探针不读任何私有素材，因此没有措辞池，也不接受 --input_dir。
+phrasing: null
+boundary: true

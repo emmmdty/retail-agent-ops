@@ -46,6 +46,12 @@ from veritool_rl.retail_ops.domain.ood_v2_tasks import (
     OOD_V2_TASKS_PER_SCENARIO,
     build_ood_v2_tasks,
 )
+from veritool_rl.retail_ops.domain.policy_boundary_tasks import (
+    POLICY_BOUNDARY_DATASET_VERSION,
+    POLICY_BOUNDARY_GENERATOR_ID,
+    build_policy_boundary_tasks,
+    expected_category_counts,
+)
 
 #: 允许出现在 OOD manifest 里的数据集版本号。
 #:
@@ -57,6 +63,10 @@ OodDatasetVersion = Literal[
     "retail_ops_ood_v1_20260815",
     "retail_ops_ood_v2_20260817",
     "retail_ops_ood_v2_2_20260817",
+    # 政策边界探针。它不是"又一份分布外素材"——它沿退款窗口这条轴扫描，
+    # 用的是与冻结数据集同源的措辞，因此登记在这里只是为了共用 manifest 与评测路径，
+    # 不代表它能回答泛化问题。见 domain/policy_boundary_tasks.py 的模块说明。
+    "retail_ops_policy_boundary_v1_20260819",
 ]
 
 _ALLOWED_DATASET_VERSIONS: tuple[str, ...] = get_args(OodDatasetVersion)
@@ -145,37 +155,49 @@ def build_ood_task_set(
     output_dir: Path,
     *,
     phrasing: OodPhrasingSpec | None = None,
+    boundary: bool = False,
 ) -> OodTaskManifest:
-    """生成分布外任务集与其独立 manifest。
+    """生成任务集与其独立 manifest。
 
-    任务与真值都写在同一份公开产物里——这个集合**不封存**，没有需要藏起来的答案。
+    任务与真值都写在同一份公开产物里——这些集合**都不封存**，没有需要藏起来的答案。
 
-    `phrasing` 为 `None` 时走 v1（作者手写模板库，三类各 20）；给出时走 **v2**
-    （六个冻结场景 × 10，唯一自变量是 user 第一句话的说法，来自 LLM 措辞池的指定分片）。
-    两者是不同的 `dataset_version` 与不同的 `generator_id`，产物互不覆盖。
+    三种模式互斥：
+    - `phrasing=None, boundary=False` → **OOD v1**（作者手写模板库，三类各 20）；
+    - `phrasing` 给出 → **OOD v2**（六个冻结场景 × 10，唯一自变量是说法）；
+    - `boundary=True` → **政策边界探针**（沿退款窗口这条轴扫描，15 个偏移量 × 8）。
+
+    三者是不同的 `dataset_version` 与不同的 `generator_id`，产物互不覆盖。
+    **探针不是分布外集合**：它与冻结数据集同源，只是把状态空间在一条轴上加密；
+    共用这条构建/评测路径是为了复用 manifest 与报告，不代表它能回答泛化问题。
     """
+    if phrasing is not None and boundary:
+        raise ValueError("phrasing 与 boundary 互斥：一次只能构建一种任务集")
     bundle = load_bundle(bundle_dir)
-    if phrasing is None:
+    expected_counts: dict[str, int] | None
+    if boundary:
+        tasks = build_policy_boundary_tasks(seed)
+        generator_id = POLICY_BOUNDARY_GENERATOR_ID
+        dataset_version = POLICY_BOUNDARY_DATASET_VERSION
+        expected_counts = expected_category_counts()
+    elif phrasing is None:
         tasks = build_ood_tasks(seed)
         generator_id = OOD_GENERATOR_ID
         dataset_version = OOD_DATASET_VERSION
+        expected_counts = None
     else:
         tasks = build_ood_v2_tasks(phrasing.index, seed)
         generator_id = OOD_V2_GENERATOR_ID
         dataset_version = phrasing.dataset_version
+        expected_counts = {
+            scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS
+        }
         if dataset_version not in _ALLOWED_DATASET_VERSIONS:
             raise ValueError(
                 f"未知的 OOD dataset_version: {dataset_version!r}——"
                 f"新素材要先在 OodDatasetVersion 里登记，"
                 f"随手写一个版本号就能造出'新数据集'的话，它就不是受控字段了"
             )
-    _validate(
-        tasks,
-        bundle,
-        None
-        if phrasing is None
-        else {scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS},
-    )
+    _validate(tasks, bundle, expected_counts)
 
     create_output_dir(output_dir)
     tasks_path = output_dir / "tasks.jsonl"
