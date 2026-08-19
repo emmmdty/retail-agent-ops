@@ -28,7 +28,7 @@
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
-| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
+| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`** / **`RESULTS`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
 | `scripts/ci/` | 活动 | CPU 全链路复现校验（`verify_qualification_chain.py`），CI 与本地共用同一条命令 |
 | `.github/workflows/` | 活动 | CPU 质量门 workflow。**仓库无 remote，尚未真正运行过** |
 | `Dockerfile` | 活动 | CPU-only 镜像，刻意不含 torch（重依赖只在 GPU 主机装） |
