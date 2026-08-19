@@ -50,7 +50,9 @@ def main(argv: list[str]) -> int:
     runs = [(Path(path).name, _load(Path(path))) for path in argv]
 
     print(f"政策边界探针：每点 n={INSTANCES_PER_OFFSET}，95% CI 宽约 ±35pp")
-    print("负偏移 = 已过期（应拒绝）；0 = 恰好到期（政策判定为**放行**）；正偏移 = 窗口内（应放行）")
+    print(
+        "负偏移 = 已过期（应拒绝）；0 = 恰好到期（政策判定为**放行**）；正偏移 = 窗口内（应放行）"
+    )
     print()
     header = f"{'offset':>7s} {'应判':>4s}"
     for name, _ in runs:
@@ -75,7 +77,9 @@ def main(argv: list[str]) -> int:
             f"非法调用 {metrics['invalid_call_count']}  "
             f"逐类 {json.dumps(report['category_success'], ensure_ascii=False)}"
         )
-        print(f"    失败构成 {json.dumps(metrics['failure_type_distribution'], ensure_ascii=False)}")
+        print(
+            f"    失败构成 {json.dumps(metrics['failure_type_distribution'], ensure_ascii=False)}"
+        )
     return 0
 
 

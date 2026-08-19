@@ -241,6 +241,8 @@ def _run_build(args: argparse.Namespace) -> None:
         _run_teacher_collect(args, config)
     elif pipeline == "train_export":
         _run_train_export(args, config)
+    elif pipeline == "state_aug_export":
+        _run_state_aug_export(args, config)
     elif pipeline == "dev_sft_export":
         _run_dev_sft_export(args, config)
     elif pipeline == "sft":
@@ -860,6 +862,111 @@ def _run_teacher_collect(
             "already_attempted_before_this_run": len(already_attempted),
             "total_accepted": len(accepted_ids),
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# R8 pipeline: state_aug_export (build)
+# ---------------------------------------------------------------------------
+
+_STATE_AUG_EXPORT_KEYS = {
+    "pipeline",
+    "bundle_dir",
+    "base_attempt_id",
+    "attempt_id",
+    "max_episodes_per_task",
+    "max_request_attempts",
+    "sft_paraphrase",
+}
+
+
+def _run_state_aug_export(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    environ: Mapping[str, str] | None = None,
+    client_factory: Callable[[TeacherRouteSnapshot, str], TeacherClient] | None = None,
+) -> None:
+    """在**冻结网格之外**的 margin 上补训练素材，与既有导出合并成新的训练集。
+
+    与 `train_export` 分开是刻意的：那一条的产物同时是 provenance，声称"本次导出
+    覆盖了哪些冻结任务"，把网格外的新任务塞进去会让那份声称超出冻结契约。
+    这里的形状是「读一份已导出的 sft.jsonl 作基底 + 追加增强行 + 写成新导出」，
+    两部分的哈希都进公开报告。
+
+    动机与判读见 `docs/POLICY_BOUNDARY.md`。
+    """
+    from veritool_rl.retail_ops.build.state_augmentation import (
+        build_augmentation_rows,
+        write_state_augmented_export,
+    )
+    from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord
+    from veritool_rl.retail_ops.domain.state_augmentation_tasks import (
+        STATE_AUG_DATASET_VERSION,
+        build_state_augmentation_tasks,
+    )
+
+    _require_config_keys(config, _STATE_AUG_EXPORT_KEYS)
+    if args.input_dir is None:
+        raise ValueError("state_aug_export 需要 --input_dir 指向私有根目录")
+
+    bundle = load_bundle(_bundle_dir(config))
+    base_attempt_id = _validate_path_component(
+        _config_str(config, "base_attempt_id"), label="base_attempt_id"
+    )
+    attempt_id = _validate_path_component(_attempt_id(config), label="attempt_id")
+    max_episodes_per_task = _positive_int(config, "max_episodes_per_task")
+    max_request_attempts = _positive_int(config, "max_request_attempts")
+    paraphrase = _sft_paraphrase_plan(config, args.input_dir)
+    if paraphrase is None:
+        raise ValueError(
+            "state_aug_export 必须启用 sft_paraphrase：增强行若不走与既有 960 行同一条"
+            "措辞路径，表面形式就成了第二个变量"
+        )
+
+    tasks = build_state_augmentation_tasks(args.seed)
+
+    def env_factory(task: Any) -> RetailOpsEnv:
+        return RetailOpsEnv(task, bundle)
+
+    env = environ if environ is not None else os.environ
+    route, api_key = load_teacher_route(env)
+    client = (client_factory or _default_teacher_client_factory)(route, api_key)
+
+    teacher_config = TeacherCollectionConfig(
+        dataset_version=STATE_AUG_DATASET_VERSION,
+        seed=args.seed,
+        bundle_sha256=bundle.bundle_sha256,
+        manifest_sha256=hashlib.sha256(STATE_AUG_DATASET_VERSION.encode()).hexdigest(),
+        route_sha256=route.route_sha256,
+        max_episodes_per_task=max_episodes_per_task,
+        max_request_attempts=max_request_attempts,
+    )
+
+    evidences = [
+        collect_teacher_attempt(
+            FormalTaskRecord.from_task(task, task.metadata.get("variant_index", 0)),
+            client,
+            env_factory,
+            teacher_config,
+        )
+        for task in tasks
+    ]
+
+    rows = build_augmentation_rows(tasks, evidences, env_factory, paraphrase)
+    report = write_state_augmented_export(
+        private_root=args.input_dir,
+        public_root=args.output_dir,
+        base_attempt_id=base_attempt_id,
+        attempt_id=attempt_id,
+        tasks=tasks,
+        evidences=evidences,
+        augmentation_rows=rows,
+        paraphrase=paraphrase,
+    )
+    print(
+        f"state_aug_export: 基底 {report.base_row_count} 行 + 增强 "
+        f"{report.augmentation_row_count} 行 = {report.total_row_count} 行"
     )
 
 
