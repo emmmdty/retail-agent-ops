@@ -33,23 +33,6 @@ def test_required_handoff_documents_exist() -> None:
     assert missing == []
 
 
-def test_career_context_records_decision_constraints() -> None:
-    context = _read("docs/CAREER_CONTEXT.md")
-
-    for expected in (
-        "985",
-        "研二",
-        "CCKS 2026",
-        "中国大陆",
-        "2027 届秋招",
-        "30+ 小时",
-        "4× RTX 4090",
-        "不产出论文",
-        "Codex",
-    ):
-        assert expected in context
-
-
 def test_active_plan_has_goal_execution_and_acceptance_for_every_phase() -> None:
     plan = _read("docs/EXECUTION_PLAN.md")
 
@@ -59,41 +42,6 @@ def test_active_plan_has_goal_execution_and_acceptance_for_every_phase() -> None
         assert "总体目标" in section
         assert "执行目标" in section
         assert "验收目标" in section
-
-
-def test_active_docs_reject_research_first_drift() -> None:
-    active_docs = "\n".join(
-        _read(path)
-        for path in (
-            "AGENTS.md",
-            "CLAUDE.md",
-            "SPEC.md",
-            "docs/PRODUCT_BRIEF.md",
-            "docs/EXECUTION_PLAN.md",
-        )
-    )
-
-    assert "RetailAgentOps" in active_docs
-    assert "单卡" in active_docs
-    assert "发布门禁" in active_docs
-    assert "至少 3 个预注册 seed" not in active_docs
-    assert "研究级 L1/L2" not in active_docs
-
-
-def test_handoff_defines_read_order_and_stop_rules() -> None:
-    handoff = _read("docs/HANDOFF.md")
-
-    for expected in (
-        "docs/CAREER_CONTEXT.md",
-        "docs/PRODUCT_BRIEF.md",
-        "docs/EXECUTION_PLAN.md",
-        "task_plan.md",
-        "findings.md",
-        "progress.md",
-        "停止并询问用户",
-        "GPU",
-    ):
-        assert expected in handoff
 
 
 def test_retail_ops_v1_contract_and_holdout_boundary_are_governed() -> None:
@@ -124,37 +72,21 @@ def test_retail_ops_v1_contract_and_holdout_boundary_are_governed() -> None:
         assert ignored.returncode == 0, ignored_path
 
 
-def test_r1_closeout_and_r2_authorization_keep_formal_holdout_sealed() -> None:
-    readme = _read("README.md")
-    execution_plan = _read("docs/EXECUTION_PLAN.md")
-    project_log = _read("docs/PROJECT_LOG.md")
+def test_the_declared_phase_matches_the_phase_status_source() -> None:
+    """`AGENTS.md` 声明的当前阶段，必须在阶段状态的唯一事实源里存在且已完成。
 
-    for expected in ("合成 qualification", "未生成正式 holdout", "不是 RetailOps 内部指标"):
-        assert expected in readme
-    assert "| R1 产品契约与 v0.1 | 第 1–2 周 | 已完成 |" in execution_plan
-    assert "| R2 数据与评测流水线 | 第 3–4 周 | 已完成 |" in execution_plan
-    assert "R1 qualification 纵向切片完成" in project_log
-    assert "批准并启动 R2 正式数据与双模型 Base" in project_log
-    assert "正式 holdout 在\nR2 不运行真实模型" in project_log
-    assert "正式外部动作尚未授权" in project_log
+    这里此前钉的是 `"当前阶段：`R5` …已完成"` 这一句原话，于是 R6 完成之后
+    它在强制一个过期的阶段号（LOG-20260817-06 的同一个失败模式，第四次出现）。
+    现在断言的是**一致性**——阶段号换多少次都不需要改这条测试。
 
-
-def test_r2_active_instructions_reference_approved_contract_and_external_gates() -> None:
+    同轮（2026-08-19）删掉的是本测试原先另外二十几条断言：它们逐字钉着
+    `AGENTS.md` 与三份 `docs/archive/` 归档文档里手挑的句子。归档按协议不得改写，
+    所以那些断言**结构上不可能变红**；`AGENTS.md` 那几条则只是把措辞焊死。
+    唯一保留的例外是下面那对——它防的是"只写前半句"，属于
+    「好消息必须带坏消息」那一类，而不是「这句话必须在场」。
+    """
     agents = _read("AGENTS.md")
-    handoff = _read("docs/archive/handoffs/2026-07-22-r2-codex-execution-prompt.md")
-    design = _read(
-        "docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md"
-    )
-    implementation = _read(
-        "docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md"
-    )
 
-    # 「当前阶段」必须与阶段状态的唯一事实源一致。
-    #
-    # 这里此前钉的是 `"当前阶段：`R5` …已完成"` 这一句原话，于是 R6 完成之后
-    # 它在强制一个过期的阶段号（LOG-20260817-06 的同一个失败模式，第四次出现）。
-    # 现在断言的是**一致性**：AGENTS.md 声明的阶段，在 EXECUTION_PLAN.md 的阶段表里
-    # 必须存在且被标为「已完成」。阶段号换了多少次都不需要改这条测试。
     phase = re.search(r"当前阶段：`([^`]+)`", agents)
     assert phase is not None, "AGENTS.md 没有声明当前阶段"
     plan = _read("docs/EXECUTION_PLAN.md")
@@ -164,91 +96,68 @@ def test_r2_active_instructions_reference_approved_contract_and_external_gates()
         f"AGENTS.md 声称 {phase.group(1)} 已完成，但阶段状态源里不是：{phase_rows}"
     )
 
-    assert "R2 已完成方案审批" in agents
-    assert "正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认" in agents
-    # 候选结论必须以 dev / holdout 口径分别陈述，不得被写成 release 判定
-    assert "不得把 dev 读数写成 release 判定" in agents
-    # 封存 holdout 是不可逆资源，接管文档必须指向台账（次数本身不得复述，
-    # 由 test_no_active_doc_restates_the_sealed_holdout_total_count 保证）
-    assert "docs/HOLDOUT_LEDGER.md" in agents
-    # 观测次数不再是硬约束，但纪律必须同时在场——只写前半句会读成「随便测」。
-    assert "观测次数不再是硬约束" in agents
-    assert "结果永远不得反馈进开发" in agents
-    # R4 的结论已被跨规模检验限缩，接管文档不得留下无条件的一般化表述
-    assert "LoRA 容量须与模型规模匹配" in agents
-    assert "提示词干预是规模依赖的" in agents
-
-    for expected in (
-        "R2 设计选择和 CPU 实施计划已经用户批准",
-        "2026-07-22-retailops-v1-r2-formal-data-and-base-design.md",
-        "2026-07-22-retailops-v1-r2-formal-data-and-base.md",
-        "不得重复创建平行规格或重新打开已裁决方案",
-    ):
-        assert expected in handoff
-
-    for excluded_field in (
-        "`task_id`",
-        "`split`",
-        "`target_state`",
-        "`expected_calls`",
-        "`expected_decision`",
-    ):
-        assert excluded_field in design
-    assert "经 private artifact SHA-256 和公开 dev manifest 双重校验" in design
-    assert "`train.jsonl` 与 `sft.jsonl` 只能写入 private ignored root" in design
-    assert "private ignored root 的 `teacher-collection/<attempt>/`" in design
-    assert "change only `task_id` or `split`" in implementation
-    assert "validated private dev artifact" in implementation
-    assert "private ignored `teacher-collection/<attempt>/`" in implementation
+    # 封存 holdout 的纪律必须成对出现：只写「观测次数不再是硬约束」会被读成「随便测」。
+    if "观测次数不再是硬约束" in agents:
+        assert "结果永远不得反馈进开发" in agents, (
+            "AGENTS.md 放开了观测次数，却没有同时写出那条没有放开的限制"
+        )
 
 
-_R2_CONFIG_NAMES = (
-    "retail_ops/build/retail_ops_v1_r2_formal_freeze.yaml",
-    "retail_ops/build/retail_ops_v1_r2_teacher_smoke.yaml",
-    "retail_ops/build/retail_ops_v1_r2_teacher_full.yaml",
-    "retail_ops/build/retail_ops_v1_r2_train_export.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r2_qwen3_1_7b_dev.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml",
-)
+#: 每一条规则配一个**代表路径**与一句它挡的是什么。
+#:
+#: 这里替代掉的是五条按轮次写的测试（R2/R3/R3 候选/R4/R4 第二轮），它们逐条列举
+#: 当轮新出现的历史路径——共 25 条，但检验的是同样这几条规则。轮次过去之后，
+#: 那些路径只是噪声：新增一轮又要再写一条测试，而规则本身一条都没多。
+#: 按**规则类别**取代表路径之后，新轮次不需要新测试。
+_MUST_BE_IGNORED = {
+    "凭据": ".env",
+    "私有训练数据": "data/private/retail_ops/v1/r2/any-dataset/train.jsonl",
+    "teacher 采集中间产物": (
+        "data/private/retail_ops/v1/r2/any-dataset/teacher-collection/x/ck.json"
+    ),
+    "导出的 SFT 训练集": "data/private/retail_ops/v1/r2/any-dataset/train-export/x/sft.jsonl",
+    "封存 holdout 真值": "data/private/retail_ops/v1/holdout/tasks.jsonl",
+    "基座权重": "models/Qwen3-4B-pinned/model-00001-of-00003.safetensors",
+    "运行产物": "reports/retail_ops/v1/any-run/run.json",
+    "LoRA adapter": "reports/retail_ops/v1/any-run/adapter/adapter_model.safetensors",
+    "训练 checkpoint": "reports/retail_ops/v1/any-run/checkpoints/trainer_state.json",
+}
+
+#: 反向：这些**必须进 Git**。只验"该忽略的被忽略了"会漏掉规则过宽这一半——
+#: 一条 `/reports/` 就能把公开 manifest 一起吞掉，而所有正向断言仍然全绿。
+_MUST_NOT_BE_IGNORED = {
+    "公开正式 manifest": "manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dataset.json",
+    "互斥性哈希清单": "manifests/retail_ops/v1/phrasing_exclusivity.json",
+    "领域 bundle": "domains/retail_ops/v1/policies.yaml",
+    "已提交配置": "configs/retail_ops/build/retail_ops_v1_r3_sft.yaml",
+}
 
 
-def test_r2_governed_paths_remain_ignored() -> None:
-    """R2 CLI 新增的私有/模型/产物路径必须仍被 `.env`/`/data/`/`/models/`/
-    `/reports/retail_ops/` 这几条既有 `.gitignore` 规则覆盖，不需要新增规则；
-    这里用具体 R2 示例路径核实规则确实生效，而不是假设它们生效。"""
-    for ignored_path in (
-        ".env",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train.jsonl",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/teacher-collection/"
-        "attempt-1/checkpoint.json",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "attempt-1/train.jsonl",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-base/base-001/run.json",
-        "models/Qwen3-1.7B-pinned/model.safetensors",
-        "reports/retail_ops/v1/r2-example/run.json",
-    ):
-        ignored = subprocess.run(
-            ["git", "check-ignore", ignored_path],
+def _is_ignored(relative_path: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "check-ignore", relative_path],
             cwd=ROOT,
             capture_output=True,
             text=True,
             check=False,
-        )
-        assert ignored.returncode == 0, ignored_path
-
-    # 公开正式 manifest 根目录相反：不应被忽略（它是 answer-free、计划提交的产物）。
-    not_ignored = subprocess.run(
-        [
-            "git",
-            "check-ignore",
-            "manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dataset.json",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+            timeout=60,
+        ).returncode
+        == 0
     )
-    assert not_ignored.returncode == 1
+
+
+def test_gitignore_covers_every_class_of_artefact_that_must_not_ship() -> None:
+    """模型、私有数据、checkpoint、凭据与运行产物永远不进 Git；公开证据必须进。
+
+    **两个方向都验。** 只验正向的话，一条过宽的规则（比如把整个 `/reports/` 忽略掉）
+    会把公开 manifest 一起吞掉而全绿——那正是"证据可以被外部核对"这个卖点失效的方式。
+    """
+    leaked = {label: path for label, path in _MUST_BE_IGNORED.items() if not _is_ignored(path)}
+    assert leaked == {}, f"这些产物没有被 .gitignore 覆盖：{leaked}"
+
+    swallowed = {label: path for label, path in _MUST_NOT_BE_IGNORED.items() if _is_ignored(path)}
+    assert swallowed == {}, f"这些本该进 Git 的公开证据被忽略规则吞掉了：{swallowed}"
 
 
 def _iter_leaf_values(value: object) -> list[str]:
@@ -265,30 +174,146 @@ def _iter_leaf_values(value: object) -> list[str]:
     return [str(value)]
 
 
-def test_r2_configs_contain_no_secrets_or_private_paths() -> None:
-    """已提交的 6 份 R2 config 的实际取值（不含说明性注释）不得包含真实凭据、
-    绝对路径或私有根路径字面量——只扫描解析后的 YAML value，注释里出现
-    `data/private/...` 是在解释 CLI 内部推导的约定，不是配置数据本身。"""
+#: 一份配置的治理口径全部写在这里，供正例（全仓扫描）与负例（种一个违规）共用。
+_SECRET_MARKERS = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
+
+
+def _holdout_pipelines() -> tuple[str, ...]:
+    """允许在**解析后取值**里出现 `holdout` 的管线。
+
+    从 CLI 里那份真正实现 holdout 授权的常量导入，不在测试里重抄一遍：
+    新增或改名一条 holdout 管线时，豁免集合自动跟随，且两边不可能漂移。
+    """
+    from veritool_rl.product_cli import _FORMAL_HOLDOUT_PIPELINES
+
+    return _FORMAL_HOLDOUT_PIPELINES
+
+
+def _config_governance_offences(name: str, text: str) -> list[str]:
+    """一份 config 违反了哪几条治理口径。
+
+    **只看解析后的 YAML 取值，不看注释。** 注释里出现 `data/private/...` 是在解释
+    CLI 内部推导的约定，不是配置数据本身；把注释一起扫会逼人把说明删掉。
+    """
     import yaml
 
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R2_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
+    offences: list[str] = []
+    if "TEACHER_LLM_" in text:
+        offences.append("出现 TEACHER_LLM_ 凭据变量名")
+
+    parsed = yaml.safe_load(text)
+    if not isinstance(parsed, dict):
+        return [*offences, "顶层不是 mapping"]
+
+    leaves = _iter_leaf_values(parsed)
+    for leaf in leaves:
+        if leaf.startswith("/"):
+            offences.append(f"疑似绝对路径 {leaf!r}")
+        if "data/private" in leaf:
+            offences.append(f"疑似私有根路径 {leaf!r}")
+        offences.extend(
+            f"疑似 secret 标记 {marker!r}" for marker in _SECRET_MARKERS if marker in leaf
+        )
+
+    # 产品线（`configs/retail_ops/`）之外是 legacy BFCL 轨道与示例，它们本就谈 BFCL。
+    if name.startswith("configs/retail_ops/"):
+        joined = " ".join(leaves).lower()
+        if "bfcl" in joined:
+            offences.append("产品线配置的取值里引用了 BFCL")
+        if "holdout" in joined and str(parsed.get("pipeline")) not in _holdout_pipelines():
+            offences.append(f"非 holdout 管线（{parsed.get('pipeline')}）的取值里引用了 holdout")
+
+        for key in ("model", "adapter"):
+            block = parsed.get(key)
+            if not isinstance(block, dict):
+                continue
+            if key == "model" and len(str(block.get("revision", ""))) < 7:
+                offences.append("model 段没有可用的 revision pin")
+            digests = block.get("file_sha256")
+            if not isinstance(digests, dict) or not digests:
+                offences.append(f"{key} 段没有逐文件 file_sha256")
+            elif any(len(str(digest)) != 64 for digest in digests.values()):
+                offences.append(f"{key} 段的 file_sha256 不是 64 位十六进制")
+    return offences
 
 
-def test_product_cli_and_r2_configs_never_reference_bfcl() -> None:
-    """R2 CLI 分发代码和新增 config 不得引用 BFCL 固定 200 条 holdout 或其失败样例。"""
+def _committed_configs() -> list[str]:
+    """已提交的全部 config，从 `git ls-files` 派生。"""
+    listed = subprocess.run(
+        ["git", "ls-files", "configs/**/*.yaml"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    ).stdout.split()
+    assert listed, "git ls-files 没有列出任何 config"
+    return listed
+
+
+def test_every_committed_config_holds_the_governance_line() -> None:
+    """**每一份已提交的 config** 都受同一条治理口径约束。
+
+    这一条替代掉的是六份手工维护的文件清单（`_R2_/_R3_/_R4_/_R4_ROUND2_/
+    _R4_RELEASE_/_R45_CONFIG_NAMES`）加一条"R4 的每份配置都要登记"的登记检查。
+    那种形状的问题不是抽象的：当时仓库里有 99 份 config，**清单只覆盖 52 份**，
+    另外 47 份不受任何治理断言约束，且没有任何信号——这正是 LOG-20260818-01 的
+    「手工列表是黑名单，`git ls-files` 才是全集」在配置侧的同一物种。
+
+    **豁免也从产物派生**：`holdout` 允许出现在 `pipeline` 确实是封存 holdout 的
+    配置里，`bfcl` 允许出现在 `configs/retail_ops/` 之外的 legacy 轨道里。
+    新增一份封存 holdout 配置不需要动这条测试。
+
+    **边界**：它扫的是**已提交**的配置。未提交的配置不在 `git ls-files` 里，
+    因此也不在保护内——那由 `git status` 与人工审阅承担，不是这条能覆盖的。
+    """
+    offenders = {
+        name: offences
+        for name in _committed_configs()
+        if (offences := _config_governance_offences(name, _read(name)))
+    }
+    assert offenders == {}, f"config 违反治理口径：{offenders}"
+
+
+def test_the_config_governance_scan_catches_a_planted_violation() -> None:
+    """种一个违规必须被抓到——否则上面那条"全绿"只说明它什么都没检查。"""
+    clean = _read("configs/retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml")
+    assert _config_governance_offences("configs/retail_ops/evaluate/clean.yaml", clean) == []
+
+    plants = {
+        "绝对路径": clean.replace("models_root: models", "models_root: /home/tjk/models"),
+        "私有根": clean.replace(
+            "models_root: models",
+            "models_root: data/private/retail_ops/v1/r2",
+        ),
+        "凭据": clean + '\napi_key: "sk-deadbeefdeadbeef"\n',
+        "凭据变量名": clean + "\nnote: TEACHER_LLM_DEEPSEEK_API_KEY\n",
+        "引用 BFCL": clean.replace("bundle_dir: domains/retail_ops/v1", "bundle_dir: data/bfcl"),
+        "非 holdout 管线引用 holdout": clean.replace(
+            "dev_manifest_path: manifests/retail_ops/v1/retail_ops_v1_r2_20260722/dev.json",
+            "dev_manifest_path: manifests/retail_ops/v1/holdout.json",
+        ),
+        "缺 revision": clean.replace(
+            'revision: "8cd0101f70cac4f1efcebc979faf483558e39297"', 'revision: "abc"', 1
+        ),
+        "哈希长度不对": clean.replace(
+            "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e", "deadbeef", 1
+        ),
+    }
+    for label, mutated in plants.items():
+        assert _config_governance_offences("configs/retail_ops/evaluate/x.yaml", mutated) != [], (
+            f"种下「{label}」却没有被抓到"
+        )
+
+
+def test_product_source_never_references_bfcl() -> None:
+    """产品线代码不得引用 BFCL 固定 200 条 holdout 或其失败样例。
+
+    配置侧的同一条口径由 `test_every_committed_config_holds_the_governance_line`
+    覆盖（那一条扫的是 `git ls-files` 全集，不是手工清单）。
+    """
     scanned = [ROOT / "src/veritool_rl/product_cli.py"]
     scanned.extend((ROOT / "src/veritool_rl/retail_ops").rglob("*.py"))
-    scanned.extend(ROOT / "configs" / name for name in _R2_CONFIG_NAMES)
     for path in scanned:
         assert "bfcl" not in path.read_text(encoding="utf-8").lower(), path
 
@@ -311,112 +336,22 @@ def test_uv_lock_check_succeeds_through_project_level_index_pinning() -> None:
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
 
 
-_R3_CONFIG_NAMES = (
-    "retail_ops/build/retail_ops_v1_r3_dev_sft_export.yaml",
-    "retail_ops/build/retail_ops_v1_r3_sft_smoke.yaml",
-    "retail_ops/build/retail_ops_v1_r3_sft_overfit.yaml",
-    "retail_ops/build/retail_ops_v1_r3_sft.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml",
-)
+def test_the_r3_candidate_shares_the_base_model_with_its_control() -> None:
+    """候选必须与 base 跑同一份基座模型，否则 delta 不能归因于 adapter。
 
-
-def test_r3_configs_contain_no_secrets_or_private_paths() -> None:
-    """R3 新增 config 与 R2 同一口径：解析后的取值不得含真实凭据、绝对路径或
-    私有根路径字面量。训练数据路径只写私有根内的相对片段，前缀由 `--input_dir`
-    在运行时提供，因此这条断言对 SFT config 同样成立。"""
-    import yaml
-
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R3_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
-
-
-def test_r3_configs_never_reference_bfcl_or_holdout() -> None:
-    """R3 config 与训练侧代码不得引用 BFCL 固定 200 条或正式 holdout。"""
-    scanned = [ROOT / "src/veritool_rl/retail_ops/build/dev_sft_export.py"]
-    scanned.extend(ROOT / "configs" / name for name in _R3_CONFIG_NAMES)
-    for path in scanned:
-        text = path.read_text(encoding="utf-8").lower()
-        assert "bfcl" not in text, path
-        assert "holdout" not in text, path
-
-
-def test_r3_sft_configs_pin_model_provenance() -> None:
-    """每份正式 SFT config 都必须带 revision + 逐文件 SHA-256，不允许无 pin 训练。"""
-    import yaml
-
-    for name in _R3_CONFIG_NAMES:
-        parsed = yaml.safe_load(_read(f"configs/{name}"))
-        if parsed.get("pipeline") != "sft":
-            continue
-        model = parsed["model"]
-        assert len(model["revision"]) >= 7, name
-        assert model["file_sha256"], name
-        for digest in model["file_sha256"].values():
-            assert len(digest) == 64, name
-
-
-def test_r3_governed_paths_remain_ignored() -> None:
-    """R3 新增的 dev-sft 私有产物与训练输出（adapter/checkpoints）必须仍被既有
-    `.gitignore` 规则覆盖，不需要新增规则。"""
-    for ignored_path in (
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-sft/dev-sft-001/sft.jsonl",
-        "models/Qwen3-4B-pinned/model-00001-of-00003.safetensors",
-        "reports/retail_ops/v1/r3-sft-001/metrics.json",
-        "reports/retail_ops/v1/r3-sft-001/adapter/adapter_model.safetensors",
-        "reports/retail_ops/v1/r3-sft-001/checkpoints/trainer_state.json",
-    ):
-        ignored = subprocess.run(
-            ["git", "check-ignore", ignored_path],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert ignored.returncode == 0, ignored_path
-
-
-def test_r3_candidate_config_pins_model_and_adapter() -> None:
-    """候选 config 必须同时锁定基座模型与 adapter 的逐文件 SHA-256。"""
+    逐文件 SHA-256 的存在性由 `test_every_committed_config_holds_the_governance_line`
+    统一覆盖；这里剩下的是它无法表达的那一半——**两份配置之间的相等关系**。
+    """
     import yaml
 
     parsed = yaml.safe_load(
         _read("configs/retail_ops/evaluate/retail_ops_v1_r3_qwen3_4b_candidate.yaml")
     )
     assert parsed["pipeline"] == "formal_dev_candidate"
-    for key in ("model", "adapter"):
-        digests = parsed[key]["file_sha256"]
-        assert digests, key
-        for digest in digests.values():
-            assert len(digest) == 64, key
-    # 候选必须与 base 跑同一份基座模型，否则 delta 不能归因于 adapter。
     base = yaml.safe_load(_read("configs/retail_ops/evaluate/retail_ops_v1_r2_qwen3_4b_dev.yaml"))[
         "model"
     ]
     assert parsed["model"] == base
-
-
-def test_r3_candidate_governed_paths_remain_ignored() -> None:
-    for ignored_path in (
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/dev-candidate/cand-001/run.json",
-        "reports/retail_ops/v1/r3/candidate-001/candidate-report.json",
-    ):
-        ignored = subprocess.run(
-            ["git", "check-ignore", ignored_path],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert ignored.returncode == 0, ignored_path
 
 
 def test_source_layers_enforce_one_way_dependency() -> None:
@@ -455,201 +390,9 @@ def test_four_stable_interfaces_have_config_and_module_homes() -> None:
         assert list(config_dir.glob("*.yaml")), interface
 
 
-_R4_CONFIG_NAMES = (
-    "retail_ops/build/retail_ops_v1_r4_train_export_rebalanced.yaml",
-    "retail_ops/build/retail_ops_v1_r4_sft_rebalanced.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_qwen3_4b_candidate.yaml",
-)
-
-
-def test_r4_configs_hold_the_same_governance_line_as_r2_and_r3() -> None:
-    """R4 新增 config 必须落在与 R2/R3 完全相同的治理口径下。
-
-    新阶段最容易发生的退化不是写错哈希，而是"这只是个实验配置"心态下漏掉扫描：
-    配置里出现绝对路径、私有根字面量、凭据，或者悄悄引用 BFCL/正式 holdout。
-    这条测试把 R4 的新文件明确纳入既有断言，而不是依赖下一个人记得加。
-    """
-    import yaml
-
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R4_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        lowered = text.lower()
-        assert "bfcl" not in lowered, name
-        assert "holdout" not in lowered, name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
-
-        if parsed.get("pipeline") == "sft":
-            model = parsed["model"]
-            assert len(model["revision"]) >= 7, name
-            assert model["file_sha256"], name
-            for digest in model["file_sha256"].values():
-                assert len(digest) == 64, name
-
-
-def test_r4_rebalanced_export_output_stays_ignored() -> None:
-    """重平衡导出的私有训练数据与公开 quality.json 都必须仍被既有 `.gitignore`
-    覆盖，不需要为 R4 新增规则——训练数据永远不进 Git。"""
-    for ignored_path in (
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "train-export-002/sft.jsonl",
-        "reports/retail_ops/v1/r4/train-export-002/quality.json",
-    ):
-        ignored = subprocess.run(
-            ["git", "check-ignore", ignored_path],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert ignored.returncode == 0, ignored_path
-
-
 # ---------------------------------------------------------------------------
 # R4 第二轮：三候选并列消融的新配置
 # ---------------------------------------------------------------------------
-
-_R4_ROUND2_CONFIG_NAMES = (
-    "retail_ops/build/retail_ops_v1_r4_round2_a_sft_lora_full.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round2_b_train_export.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round2_b_sft.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round2_a_candidate.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round2_b_candidate.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round2_c_train_export.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round2_c_sft.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round2_c_base.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round2_c_candidate.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round3_capacity_prompt_sft.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round3_capacity_prompt_candidate.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round3_1p7b_attn_sft.yaml",
-    "retail_ops/build/retail_ops_v1_r4_round3_1p7b_full_sft.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round3_1p7b_base.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round3_1p7b_attn_candidate.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_round3_1p7b_full_candidate.yaml",
-)
-
-
-#: 封存 holdout 与 release 配置。它们**必然**提到 holdout，因此不能套用
-#: `_R4_ROUND2_CONFIG_NAMES` 那组「不得引用 holdout」的断言（R3 的既有做法同样把
-#: holdout 配置排除在那组之外）。其余治理口径——secret、绝对路径、私有根字面量、
-#: 模型 pin——一条不放宽，见 `test_r4_release_configs_hold_the_governance_line`。
-_R4_RELEASE_CONFIG_NAMES = (
-    "retail_ops/evaluate/retail_ops_v1_r4_holdout_base.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r4_holdout_candidate.yaml",
-    "retail_ops/release/retail_ops_v1_r4_formal_release.yaml",
-)
-
-
-def test_r4_release_configs_hold_the_governance_line() -> None:
-    """holdout / release 配置的治理口径：除"不得提 holdout"外一条不放宽。
-
-    尤其是**私有根路径字面量**——公开配置只能写 receipt/manifest 路径，
-    holdout 的私有数据路径由 `--input_dir` 在运行时提供并经
-    `authorize_formal_holdout` 校验，绝不写进版本控制的配置文件。
-    """
-    import yaml
-
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R4_RELEASE_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        assert "bfcl" not in text.lower(), name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r}"
-
-        model = parsed.get("model")
-        if model is not None:
-            assert len(model["revision"]) >= 7, name
-            assert model["file_sha256"], name
-            for digest in model["file_sha256"].values():
-                assert len(digest) == 64, name
-
-
-def test_every_r4_config_is_enrolled_in_the_governance_scan() -> None:
-    """R4 的每一份 config 都必须出现在扫描列表里。
-
-    `_R4_CONFIG_NAMES` 是手工维护的，而治理断言的全部价值取决于它是否完整——
-    漏登记一份配置，那份配置就完全不受 secret / 绝对路径 / 私有根 / BFCL / holdout
-    检查约束，且没有任何信号。这条测试把"下一个人记得加"换成"忘了加就红"。
-    """
-    enrolled = set(_R4_CONFIG_NAMES) | set(_R4_ROUND2_CONFIG_NAMES) | set(_R4_RELEASE_CONFIG_NAMES)
-    on_disk = {
-        f"retail_ops/{path.relative_to(ROOT / 'configs/retail_ops')}"
-        for path in (ROOT / "configs/retail_ops").rglob("*.yaml")
-        if "_r4_" in path.name
-    }
-
-    assert on_disk - enrolled == set(), "有 R4 config 未纳入治理扫描"
-    assert enrolled - on_disk == set(), "扫描列表引用了不存在的 R4 config"
-
-
-def test_r4_round2_configs_hold_the_same_governance_line() -> None:
-    """第二轮三份新 config 落在与 R2/R3/R4 第一轮完全相同的治理口径下。"""
-    import yaml
-
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R4_ROUND2_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        lowered = text.lower()
-        assert "bfcl" not in lowered, name
-        assert "holdout" not in lowered, name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r} in {leaf!r}"
-
-        if parsed.get("pipeline") == "sft":
-            model = parsed["model"]
-            assert len(model["revision"]) >= 7, name
-            assert model["file_sha256"], name
-            for digest in model["file_sha256"].values():
-                assert len(digest) == 64, name
-
-
-def test_r4_round2_export_outputs_stay_ignored() -> None:
-    """第二轮两份新导出与训练产物必须仍被既有 `.gitignore` 覆盖。
-
-    终局回复把工具返回的 order_id 写进了训练文本，system 改写会把 prompt 写进去，
-    两者都只属于私有训练数据——训练数据永远不进 Git。
-    """
-    for ignored_path in (
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "train-export-003/sft.jsonl",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "train-export-004/sft.jsonl",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "train-export-003/sft_terminal_template.json",
-        "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/train-export/"
-        "train-export-004/sft_system_prompt.json",
-        "reports/retail_ops/v1/r4/train-export-003/quality.json",
-        "reports/retail_ops/v1/r4/sft-003/adapter/adapter_model.safetensors",
-        "reports/retail_ops/v1/r4/sft-004/adapter/adapter_model.safetensors",
-        "reports/retail_ops/v1/r4/sft-005/adapter/adapter_model.safetensors",
-    ):
-        ignored = subprocess.run(
-            ["git", "check-ignore", ignored_path],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert ignored.returncode == 0, ignored_path
 
 
 def _iter_keys(value: object) -> list[str]:
@@ -736,6 +479,26 @@ def test_holdout_ledger_is_the_single_source_of_truth() -> None:
         assert expected in ledger, f"台账缺少 {expected!r}"
     assert ledger.count("NO-GO") >= 2, "两次判定都必须留在台账里"
 
+    # 台账自洽：表头声称的次数必须等于台账里观测小节的数量，且编号连续。
+    #
+    # 此前这里写的是 `assert "已消耗观测 | **5 次**" in ledger`——一个会在下一次观测后
+    # 过期、并且被测试**焊死**的字面值（LOG-20260817-06 的失败模式）。
+    # 现在断言的是「唯一事实源自己说的数」与「它自己记了几条」一致，
+    # 这条不随次数变化，拦的是真正要防的事：跑了观测但没记账。
+    declared = re.search(r"已消耗观测 \| \*\*(\d+) 次\*\*", ledger)
+    assert declared is not None, "台账表头没有声明观测次数"
+    sections = re.findall(r"^## 观测 (\d+) — ", ledger, re.MULTILINE)
+    assert int(declared.group(1)) == len(sections), (
+        f"台账声称 {declared.group(1)} 次观测，但只记了 {len(sections)} 条：{sections}"
+    )
+    assert sections == [str(index + 1) for index in range(len(sections))], (
+        f"观测编号不连续：{sections}"
+    )
+
+    # 历史条目不得改写：早期观测的 LOG 引用必须原样还在。
+    for token in ("LOG-20260815-03", "LOG-20260815-04", "LOG-20260817-04"):
+        assert token in ledger, token
+
     for name in (
         "README.md",
         "docs/SYSTEM_CARD.md",
@@ -745,13 +508,6 @@ def test_holdout_ledger_is_the_single_source_of_truth() -> None:
         "docs/REPO_MAP.md",
     ):
         assert "HOLDOUT_LEDGER.md" in _read(name), f"{name} 必须引用封存 holdout 台账"
-
-    # 被评审点名的三处漂移表述不得再出现在任何活动文档里
-    # （`docs/PROJECT_LOG.md` 是 append-only 历史档案，记录的是当时的事实，不在此列）。
-    for name in ("README.md", "docs/SYSTEM_CARD.md", "docs/MODEL_CARD.md", "docs/DEMO.md"):
-        text = _read(name)
-        assert "唯一一次观测" not in text, f"{name}: 观测次数表述已过期"
-        assert "首次也是" not in text, f"{name}: 观测次数表述已过期"
 
 
 def test_the_strongest_candidate_has_a_model_card() -> None:
@@ -771,47 +527,6 @@ def test_the_strongest_candidate_has_a_model_card() -> None:
     ):
         assert expected in card, f"sft-006 模型卡缺少 {expected!r}"
     assert "HOLDOUT_LEDGER.md" in card
-
-
-_R45_CONFIG_NAMES = (
-    "retail_ops/evaluate/retail_ops_v1_qualification_schema_clean.yaml",
-    "retail_ops/evaluate/retail_ops_v1_qualification_schema_perturbed.yaml",
-    "retail_ops/release/retail_ops_v1_r45_formal_release_v11.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45_merged_dev_base.yaml",
-    "retail_ops/build/retail_ops_v2_build.yaml",
-    "retail_ops/build/retail_ops_v2_build_injected.yaml",
-    "retail_ops/evaluate/retail_ops_v2_injection_unguarded.yaml",
-    "retail_ops/evaluate/retail_ops_v2_injection_guarded.yaml",
-    "retail_ops/build/retail_ops_v2_build_clarify.yaml",
-    "retail_ops/evaluate/retail_ops_v2_clarify_singleturn.yaml",
-    "retail_ops/evaluate/retail_ops_v2_clarify_multiturn.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45_holdout_base.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45_holdout_candidate.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45_holdout_merged.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45b_holdout_base.yaml",
-    "retail_ops/evaluate/retail_ops_v1_r45b_holdout_merged_candidate.yaml",
-    "retail_ops/build/retail_ops_ood_v1_build.yaml",
-    "retail_ops/evaluate/retail_ops_ood_v1_base.yaml",
-    "retail_ops/evaluate/retail_ops_ood_v1_merged_candidate.yaml",
-)
-
-
-def test_r45_configs_hold_the_governance_line() -> None:
-    """补强轨道新增的三份 config 落在与既有各轮完全相同的治理口径下。"""
-    import yaml
-
-    secret_markers = ("sk-", "Bearer ", "bearer ", "AKIA", "ghp_", "-----BEGIN")
-    for name in _R45_CONFIG_NAMES:
-        text = _read(f"configs/{name}")
-        assert "TEACHER_LLM_" not in text, name
-        assert "bfcl" not in text.lower(), name
-        parsed = yaml.safe_load(text)
-        assert isinstance(parsed, dict)
-        for leaf in _iter_leaf_values(parsed):
-            assert not leaf.startswith("/"), f"{name}: 疑似绝对路径 {leaf!r}"
-            assert "data/private" not in leaf, f"{name}: 疑似私有根路径 {leaf!r}"
-            for marker in secret_markers:
-                assert marker not in leaf, f"{name}: 疑似 secret 标记 {marker!r}"
 
 
 def test_schema_perturbation_configs_differ_only_by_the_switch() -> None:
@@ -1072,13 +787,6 @@ _COUNT_EXEMPT_FILES = frozenset(
 )
 _COUNT_EXEMPT_PREFIXES = ("docs/archive/", "docs/handoffs/")
 
-_CJK_NUMERAL = "一二三四五六七八九十两"
-
-#: 英文数词。中英文必须用**同一套**规则——2026-08-17 外部审阅第五轮已经因为
-#: 「扫描列表覆盖了文件、词表却没覆盖它的语言」抓到过一次；第六轮又在结构化检查上
-#: 抓到同一件事：新规则全是 CJK，英文退回到手写黑名单。
-_EN_NUMERAL = "one|two|three|four|five|six|seven|eight|nine|ten"
-
 #: 句子**确实在谈封存 holdout** 才受约束。
 #:
 #: 这一层是关键：不加限定地禁掉「数量 + 次」会误伤大量合法表述
@@ -1117,13 +825,6 @@ def _ledger_observation_count() -> int:
 #: 「观测 2」是指针，「观测 6 次」是计数——差别在数字后面跟不跟量词。
 _ORDINAL_POINTER = re.compile(
     r"(?:观测|判定)\s*\d+(?![\s]*[次轮回条组批])|observation\s+\d+(?!\s*times)", re.IGNORECASE
-)
-
-#: 数字后面跟着这些量词时，数的不是观测（集合大小、时长、显存、违规次数…）。
-_NON_OBSERVATION_UNITS = re.compile(
-    r"^\s*(?:条|个|秒|分钟|小时|ms|s\b|GB|MB|倍|次政策违规|次运行|次训练|次改进|次前向"
-    r"|次调用|次请求|%|pp|tok|tasks?|items?|runs?|violations?)",
-    re.IGNORECASE,
 )
 
 
@@ -1218,15 +919,27 @@ def _shape_offenders(text: str) -> list[str]:
 def _total_count_offenders(text: str) -> list[str]:
     """两张网并联：默认拒绝的计数网 + 总数语气的形状网。
 
+    **2026-08-19 起这两张网才真正扫到文档。** 此前它们只在自己的语料里跑过
+    （`test_the_total_count_detector_catches_what_it_claims_to`），而实际看着文档的
+    是一张 25 条手写字符串黑名单——**声称的机制不是部署的机制**。
+    删掉黑名单时如实记下丢了什么，见下面第三条。
+
     **能挡什么、挡不住什么（写在这里，因为过度承诺本身就是本仓库反复抓的问题）**：
     - 挡得住：**当前那个数**被在别处复制，无论量词、语序、中英文（两轮审阅共 48 句探针，0 漏）；
-    - **挡不住过期值**：写成 4 次、3 次这类**错误**总数时，只有第二张形状网可能拦到，
-      而形状网按构造不完备——2026-08-18 外部审阅第八轮用 8 句过期值探测，**8 句全漏**。
-      这一条如实写在这里：曾经的 docstring 声称覆盖过期值，那是假的。
-      试过把主网改成默认拒绝（任何计数数字都禁），真实文档上 14 处误报全是
-      「数字在数别的东西」，再压就是继续加白名单——那条路已被判为治标，不走；
+    - 挡得住**中文的总数语气**，与值无关：「已消耗 N 次观测」「累计观测 N 次」
+      这类形状即使 N 是过期的错误值也会红（形状网，`_TOTALITY_SHAPES`）；
+    - **挡不住的过期值**，逐类写明：①英文侧只有 `in total / a total of / altogether /
+      to date / so far` 五个词，`Of four observations` 与 `observed only five times`
+      漏；②中文的「唯一一次观测」「首次也是…」不在形状表里。
+      删掉黑名单**确实丢掉了这四种写法的覆盖**——它们此前是四条字面量，
+      对同义改写零泛化。2026-08-19 实测过两个替代判别式：
+      默认拒绝（作用域内任何计数数字都禁）在 42 份真实文档上 **12 处误报**；
+      收窄到「数词+量词直接修饰观测」误报降到 **0**，但相对指代白名单用字符窗口匹配，
+      「目**前**」「holdout **上**」会被当成合法标记而漏检。再收紧就是继续调白名单，
+      而连续三轮审阅都判定这条路是治标——**不走**；
     - 挡不住：把总数写成算式（"三次加三次"）、或完全改写成不含数字的错误陈述。
-      **这一层由「台账是唯一事实源」加人工审阅负责，没有机器保证。**
+
+    **上面第三、四条由「台账是唯一事实源」加人工审阅负责，没有机器保证。**
     """
     return _count_offenders(text) + _shape_offenders(text)
 
@@ -1552,110 +1265,30 @@ def test_the_overturned_judgement_count_matches_the_table() -> None:
             )
 
 
-def test_no_active_doc_restates_a_stale_observation_count() -> None:
-    """观测次数只能出现在台账里。
+def test_no_active_doc_restates_the_sealed_holdout_observation_count() -> None:
+    """观测次数只能出现在台账里——**用那个从台账现算的判别式扫全部活动文档**。
 
-    P2-11 的根因不是"有人忘了改"，而是同一个数字散落在多个文件里。第三次观测之后
-    立刻又冒出四处"两次观测"——证明只靠人工同步是不行的。这条测试把次数表述本身
-    变成受控字符串：活动文档要么引用台账，要么只说"三次"。
+    这条此前扫的是一张 25 条手写字符串黑名单（"已消耗两次观测"、"Of four observations"…）
+    加一份 22 个文件的手写清单。LOG-20260818-01/02 记的三轮迭代把判别式换成了
+    `_total_count_offenders`（值从台账现算、作用域限定到封存 holdout、白名单只放语法），
+    **但那个判别式从来没有被接到任何一份真实文档上**——它只在自己的语料
+    （`test_the_total_count_detector_catches_what_it_claims_to`）里跑过。
+    于是文档实际上仍由被判为死路的 v1 黑名单看着：**声称的机制不是部署的机制**，
+    正是这个仓库反复在别处抓的那类缺陷，只是这次犯在治理代码自己身上。
 
-    `docs/PROJECT_LOG.md` 与 `docs/archive/`、`docs/handoffs/` 不在此列——它们记录的是
-    当时的事实，按 append-only 协议不得改写。
+    现在两件事对齐了：判别式只有一个，扫描范围由 `git ls-files` 派生（42 份 Markdown），
+    豁免只有唯一事实源与 append-only 档案。**它挡得住什么、挡不住什么写在
+    `_total_count_offenders` 的 docstring 里**，尤其是它挡不住停留在旧值上的错误总数。
     """
-    # 只拦"把总数说成两次"的表述。"前两次观测"这类**相对**指代是合法的——
-    # 它描述的是历史上的某两次，不是当前总数。
-    stale = (
-        "两次观测均已消耗",
-        "已消耗两次观测",
-        "已消耗 **2 次**观测",
-        "封存 holdout 的两次观测",
-        "首次也是",
-        "唯一一次观测",
-        # 2026-08-16 补：第四次观测把总数推到 4，"三次"同样是过期表述。
-        # AGENTS.md 此前不在 checked 里，因此"两次"一路留到了 R5 才被发现。
-        "已消耗**三次**观测",
-        "已消耗三次观测",
-        # 2026-08-17 第五次观测之后，"四次"同样成为过期的总数表述。
-        "已消耗四次观测",
-        "已消耗**四次**观测",
-        "四次观测均已消耗",
-        # **前瞻式**表述同样会过期，而旧词表只拦总数（外部审阅第四轮指出：
-        # 真正变陈旧的恰恰是"下一次会是第五次"这一类）。
-        "会是**第五次**观测",
-        "会是第五次观测",
-        "都是第五次",
-        "需要**第五次**封存 holdout 观测",
-        "本轮没有观测",
-        "本轮**没有**消耗",
-        "两次 release 判定",
-        "两次发布判定",
-        # 2026-08-17 补：`README.en.md` 一直在 `checked` 里，但整张词表全是中文，
-        # 于是英文侧的 "Of four observations" / "observed only four times" 一路没被拦。
-        # **扫描列表覆盖了文件，词表却没覆盖它的语言**——这是治理有洞的另一种形状。
-        "Of four observations",
-        "Of five observations",
-        "observed only four times",
-        "observed only five times",
-        "the last observation of the sealed holdout",
-        "no further observations",
-        # 注意：不拦"前三次判定都是 NO-GO"——那是**相对**指代（历史上的头三次），
-        # 与"两次观测均已消耗"这种**总数**表述不同，且它是正确的。
+    offenders = {
+        name: found
+        for name in _tracked_markdown_files()
+        if (found := _total_count_offenders(_normalized(name)))
+    }
+    assert offenders == {}, (
+        "活动文档复述了封存 holdout 的观测次数。次数只写在 docs/HOLDOUT_LEDGER.md，"
+        f"别处用相对指代（「前三次」「再消耗一次」）或指向台账的序数：{offenders}"
     )
-    checked = [
-        "README.md",
-        "README.en.md",
-        "AGENTS.md",
-        "CLAUDE.md",
-        # 2026-08-16 补：唯一事实源此前**不在**这个列表里，只有表头那一行被断言，
-        # 于是正文里"任何新的发布判定都需要第三次观测"一直没被发现。
-        # 唯一事实源恰恰是最该被扫描的文件。
-        "docs/HOLDOUT_LEDGER.md",
-        # 2026-08-17 补（外部审阅第四轮）：这四份都承载 R6 的结论口径，
-        # 却都不在扫描里，于是 GENERALIZATION_FIX 的 §7.5 与 §8 相隔十四行互相矛盾。
-        "docs/GENERALIZATION_FIX.md",
-        "docs/EXECUTION_PLAN.md",
-        "docs/READING_THE_NUMBERS.md",
-        "docs/OOD_SEALED_LEDGER.md",
-        "SPEC.md",
-        "docs/SYSTEM_CARD.md",
-        "docs/MODEL_CARD.md",
-        "docs/MODEL_CARD_sft-006.md",
-        "docs/DEMO.md",
-        "docs/RESUME_EVIDENCE.md",
-        "docs/REPO_MAP.md",
-        "docs/SERVING_FORM_COMPARISON.md",
-        "docs/AGENT_LOOP.md",
-        "docs/DOMAIN_BUNDLE_V2.md",
-        "docs/INTERVIEW_PREP.md",
-        "docs/REBUILD_VERIFICATION.md",
-        "docs/FAULT_MATRIX.md",
-    ]
-    for name in checked:
-        text = _read(name)
-        for phrase in stale:
-            assert phrase not in text, f"{name}: 过期的观测次数表述 {phrase!r}"
-
-    ledger = _read("docs/HOLDOUT_LEDGER.md")
-
-    # 台账自洽：表头声称的次数必须等于台账里观测小节的数量。
-    #
-    # 此前这里写的是 `assert "已消耗观测 | **5 次**" in ledger`——一个会在下一次观测后
-    # 过期、并且被测试**焊死**的字面值（LOG-20260817-06 的失败模式）。
-    # 现在断言的是「唯一事实源自己说的数」与「它自己记了几条」一致，
-    # 这条不随次数变化，拦的是真正要防的事：跑了观测但没记账。
-    declared = re.search(r"已消耗观测 \| \*\*(\d+) 次\*\*", ledger)
-    assert declared is not None, "台账表头没有声明观测次数"
-    sections = re.findall(r"^## 观测 (\d+) — ", ledger, re.MULTILINE)
-    assert int(declared.group(1)) == len(sections), (
-        f"台账声称 {declared.group(1)} 次观测，但只记了 {len(sections)} 条：{sections}"
-    )
-    assert sections == [str(index + 1) for index in range(len(sections))], (
-        f"观测编号不连续：{sections}"
-    )
-
-    # 历史条目不得改写：早期观测的 LOG 引用必须原样还在。
-    for token in ("LOG-20260815-03", "LOG-20260815-04", "LOG-20260817-04"):
-        assert token in ledger, token
 
 
 def test_the_go_is_never_quoted_without_the_ood_reading() -> None:

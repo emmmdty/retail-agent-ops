@@ -1732,3 +1732,13 @@ def _require_config_keys(config: dict[str, Any], expected: set[str]) -> None:
         raise ValueError(
             f"配置字段不符合命令契约: expected={sorted(expected)}, actual={sorted(config)}"
         )
+
+
+if (
+    __name__ == "__main__"
+):  # pragma: no cover - 由 tests/test_product_cli_entrypoint.py 以子进程覆盖
+    # 没有这个守卫时，`python -m veritool_rl.product_cli` 会**静默退出 0**：
+    # 模块被导入、parser 被定义、然后什么也不发生。文档里的调用方式一直是
+    # console script `.venv/bin/retail-agent-ops`，所以这不是回归；但一个能跑、
+    # 不报错、什么都不做的入口，对任何按直觉试它的人都是陷阱。
+    raise SystemExit(main())
