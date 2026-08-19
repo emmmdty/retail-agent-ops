@@ -318,3 +318,30 @@ def test_the_sft_config_discloses_the_gradient_step_confound() -> None:
 
     assert "960" in text and "1168" in text, "配置没有写出行数变化"
     assert "分不开" in text, "配置没有承认步数与覆盖两个变量分不开"
+
+
+def test_the_new_candidate_configs_change_only_the_adapter() -> None:
+    """相对 `sft-008` 的两份候选配置，允许变的只有 adapter（dev 侧再加 attempt_id）。
+
+    基座 pin、生成参数、manifest 任何一处不同，"读数变化来自这份权重"就不成立。
+    """
+    import yaml
+
+    def load(name: str) -> dict[str, Any]:
+        return yaml.safe_load(
+            (REPO_ROOT / "configs/retail_ops/evaluate" / name).read_text(encoding="utf-8")
+        )
+
+    dev_base = load("retail_ops_v1_r6b_candidate.yaml")
+    dev_new = load("retail_ops_v1_r8_state_aug_candidate.yaml")
+    assert set(dev_base) == set(dev_new)
+    assert {k for k in dev_base if dev_base[k] != dev_new[k]} == {"attempt_id", "adapter"}
+
+    ood_base = load("retail_ops_ood_r6b_candidate.yaml")
+    ood_new = load("retail_ops_ood_r8_state_aug_candidate.yaml")
+    assert set(ood_base) == set(ood_new)
+    assert {k for k in ood_base if ood_base[k] != ood_new[k]} == {"adapter"}
+
+    # 两份配置必须指向**同一个** adapter，否则 dev 与 OOD 读的是两份权重。
+    assert dev_new["adapter"] == ood_new["adapter"]
+    assert dev_new["adapter"]["run_dir"] == "reports/retail_ops/v1/r8/sft-009"
