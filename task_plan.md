@@ -62,14 +62,39 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 
 ### 运行内容
 
+**诊断阶段**（读数决定后续是否修）：
+
 | # | 运行 | 用途 | 产物目录 |
 |---|---|---|---|
 | P-0 | 构建政策边界探针（CPU） | 评测集 | `reports/retail_ops/v1/policy-boundary/tasks` |
 | P-1 | 探针：零训练基座 | 边界基线 | `reports/retail_ops/v1/policy-boundary/base` |
 | P-2 | 探针：`sft-008`（当前候选） | 当前边界 | `reports/retail_ops/v1/policy-boundary/sft-008` |
 
-P-1/P-2 的读数决定后续是否做训练侧修复；**修复方案在看到曲线之后写，
-并在跑修复后的评测之前提交**——诊断可以看数据，判读规则不可以。
+**修复阶段**（判读规则已于 `3cb5619` 写定并提交，早于本阶段全部运行）：
+
+| # | 运行 | 用途 | 产物目录 |
+|---|---|---|---|
+| F-0 | 网格外状态增强采集与导出（CPU + DeepSeek） | 训练素材 | `reports/retail_ops/v1/r8/state-aug-001` |
+| F-1 | 训练 `sft-009`（配置相对 `sft-008` 只差 `data`） | 新候选 | `reports/retail_ops/v1/r8/sft-009` |
+| F-2 | 探针：`sft-008` 在**同一 commit** 上重跑 | 去掉「跑在不同代码上」这个混淆，兼作探针可重复性 | `reports/retail_ops/v1/policy-boundary/sft-008-rerun` |
+| F-3 | 探针：`sft-009` | 判据主体 | `reports/retail_ops/v1/policy-boundary/sft-009` |
+| F-4 | dev 60 配对评测：`sft-009` | 模板内退化检查 | `reports/retail_ops/v1/r8/dev-candidate-009` |
+| F-5 | 重建当前 `ood_dev` 任务集（旧产物来自已取代的生成器） | 措辞分布外回归的评测集 | `reports/retail_ops/v1/ood-v2/dev/tasks-rebuilt` |
+| F-6 | `ood_dev`：`sft-008` | 同集合对照 | `reports/retail_ops/v1/ood-v2/dev/sft-008` |
+| F-7 | `ood_dev`：`sft-009` | 措辞分布外退化检查 | `reports/retail_ops/v1/ood-v2/dev/sft-009` |
+
+上一轮留在同一命名空间下的 `reports/retail_ops/v1/ood-v2/dev/tasks` 也一并声明：它是**被取代**的旧任务集，本轮只用来说明历史读数为什么不可比，不产生新读数。
+
+**F-2 为什么要做**：`sft-008` 的探针读数产生于 `1e9e137`，`sft-009` 的产生于其后。
+评测路径在两次之间一个字节未改（`git diff --stat 1e9e137..HEAD -- src/veritool_rl/retail_ops/evaluate/`
+为空），但整个结论压在这一次对比上，值得用 15 分钟 GPU 把这个质疑彻底去掉。
+
+**F-5/F-6 为什么要做**：历史上 `ood_dev` 的 `sft-008 = 0.9833` 跑在
+`generator_id: ood_phrasing_bank_v2` 的旧任务集上，而当前生成器是
+`..._full_state_space`（LOG-20260817-05 的状态空间修正）。**两者不可比**，
+因此在重建后的当前集合上重跑两侧。
+
+已训出但**不评测**的：`reports/retail_ops/v1/r8/sft-008-rebuild-seed2`（原预注册作废，见上）。
 
 ### 判读规则（**在跑修复后的评测之前写定**，细节见 `docs/POLICY_BOUNDARY.md` §5）
 
