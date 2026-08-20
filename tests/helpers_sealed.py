@@ -42,18 +42,27 @@ def merged_provenance(base_revision: str = BASE_REVISION) -> MergedProvenance:
 def build_sealed_report(
     *,
     schema_version: str = "1.0",
-    deployment_form: Any = None,
+    deployment_form: Any = "unset",
     adapter: Any = "unset",
     with_adapter: bool = False,
     merged: bool = False,
     merged_base_revision: str = BASE_REVISION,
     model_revision: str | None = None,
+    inference_engine: Any = "unset",
+    runtime_env_sha256: Any = "unset",
     **overrides: Any,
 ) -> SealedEvaluationReport:
     """造一份字段自洽的 sealed 报告。
 
     `adapter="unset"` 表示"按 `with_adapter` 推断"，显式传 `None` 表示"确实没有"。
     这个区分是必要的：多条测试正是要断言"该有 adapter 却没有"会被拒绝。
+
+    `inference_engine="unset"` 同理：不传时按 schema_version 推断——v1.2 默认
+    "transformers"+"a"*64，v1.0/v1.1 默认 None（不传给 payload）。显式传 `None`
+    表示"确实不要"。
+
+    `deployment_form="unset"` 同理：不传时按 schema_version + with_adapter/merged
+    推断；显式传 `None` 表示"确实没有"（用于测 v1.1/v1.2 必须显式声明 deployment_form）。
     """
     lineage = merged_provenance(merged_base_revision) if merged else None
     if model_revision is None:
@@ -68,6 +77,24 @@ def build_sealed_report(
             if with_adapter
             else None
         )
+    # 推断 inference_engine / runtime_env_sha256 的默认值
+    if inference_engine == "unset":
+        inference_engine = "transformers" if schema_version == "1.2" else None
+    if runtime_env_sha256 == "unset":
+        runtime_env_sha256 = "a" * 64 if schema_version == "1.2" else None
+    # v1.1 / v1.2 要求显式 deployment_form；不传时按 with_adapter / merged 推断
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import DeploymentForm
+
+    if deployment_form == "unset":
+        if schema_version in ("1.1", "1.2"):
+            if merged:
+                deployment_form = DeploymentForm.MERGED
+            elif with_adapter or resolved_adapter is not None:
+                deployment_form = DeploymentForm.BASE_PLUS_ADAPTER
+            else:
+                deployment_form = DeploymentForm.BASE
+        else:
+            deployment_form = None  # v1.0 不声明 deployment_form
     payload: dict[str, Any] = {
         "schema_version": schema_version,
         "report_id": "0" * 64,
@@ -121,6 +148,8 @@ def build_sealed_report(
         "private_artifact_sha256": dict.fromkeys(SEALED_ARTIFACT_NAMES, "6" * 64),
         "deployment_form": deployment_form,
         "merged_from": lineage,
+        "inference_engine": inference_engine,
+        "runtime_env_sha256": runtime_env_sha256,
     }
     payload.update(overrides)
     report = SealedEvaluationReport.model_validate(payload)

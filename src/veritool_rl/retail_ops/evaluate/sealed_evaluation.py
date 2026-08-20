@@ -125,12 +125,31 @@ class SealedEvaluationConfig(BaseEvaluationConfig):
     必须经过逐条相同的守卫，否则 release 门禁的 delta 就建立在不同的验证强度上。
     base/candidate 的区分由 `require_comparable_sealed_runs` 显式断言，而不是靠
     两个类型——sealed 报告是对外的单一 allowlist schema，不宜分裂成两个版本。
+
+    **R8 起加 `inference_engine` / `runtime_env_sha256`**（与 `BaseRunEvidence`
+    同构）：封存 holdout 路径是唯一产生 GO/NO-GO 判定的路径，此前只哈希
+    `uv.lock` 文件、不哈希实际装的包——"换个 venv 跑评测，证据仍逐字段声称用的
+    是冻结依赖"这个洞在发布判定那条路径上开着（R8 第一轮独立审查 A4）。给出它
+    即进入 v1.2 语义：报告会带上这两个字段并参与自哈希。
     """
 
     adapter: AdapterArtifact | None = None
     #: 声明本次运行的模型是"某个基座 + 某个 adapter"合并而来。给出它即进入 v1.1
     #: 语义：报告会带上 `deployment_form=merged` 与可复算的血统。
     merged_from: MergedProvenance | None = None
+    #: 真正跑这次评测的推理引擎。给出它即进入 v1.2 语义（见 _schema_version）。
+    inference_engine: Literal["transformers", "vllm"] | None = None
+    #: 实际安装包集合的摘要，见 `current_runtime_env_sha256`。
+    runtime_env_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _runtime_provenance_is_all_or_nothing(self) -> SealedEvaluationConfig:
+        """要么两个都记，要么都不记——与 `BaseRunEvidence` 同构。"""
+        recorded = [self.inference_engine is not None, self.runtime_env_sha256 is not None]
+        if any(recorded) and not all(recorded):
+            msg = "inference_engine 与 runtime_env_sha256 必须同时记录或同时缺失"
+            raise ValueError(msg)
+        return self
 
 
 class SealedEvaluationReport(StrictModel):
@@ -145,7 +164,7 @@ class SealedEvaluationReport(StrictModel):
     这些字段只描述模型与运行环境，不含任何任务侧信息，因此不破坏 allowlist 语义。
     """
 
-    schema_version: Literal["1.0", "1.1"] = "1.0"
+    schema_version: Literal["1.0", "1.1", "1.2"] = "1.0"
     report_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     purpose: Literal["release"] = "release"
     split: Literal["holdout"] = "holdout"
@@ -187,15 +206,44 @@ class SealedEvaluationReport(StrictModel):
     deployment_form: DeploymentForm | None = None
     merged_from: MergedProvenance | None = None
 
+    #: 以下两个字段自 v1.2 起存在（R8 第一轮独立审查 A4）。**它们不进 v1.0 / v1.1
+    #: 报告的自哈希**——这是这次扩展能做的唯一前提，与 v1.1 那次同构。封存路径
+    #: 此前只哈希 `uv.lock` 文件、不哈希实际装的包，"换个 venv 跑评测"这个洞
+    #: 在发布判定那条路径上开着；这两个字段把它补上。
+    inference_engine: Literal["transformers", "vllm"] | None = None
+    runtime_env_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
     _validate_json_fields = field_validator("metrics")(validate_json_value)
 
     @model_validator(mode="after")
     def validate_form_matches_version_and_artifacts(self) -> Self:
         """形态、版本与产物三者必须自洽，否则报告在描述一个不存在的东西。"""
+        # 先做 all-or-nothing 检查（与 BaseRunEvidence 同构）——这必须在版本检查之前，
+        # 否则 v1.2 + 半份记录会被"v1.2 必须显式声明"抓住，掩盖了更基础的"半份记录"问题
+        recorded = [self.inference_engine is not None, self.runtime_env_sha256 is not None]
+        if any(recorded) and not all(recorded):
+            msg = "inference_engine 与 runtime_env_sha256 必须同时记录或同时缺失"
+            raise ValueError(msg)
         if self.schema_version == "1.0":
             if self.deployment_form is not None or self.merged_from is not None:
                 raise ValueError("v1.0 sealed 报告不得声明 deployment_form / merged_from")
+            if self.inference_engine is not None or self.runtime_env_sha256 is not None:
+                raise ValueError("v1.0 sealed 报告不得声明 inference_engine / runtime_env_sha256")
             return self
+        if self.schema_version == "1.1" and (
+            self.inference_engine is not None or self.runtime_env_sha256 is not None
+        ):
+            # v1.1 不含运行时溯源语义；声明它是自相矛盾
+            raise ValueError("v1.1 sealed 报告不得声明 inference_engine / runtime_env_sha256")
+        if self.schema_version == "1.2":
+            # v1.2 必须显式声明运行时溯源——这是它升版本的全部理由
+            if self.inference_engine is None or self.runtime_env_sha256 is None:
+                raise ValueError(
+                    "v1.2 sealed 报告必须显式声明 inference_engine 与 runtime_env_sha256"
+                )
+            # v1.2 同时也必须声明 deployment_form（继承自 v1.1 的语义）
+            if self.deployment_form is None:
+                raise ValueError("v1.2 sealed 报告必须显式声明 deployment_form")
         if self.deployment_form is None:
             raise ValueError("v1.1 起 sealed 报告必须显式声明 deployment_form")
         if self.deployment_form is DeploymentForm.MERGED:
@@ -340,16 +388,19 @@ def evaluate_authorized_holdout(
                 private_artifact_sha256=artifact_sha256,
                 deployment_form=_deployment_form(config),
                 merged_from=config.merged_from,
+                inference_engine=config.inference_engine,
+                runtime_env_sha256=config.runtime_env_sha256,
                 schema_version=_schema_version(config),
             ),
         )
-        write_json(staging / "report.json", report.model_dump(mode="json"))
+        write_json(staging / "report.json", _serialize_sealed_report(report))
         return report
 
     return publish_run_evidence(
         private_target=private_target,
         public_report_path=public_report_path,
         build=build,
+        serialize=_serialize_sealed_report,
     )
 
 
@@ -411,6 +462,11 @@ SEALED_V1_0_FIELDS = frozenset(
 SEALED_HASHED_FIELDS: dict[str, frozenset[str]] = {
     "1.0": SEALED_V1_0_FIELDS,
     "1.1": SEALED_V1_0_FIELDS | {"deployment_form", "merged_from"},
+    # R8：v1.2 起把运行时溯源计入自哈希。封存路径此前只哈希 `uv.lock` 文件、
+    # 不哈希实际装的包——"换个 venv 跑评测，证据仍逐字段声称用的是冻结依赖"
+    # 这个洞在发布判定那条路径上开着（第一轮独立审查 A4）。v1.2 把它补上。
+    "1.2": SEALED_V1_0_FIELDS
+    | {"deployment_form", "merged_from", "inference_engine", "runtime_env_sha256"},
 }
 
 
@@ -419,14 +475,25 @@ def _finalize_sealed(report: SealedEvaluationReport) -> SealedEvaluationReport:
     return report.model_copy(update={"report_id": sealed_content_id(report)})
 
 
-def _schema_version(config: SealedEvaluationConfig) -> Literal["1.0", "1.1"]:
-    """只有需要 v1.1 才有的语义时才升版本。
+def _schema_version(config: SealedEvaluationConfig) -> Literal["1.0", "1.1", "1.2"]:
+    """只有需要新版本才有的语义时才升版本。
 
     默认停在 v1.0：升版本会改变 `report_id` 的计算口径，而 base 与 candidate 两侧
-    必须用同一口径才能配对。让"合并候选"这一个真实需求驱动版本，而不是让版本号
-    随代码演进自动漂移。
+    必须用同一口径才能配对。让"合并候选"和"运行时溯源"这两个真实需求驱动版本，
+    而不是让版本号随代码演进自动漂移。
+
+    R8 新增 v1.2 触发条件：`config.inference_engine` 不为 None。这强制新报告
+    主动声明它跑在哪个引擎、哪个环境，否则升不上 v1.2——而停留在 v1.0/v1.1
+    的报告看不到这两个字段，旧证据复算逐位不变。
     """
-    return "1.1" if config.merged_from is not None else "1.0"
+    if config.merged_from is not None:
+        # 合并候选 + 运行时溯源：v1.2（v1.1 的所有语义 + 运行时溯源）
+        if config.inference_engine is not None:
+            return "1.2"
+        return "1.1"
+    if config.inference_engine is not None:
+        return "1.2"
+    return "1.0"
 
 
 def _deployment_form(config: SealedEvaluationConfig) -> DeploymentForm | None:
@@ -449,6 +516,22 @@ def sealed_content_id(report: SealedEvaluationReport) -> str:
         if key in allowed and key not in {"report_id", "schema_version"}
     }
     return _content_sha256(projected)
+
+
+def _serialize_sealed_report(report: SealedEvaluationReport) -> dict[str, Any]:
+    """序列化时只暴露**该 schema 版本该有**的字段。
+
+    与 `sealed_content_id` 同一个 allowlist 投影，但保留 `schema_version` 和
+    `report_id`。这是 allowlist 的真正语义：v1.0 报告的公开 payload 不该
+    出现 v1.1/v1.2 才有的字段（即使值是 None），否则下游消费者会看到一个
+    "声称是 v1.0 却带新字段"的自相矛盾的报告。
+
+    历史上（v1.0 报告磁盘产物）这一点靠"字段还没加进 model"自然成立；自 v1.1
+    起字段加进 model 但默认 None，必须靠主动投影才能保住 allowlist 语义。
+    """
+    allowed = SEALED_HASHED_FIELDS[report.schema_version] | {"schema_version", "report_id"}
+    payload = report.model_dump(mode="json")
+    return {key: value for key, value in payload.items() if key in allowed}
 
 
 #: 两份 sealed 报告必须逐字段相同才允许配对——任何一项不同，delta 都不再归因于候选。

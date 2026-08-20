@@ -125,6 +125,8 @@ def evaluate_formal_dev_candidate(
     attempt_id: str,
     public_report_path: Path,
     hardware_provider: HardwareProvider,
+    inference_engine: Literal["transformers", "vllm"] | None = None,
+    runtime_env_sha256: str | None = None,
 ) -> CandidateRunEvidence:
     """在 60 条已验证 dev 记录上跑一次候选评测，前置守卫与 base 逐条相同。
 
@@ -191,6 +193,8 @@ def evaluate_formal_dev_candidate(
                 replayable_count=run.replayed,
                 evidence_complete=_evidence_complete(run.trajectories, run.replayed),
                 artifact_sha256=artifact_sha256,
+                inference_engine=inference_engine,
+                runtime_env_sha256=runtime_env_sha256,
             ),
             "run_id",
         )

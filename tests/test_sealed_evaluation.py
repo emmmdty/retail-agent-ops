@@ -340,14 +340,16 @@ def test_sealed_public_report_only_exposes_allowlisted_aggregates(
     report = _evaluate(formal, bundle, tmp_path, public_report_path=public_report_path)
     payload = json.loads(public_report_path.read_text(encoding="utf-8"))
 
+    # `_sealed_config` 默认构造 v1.0 报告（无 merged_from、无 inference_engine），
+    # 因此公开 payload 必须是 v1.0 的 allowlist——不含 v1.1/v1.2 才有的字段
+    # （deployment_form / merged_from / inference_engine / runtime_env_sha256）。
+    # 这是 R8 第一轮独立审查 A4 修复带来的真正 allowlist 语义：v1.0 报告的
+    # 公开 payload 不该出现 v1.1/v1.2 才有的字段，即使值是 None——否则下游
+    # 消费者会看到一个"声称是 v1.0 却带新字段"的自相矛盾的报告。
     assert set(payload) == {
         "schema_version",
         "report_id",
         "purpose",
-        # v1.1 新增：**部署形态**与合并血统。两者只描述模型与它的来源，
-        # 不含任何 task/family 标识或真值，因此不破坏 allowlist 语义。
-        "deployment_form",
-        "merged_from",
         "dataset_version",
         "generator_id",
         "bundle_id",
@@ -381,6 +383,11 @@ def test_sealed_public_report_only_exposes_allowlisted_aggregates(
         "evidence_complete",
         "private_artifact_sha256",
     }
+    # 显式断言：v1.0 报告的 payload 必须不含 v1.1/v1.2 字段
+    assert "deployment_form" not in payload
+    assert "merged_from" not in payload
+    assert "inference_engine" not in payload
+    assert "runtime_env_sha256" not in payload
     assert payload["report_id"] == report.report_id
     assert payload["category_counts"] == {
         "lookup_status": 20,

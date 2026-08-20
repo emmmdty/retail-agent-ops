@@ -3971,3 +3971,109 @@ dev 60 与 `ood_dev` 60 两个可迭代面在候选上都已饱和（政策违�
 **没做的事**：不解释"为什么是 −14 而不是 −10"（两点训练行数相同，本轮没有能分离
 机制的实验）；不把上面那条机制解释写成结论；
 **不消耗封存 holdout 观测**——本轮的结论不是发布结论。
+
+### LOG-20260819-02：用户授权启动 R8 元方法论补强——三轮独立审查、跨域、扩工具面
+
+- 日期：2026-08-19
+- 阶段/任务：R8 / 元方法论补强与岗位重定位
+- 状态：阶段变更
+- 关联：LOG-20260819-01、`task_plan.md` R8 节
+
+**背景与难点**：R7 完成后用户要求"改项目代码、结果、文档，可以用 GPU，
+做到简历能打的程度，最终经历严苛面试官的三轮独立审查到 9/10，重点在方法论"。
+这是跨阶段大型方案请求，按 AGENTS.md 第 2 条必须先给候选并等用户决策。
+
+**候选与决策**：给出 7 个候选（A1 三轮独立审查 / A2 证据系统可移植性 /
+B1 业界工具对照 / B2 CI 真跑或等价物 / C1 第二个领域跨域验证 /
+C2 工具面扩到 15+ / D1 多 seed 方差刻画）。用户 2026-08-19 选择 A1+A2+B1+B2+C1+C2，
+**未选 D1**（D1 会动 R7 判定，正确）。persona 顺序：MLOps → SRE → ML 论文。
+简历重写在 A1 三轮审查完后做。**全部 GPU 任务批准**（每条命令仍先给精确清单）。
+
+**关键治理决定**：
+1. **C2 推翻 R4.5 时未选 B 的判定**。R4.5 时用户在 A（user simulator）/
+   B（扩工具面 15+）二选一中未选 B；本轮明确推翻该判定，授权启动 C2。
+   历史条目不改写，本条为治理痕迹。
+2. **D1 不做**：R7 时用户已判 D1"价值不足并改向"，本轮不推翻该判定，
+   `sft-008-rebuild-seed2` 权重已训出但不评测不报告。
+3. **核心方法论不动**：自我证伪纪律、版本化门禁契约、配对可比性、
+   封存 holdout 台账——这些是项目已有且定稿的卖点，本轮扩展其成立范围，
+   不重写其内容。
+4. **A1 取代 R7 Task D 的"一个面试官 9 分签字"**，升级为三个 persona 各一轮，
+   每轮 10 分制 < 9 分则修阻塞项再送下一轮，三轮全部 ≥9 才算 A1 完成。
+
+**决定与方案**：R8 阶段启动，状态记为"当前"。产物前缀 `r9`（R7 用 r8，
+因「R6 收口」占用 r7）。先做 A1 第一轮 MLOps persona 审查，审查完后再做 A2+B1+B2
+（纯 CPU 并行），最后做 C1+C2（CPU 实现 + GPU 训练），简历重写在 A1 三轮审查完后做。
+
+**备选方案与未选择理由**：未选 D1（多 seed 方差刻画）——会改写 R7 已有结论，
+方法论上属 seed 挑选的反面；未单独做"加更多测试覆盖"——A1 三轮审查会自动暴露
+需要补的覆盖，先做审查再补更有针对性；未在审查前先重写简历——审查会暴露方法论
+短板，先补再重写避免重复返工。
+
+**后果与下一步**：R8 启动，A1 第一轮 MLOps persona 审查派发。每轮审查完写 LOG
+记录意见与修复。本轮不消耗封存 holdout 观测；C1/C2 的 GPU 命令在执行前
+逐条给精确清单。
+
+### LOG-20260820-01：R8 元方法论补强——三轮独立审查 + 5 项阻塞修复 + 简历重定位
+
+- 日期：2026-08-20
+- 阶段/任务：R8 / 元方法论补强与岗位重定位
+- 状态：阶段变更（CPU 部分完成，C1/C2 GPU 部分未做）
+- 关联：LOG-20260819-02、task_plan.md R8 节
+
+**背景与难点**：用户要求"改项目代码、结果、文档，可以用 GPU，做到简历能打的程度，
+最终经历严苛面试官的三轮独立审查到 9/10，重点在方法论"。按 AGENTS.md 给出 7 个
+候选，用户选 A1+A2+B1+B2+C1+C2，未选 D1（正确——D1 会动 R7 判定）。persona 顺序
+MLOps→SRE→ML 论文。简历重写在 A1 三轮审查完后做。
+
+**三轮独立审查与分数**：
+1. 第一轮 MLOps persona：**6.5/10**。4 个阻塞项：A1（CI 真跑）、A2（业界工具零对照）、
+   A3（证据系统不可移植）、A4（封存路径 runtime_env_sha256 未落地——自报已修但
+   实际只在 dev/OOD 路径修了）。
+2. 第二轮 SRE / Release Eng persona：**7.3/10**。A4+B1 修复落地，但发现 3 个新阻塞：
+   A-1（ReleaseReport 缺 self-hash——sealed 链条两端都有，判定落盘那一刀没有）、
+   A-2（复算测试在干净 clone 上 skip——A4 修复的唯一前提在 CI 上没人验过）、
+   A-3（dev 候选路径运行时溯源不对称——base 有，candidate 没）。
+3. 第三轮 ML 论文 reviewer persona：**6.8/10**。5/6 修复是工程加固不是方法论加固；
+   统计强度仍由原始的 n=2/3、+0.0083、单域、2 规模点决定；简历头条数字需要降格。
+
+**5 项阻塞修复**：
+1. **A4**：`SealedEvaluationReport` 加 `inference_engine` / `runtime_env_sha256`，
+   引入 v1.2 schema_version，新增 `_serialize_sealed_report` 让公开 payload 按 schema
+   版本投影（allowlist 真正语义）。8 条新测试（`tests/test_sealed_runtime_provenance.py`）。
+   `publish_run_evidence` 加 `serialize` 回调参数。
+2. **B1**：`docs/MLOPS_COMPARISON.md`（5 工具 × 8 维度对照）+ `scripts/export_mlflow.py`
+   （MLflow 导出器，软依赖）+ 12 条测试（`tests/test_export_mlflow.py`）。
+3. **A-1**：`ReleaseReport` 加 `report_id` self-hash + `release_content_id` 函数 +
+   `load_release_report` 重算比对。4 条新测试（`tests/test_release_self_hash.py`）。
+   伪造 GO 在 load 时被拒（改 decision/gates/threshold 任一字段即报错）。
+4. **A-2**：`test_synthetic_v1_0_and_v1_1_reports_recompute_bit_identically` 用
+   `helpers_sealed.build_sealed_report` 构造合成报告，不依赖磁盘产物——A4 修复的
+   "复算逐位不变"前提在干净 clone 上也能验。
+5. **A-3**：`evaluate_formal_dev_candidate` 加 `inference_engine` / `runtime_env_sha256`
+   参数，`product_cli._run_formal_dev_candidate` 传这两个字段——dev 候选路径与 base 同构。
+
+**简历重定位（Task D）**：
+- 方案 B 标题从"Agent 后训练 / 算法工程岗"改成"MLOps / LLM Eval Infra / Release Eng 岗"。
+- 副标题从"零售工具 Agent 的领域适配与失败归因"改成"LLM 候选发布的可审计判定系统"。
+- 头条从"GO"改成"不可伪造的证据链 + 三次 NO-GO + 分布外证伪"。
+- GO 那条加 `success_delta_ci_lower=+0.0083`（统计上无法拒绝零差异）。
+- "LoRA 容量与规模匹配"降级为"在两个规模上观察到相反方向"（非跨规模规律）。
+- 措辞增强那条加 sft 行数与梯度步数混杂披露。
+
+**未做及原因**：
+- **B2（CI 真跑）**：需用户单独授权公开发布门。`verify_qualification_chain.py`
+  顶到简历第一段作为等价物，但不是 CI 真跑。
+- **C1（第二个领域跨域验证）**：CPU + GPU 任务，工作量 2-3 日历日，本轮未做。
+  已有 `test_source_layers_enforce_one_way_dependency` 治理测试断言 core 不依赖
+  retail_ops，但 release/evaluate 层紧贴单一领域，未抽接口包。
+- **C2（工具面扩到 15+）**：CPU + GPU 任务，推翻 R4.5 时未选 B 的判定，本轮未做。
+- **D1（多 seed 方差刻画）**：用户未选，R7 判定价值不足，不推翻。
+
+**验证**：1171 tests passed（作者环境）/ 1125 passed / 46 skipped / 0 failed
+（干净 clone 实跑）；Ruff / ruff format --check / mypy（89 源文件）/ uv lock --check
+（105 packages）/ git diff --check / verify_qualification_chain 全绿。
+
+**后果与下一步**：R8 CPU 部分完成。三轮审查分数 6.5→7.3→6.8，未到 9/10——
+统计强度是方法论限制，不是工程修复能解决的。要继续提分需要做 C1（跨域）+
+B2（CI 真跑）+ 可能的第 3 个规模点（D1，但 R7 判负）。简历已重定位为投 MLOps 岗。

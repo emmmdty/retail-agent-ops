@@ -179,7 +179,10 @@ def test_service_rejects_release_bundle_mismatch(tmp_path: Path) -> None:
     payload["bundle_sha256"] = "0" * 64
     write_json(release_path, payload)
 
-    with pytest.raises(ValueError, match="release report 与 bundle SHA-256 不匹配"):
+    # R8 第二轮审查 A-1 后，report_id 自哈希检查比 bundle_sha256 检查更早抓到
+    # 篡改——改了 bundle_sha256 但没重算 report_id，load_release_report 会先报
+    # "report_id 自哈希不匹配"。两个错误都说明 release 报告被篡改，service 拒绝加载。
+    with pytest.raises(ValueError, match=r"report_id 自哈希不匹配|bundle SHA-256 不匹配"):
         create_app(release_dir, Path("domains/retail_ops/v1"), build_dir)
 
 

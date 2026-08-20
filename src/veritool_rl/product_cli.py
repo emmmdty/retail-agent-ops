@@ -1321,6 +1321,7 @@ def _run_formal_dev_candidate(
 
     backend = (backend_factory or _default_candidate_backend)(candidate_config, models_root)
     hardware_provider = (hardware_provider_factory or _default_hardware_provider)()
+    engine = _engine_from(args)
 
     create_output_dir(args.output_dir)
     evaluate_formal_dev_candidate(
@@ -1334,6 +1335,11 @@ def _run_formal_dev_candidate(
         attempt_id=attempt_id,
         public_report_path=args.output_dir / "candidate-report.json",
         hardware_provider=hardware_provider,
+        # R8 第二轮审查 A-3：dev 候选路径与 base 同构——证据必须说得出它跑在
+        # 哪个引擎、哪个环境，否则 dev base 在 venv-A 跑、dev candidate 在 venv-B
+        # 跑，证据链发现不了。
+        inference_engine=engine,
+        runtime_env_sha256=current_runtime_env_sha256(),
     )
 
 

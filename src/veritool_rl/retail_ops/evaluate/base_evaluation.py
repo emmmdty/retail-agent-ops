@@ -478,11 +478,16 @@ def publish_run_evidence(
     private_target: Path,
     public_report_path: Path,
     build: Callable[[Path], EvidenceT],
+    serialize: Callable[[EvidenceT], dict[str, Any]] | None = None,
 ) -> EvidenceT:
     """先在 staging 目录写全部私有产物，原子发布后再写公开报告。
 
     公开报告写入失败时会整体回滚已发布的私有目录，不留半成品；发布之前的
     任何异常只会删除 staging 目录，真正的目标路径始终未被创建。
+
+    `serialize` 默认是 `evidence.model_dump(mode="json")`；sealed 路径传
+    `_serialize_sealed_report` 以按 schema 版本投影 allowlist 字段，避免
+    v1.0 报告的公开 payload 出现 v1.1/v1.2 才有的字段（即使值是 None）。
     """
     staging = _make_staging_dir(private_target)
     private_published = False
@@ -490,7 +495,8 @@ def publish_run_evidence(
         evidence = build(staging)
         _publish_staging_dir(staging, private_target)
         private_published = True
-        _write_public_report(public_report_path, evidence.model_dump(mode="json"))
+        payload = serialize(evidence) if serialize is not None else evidence.model_dump(mode="json")
+        _write_public_report(public_report_path, payload)
         return evidence
     except BaseException:
         if private_published:

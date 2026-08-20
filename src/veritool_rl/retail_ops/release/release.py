@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import math
 from collections.abc import Sequence
@@ -97,9 +98,17 @@ class GateResult(StrictModel):
 
 
 class ReleaseReport(StrictModel):
-    """配对证据产生的完整 GO/NO-GO 结论。"""
+    """配对证据产生的完整 GO/NO-GO 结论。
+
+    **R8 第二轮审查 A-1：自哈希。** `report_id` 是全字段自哈希（排除自身），
+    `load_release_report` 重算并比对——与 sealed 报告同构。**旧报告（无
+    report_id）加载后取 None，不报错**，这是渐进式修复，不破坏已有磁盘产物。
+    伪造 GO 的攻击者改了 decision / gates / threshold 任一字段，report_id
+    复算不匹配，load 时被拒。
+    """
 
     schema_version: GateSchemaVersion = "1.0"
+    report_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     decision: ReleaseDecision
     baseline_run_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     candidate_run_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -401,20 +410,38 @@ def decide_release(
     )
     failed_gate_ids = [gate.gate_id for gate in gates if not gate.passed]
     decision = ReleaseDecision.NO_GO if failed_gate_ids else ReleaseDecision.GO
-    return ReleaseReport(
-        decision=decision,
-        baseline_run_id=baseline.run_id,
-        candidate_run_id=candidate.run_id,
-        baseline_policy=baseline.policy_type,
-        candidate_policy=candidate.policy_type,
-        bundle_sha256=baseline.bundle_sha256,
-        task_manifest_sha256=baseline.task_manifest_sha256,
-        deployment="baseline" if failed_gate_ids else "candidate",
-        gates=gates,
-        failed_gate_ids=failed_gate_ids,
-        baseline_metrics=baseline.metrics,
-        candidate_metrics=candidate.metrics,
+    return finalize_release_report(
+        ReleaseReport(
+            decision=decision,
+            baseline_run_id=baseline.run_id,
+            candidate_run_id=candidate.run_id,
+            baseline_policy=baseline.policy_type,
+            candidate_policy=candidate.policy_type,
+            bundle_sha256=baseline.bundle_sha256,
+            task_manifest_sha256=baseline.task_manifest_sha256,
+            deployment="baseline" if failed_gate_ids else "candidate",
+            gates=gates,
+            failed_gate_ids=failed_gate_ids,
+            baseline_metrics=baseline.metrics,
+            candidate_metrics=candidate.metrics,
+        )
     )
+
+
+def release_content_id(report: ReleaseReport) -> str:
+    """全字段自哈希（排除 report_id 自身）——与 sealed 报告同构。
+
+    伪造者改了 decision / gates / threshold / metrics 任一字段，复算结果变化，
+    `load_release_report` 比对时被拒。
+    """
+    payload = report.model_dump(mode="json")
+    payload.pop("report_id", None)
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def finalize_release_report(report: ReleaseReport) -> ReleaseReport:
+    """回填 report_id（self-hash）。"""
+    return report.model_copy(update={"report_id": release_content_id(report)})
 
 
 def write_release_report(report: ReleaseReport, output_dir: Path) -> None:
@@ -426,8 +453,21 @@ def write_release_report(report: ReleaseReport, output_dir: Path) -> None:
 
 
 def load_release_report(path: Path) -> ReleaseReport:
-    """读取并严格校验发布报告。"""
-    return ReleaseReport.model_validate_json(path.read_text(encoding="utf-8"))
+    """读取并严格校验发布报告。
+
+    **R8 第二轮审查 A-1**：如果报告带 report_id（新报告），重算并比对——
+    伪造者改了任一字段都会被拒。旧报告（无 report_id）取 None，不报错。
+    """
+    report = ReleaseReport.model_validate_json(path.read_text(encoding="utf-8"))
+    if report.report_id is not None:
+        expected = release_content_id(report)
+        if report.report_id != expected:
+            msg = (
+                f"release report 的 report_id 自哈希不匹配：声明 {report.report_id}，"
+                f"复算 {expected}。报告可能被篡改。"
+            )
+            raise ValueError(msg)
+    return report
 
 
 def _validate_paired_evidence(
