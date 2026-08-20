@@ -103,8 +103,7 @@ def evaluate_release_gates(
         )
     )
     evidence_complete = bool(
-        base.report_id and candidate.report_id
-        and base.task_count > 0 and candidate.task_count > 0
+        base.report_id and candidate.report_id and base.task_count > 0 and candidate.task_count > 0
     )
     gates.append(
         FlightGateResult(
