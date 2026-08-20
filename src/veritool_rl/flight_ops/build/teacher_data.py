@@ -148,10 +148,12 @@ class _RetryingTeacherPolicy:
         tools: list[Any],
     ) -> PolicyOutput:
         last_error: TeacherClientError | None = None
+        # Convert ToolSchema objects to dicts for the OpenAI-compatible API.
+        tool_dicts = [t.to_transformers() if hasattr(t, "to_transformers") else t for t in tools]
         for _attempt in range(1, self._max_attempts + 1):
             self.request_attempts += 1
             try:
-                response = self._client.complete(messages=messages, tools=tools)
+                response = self._client.complete(messages=messages, tools=tool_dicts)
                 if response.usage is not None:
                     self.total_prompt_tokens += response.usage.prompt_tokens or 0
                     self.total_completion_tokens += response.usage.completion_tokens or 0
