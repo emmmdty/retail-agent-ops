@@ -1376,15 +1376,19 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
 - 但 `teacher_client.py` / `teacher_route.py` 住在 `retail_ops.build` 下，且
   `teacher_data.py` import 它们。flight_ops 若直接 import 这两个模块就**违反 one-way
   依赖**（flight_ops 不得依赖 retail_ops）——于是跨域可移植性在 build 层卡住。
-- `evaluate` / `release` 层同理紧贴 retail_ops 的 `RunEvidence` / `ReleasePolicyConfig`
-  类型。LOG-20260820-01 的「release/evaluate 层紧贴单一领域，未抽接口包」就是这个。
-- **两个走法**（待用户决策，属高影响）：
-  (a) 把 `teacher_client` / `teacher_route` / `collect_teacher_attempt` / evaluate 基座 /
-      release 基座 lift 到 `core.build` / `core.evaluate` / `core.release`，retail_ops
-      改成从 core import。**动 retail_ops 但行为不变**（report_id 算的是产物内容不是
-      import 路径，证据哈希应不动）。这才是 C1/A2 真正要的「可移植性实证」。
-  (b) flight_ops 自己重写一份最小 build/evaluate/release。**不动 retail_ops**，
-      但代码重复，且重复本身就是「build 层尚不可移植」的活证据。
-- flight_ops task 生成器**不复制 retail 的 5 指纹 family pairing**：那套是 retail 有
-  封存 holdout 时的反污染机制；flight_ops 无封存（C1 是可移植性证明不是发布判定），
-  更简单的 train/dev split + 内容哈希是诚实而非偷工。已在 task_plan R8 D2 非目标写明。
+- **实际执行**：lift teacher_client/teacher_route 到 core.build/（2026-08-20），留
+  re-export shim。零回归（1199 tests 全绿）。flight_ops build 层自己写最小 collection
+  loop 调用 core primitives——transport 在 core（证明端口能力），orchestration 在域
+  层（诚实——每个域有自己的数据管线）。
+- flight_ops evaluate 层：FlightRunEvidence 的 report_id 排除 runtime_seconds（wall clock
+  不可复现，不进 tamper-evident hash）。OraclePolicy 是 per-task 的——不能跨 task 复用
+  同一个 policy object（第一个 task 用完 index 后后续 task 全跳过）。改 run_evaluation
+  接受 `policy_factory: Callable[[TaskSpec], Policy]`，与 env_factory 模式对齐。
+- recovery 场景的 expected_calls 必须包含**两次** rebook_flight（第一次 transient fail，
+  第二次 succeed）。oracle 逐个回放不重试；测试里的 retry 逻辑会破坏第二次调用。
+
+### C1 flight_ops 任务生成器的简化选择
+
+- flight_ops 不复制 retail 的 5 指纹 family pairing：那套是 retail 有封存 holdout 时的
+  反污染机制；flight_ops 无封存（C1 是可移植性证明不是发布判定），更简单的
+  train/dev split + 内容哈希是诚实而非偷工。已在 task_plan R8 D2 非目标写明。
