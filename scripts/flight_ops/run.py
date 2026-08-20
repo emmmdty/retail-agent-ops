@@ -188,15 +188,12 @@ def mode_train(args: argparse.Namespace) -> None:
         print(f"ERROR: SFT data not found at {sft_path}")
         sys.exit(1)
 
-    # Compute model revision and file_sha256
+    # Compute model revision and file_sha256 (ALL files, non-recursive, skip dotfiles)
     model_dir = Path(args.model_path)
     sha256_map = {}
-    for f in sorted(model_dir.rglob("*.json")):
-        if f.is_file():
-            sha256_map[str(f.relative_to(model_dir))] = hashlib.sha256(f.read_bytes()).hexdigest()
-    for f in sorted(model_dir.rglob("*.safetensors")):
-        if f.is_file():
-            sha256_map[str(f.relative_to(model_dir))] = hashlib.sha256(f.read_bytes()).hexdigest()
+    for f in sorted(model_dir.iterdir()):
+        if f.is_file() and not f.name.startswith("."):
+            sha256_map[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
     revision = hashlib.sha256(_json.dumps(sha256_map, sort_keys=True).encode()).hexdigest()[:16]
 
     # Project-relative paths
