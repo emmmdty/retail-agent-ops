@@ -41,7 +41,11 @@ def validate_json_value(value: Any) -> Any:
 
 
 class TaskScenario(StrEnum):
-    """MiniRetail 与 RetailOps 覆盖的任务场景。"""
+    """MiniRetail 与 RetailOps / FlightOps 覆盖的任务场景。
+
+    零售退款与航班改签是两个独立域：REFUND_* 服务零售，REBOOK_* 服务航班。
+    两者共用一个枚举是因为它们都是「查询 / 放行 / 拒绝(窗口/归属/重复) / 恢复」
+    这一组同构的失败形态——跨域对照正是建立在这个同构上。"""
 
     LOOKUP_STATUS = "lookup_status"
     REFUND_ELIGIBLE = "refund_eligible"
@@ -50,6 +54,12 @@ class TaskScenario(StrEnum):
     REFUND_DENIED_OWNERSHIP = "refund_denied_ownership"
     REFUND_DENIED_DUPLICATE = "refund_denied_duplicate"
     REFUND_RECOVERY = "refund_recovery"
+    REBOOK_ELIGIBLE = "rebook_eligible"
+    REBOOK_DENIED = "rebook_denied"
+    REBOOK_DENIED_WINDOW = "rebook_denied_window"
+    REBOOK_DENIED_OWNERSHIP = "rebook_denied_ownership"
+    REBOOK_DENIED_DUPLICATE = "rebook_denied_duplicate"
+    REBOOK_RECOVERY = "rebook_recovery"
 
 
 class ExpectedDecision(StrEnum):
