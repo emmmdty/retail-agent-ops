@@ -231,33 +231,26 @@ def mode_train(args: argparse.Namespace) -> None:
 
 def mode_eval(args: argparse.Namespace) -> None:
     """Evaluate model on dev tasks."""
-    from veritool_rl.core.agent.qwen import load_model_and_tokenizer
     from veritool_rl.flight_ops.build.manifests import load_manifest
     from veritool_rl.flight_ops.domain.bundle import load_bundle
     from veritool_rl.flight_ops.domain.environment import FlightOpsEnv
     from veritool_rl.flight_ops.domain.tasks import build_flight_task_set
     from veritool_rl.flight_ops.evaluate.evaluation import FlightEvalConfig, run_evaluation
+    from veritool_rl.core.agent.qwen import QwenPolicy
 
     bundle = load_bundle(_bundle_dir())
     task_set = build_flight_task_set(args.dataset_version, args.seed)
     manifest = load_manifest(_output_dir(args, "tasks") / "manifest.json")
 
-    # Load model
-    model, tokenizer = load_model_and_tokenizer(args.model_path)
-
-    # Apply adapter if provided
+    policy_config = {"model_name": args.model_path, "max_new_tokens": 256}
     if args.adapter_path:
-        from peft import PeftModel
-
-        model = PeftModel.from_pretrained(model, args.adapter_path)
+        policy_config["adapter_path"] = args.adapter_path
 
     def env_factory(task):
         return FlightOpsEnv(task, bundle)
 
     def policy_factory(task):
-        from veritool_rl.core.agent.qwen import QwenPolicy
-
-        return QwenPolicy(model, tokenizer, task)
+        return QwenPolicy.from_config(policy_config)
 
     config = FlightEvalConfig(
         dataset_version=args.dataset_version,
@@ -271,10 +264,7 @@ def mode_eval(args: argparse.Namespace) -> None:
 
     output_dir = _output_dir(args, f"eval-{args.split}")
     evidence = run_evaluation(
-        config,
-        task_set,
-        policy_factory,
-        env_factory,
+        config, task_set, policy_factory, env_factory,
         output_dir=output_dir,
     )
 
