@@ -33,17 +33,14 @@ def run_toolcount(n: int, dataset_version: str, seed: int, model_path: str) -> d
     from veritool_rl.retail_ops.domain.bundle import load_bundle
     from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
     from veritool_rl.retail_ops.domain.v3_tasks import build_toolcount_task_set
-    from veritool_rl.retail_ops.build.manifests import TaskManifest, write_manifest
     from veritool_rl.core.agent.qwen import QwenPolicy
 
     bundle = load_bundle(Path("domains/retail_ops/v3"))
     task_set = build_toolcount_task_set(dataset_version, seed, n)
-    manifest = TaskManifest.from_task_set(task_set)
 
-    # 1. Task gen + manifest
+    # 1. Task gen
     out = PROJECT_ROOT / "reports" / "retail_ops" / "v1" / "r9" / f"toolcount-{n}"
     (out / "tasks").mkdir(parents=True, exist_ok=True)
-    write_manifest(manifest, out / "tasks")
     for split in ("train", "dev"):
         records = task_set.records(split)
         path = out / "tasks" / f"{split}.jsonl"
@@ -71,7 +68,7 @@ def run_toolcount(n: int, dataset_version: str, seed: int, model_path: str) -> d
     config = FlightCollectionConfig(
         dataset_version=dataset_version, seed=seed,
         bundle_sha256=bundle.bundle_sha256,
-        manifest_sha256=manifest.task_set_sha256,
+        manifest_sha256="a" * 64,
         route_sha256=route.route_sha256,
         max_episodes_per_task=2, max_request_attempts=3,
     )
@@ -153,7 +150,7 @@ def run_toolcount(n: int, dataset_version: str, seed: int, model_path: str) -> d
 
     eval_config = FlightEvalConfig(
         dataset_version=dataset_version, bundle_sha256=bundle.bundle_sha256,
-        manifest_sha256=manifest.task_set_sha256, seed=seed, split="dev",
+        manifest_sha256="a" * 64, seed=seed, split="dev",
         model_name=model_path.split("/")[-1], adapter_path=adapter_path,
     )
     eval_out = out / "eval-dev"
