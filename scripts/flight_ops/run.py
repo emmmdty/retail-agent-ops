@@ -78,13 +78,10 @@ def mode_teacher_collect(args: argparse.Namespace) -> None:
     # Load teacher route
     route, api_key = load_teacher_route_from_env()
     from veritool_rl.core.build.teacher_client import OpenAICompatibleTeacherClient
+    from openai import OpenAI
 
-    client = OpenAICompatibleTeacherClient(
-        api_key=api_key,
-        base_url=route.base_url,
-        model=route.model,
-        temperature=0.0,
-    )
+    raw_client = OpenAI(api_key=api_key, base_url=route.base_url)
+    client = OpenAICompatibleTeacherClient(route=route, client=raw_client)
 
     config = FlightCollectionConfig(
         dataset_version=args.dataset_version,
