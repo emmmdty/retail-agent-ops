@@ -1348,3 +1348,43 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
   **不含 `AGENTS.md` / `CLAUDE.md`**，所以"两次观测"从 R4 一路留到 R5 才被发现。
   治理测试只覆盖它列出的文件——**新增活动文档时必须同时加进这类扫描列表**，
   否则治理是有洞的。
+
+## 2026-08-20 — R8 D2（B2 CI 真跑 + C1 跨域）
+
+### B2 CI 真跑：诚实口径的反转
+
+- 用户 2026-08-20 授权公开发布门（remote `https://github.com/emmmdty/retail-agent-ops.git`）。
+  push 后 GitHub Actions 首次真跑（commit `596eee8`，11 步全绿，2m12s）。
+- **治理测试必须同步反转**：`test_ci_and_container_exist_and_do_not_overclaim` 此前
+  断言 workflow「必须写未跑过」；CI 真跑后这条断言变成**逼着文档撒谎**——
+  改成「不得仍声称未跑过」+ 指向 `docs/CI_EVIDENCE.md`。这正是项目反复抓的那类
+  失败：**约束在现实变后会反向**，"未跑"从诚实变成造假。
+- **两个干净环境的 skip 数差 1**：本地干净 clone 1126 passed / 46 skipped（有 ffprobe），
+  GitHub runner 1125 passed / 47 skipped（无 ffprobe）。两者 passed+skipped 都等于
+  收集总数。`test_the_author_environment_baseline_never_appears_without_the_clean_clone_one`
+  锁住的就是「写作者基线必须同时披露干净 clone 基线，且 passed+skipped 必须等于
+  收集总数」——差异在环境不在代码。
+- 干净 clone 的数字必须**实跑**而非推算：先写预期值（1199/1153-46），再 clone 到
+  /tmp 实测，对上才落进文档。CI 在 GitHub runner 上的跑本身就是一种干净 clone 证据
+  （公开 URL 可审计）。
+
+### C1 flight_ops 跨域：build/evaluate 层的耦合结构
+
+- `retail_ops.build.teacher_data.collect_teacher_attempt` **本身是泛型的**：只依赖
+  `env_factory`（造环境）、`record.task` + `record.task_fingerprint`、`run_episode`/
+  `replay_trajectory`（都在 core）。它不引用 `RetailOpsEnv` 或 retail_ops 特有类型。
+- 但 `teacher_client.py` / `teacher_route.py` 住在 `retail_ops.build` 下，且
+  `teacher_data.py` import 它们。flight_ops 若直接 import 这两个模块就**违反 one-way
+  依赖**（flight_ops 不得依赖 retail_ops）——于是跨域可移植性在 build 层卡住。
+- `evaluate` / `release` 层同理紧贴 retail_ops 的 `RunEvidence` / `ReleasePolicyConfig`
+  类型。LOG-20260820-01 的「release/evaluate 层紧贴单一领域，未抽接口包」就是这个。
+- **两个走法**（待用户决策，属高影响）：
+  (a) 把 `teacher_client` / `teacher_route` / `collect_teacher_attempt` / evaluate 基座 /
+      release 基座 lift 到 `core.build` / `core.evaluate` / `core.release`，retail_ops
+      改成从 core import。**动 retail_ops 但行为不变**（report_id 算的是产物内容不是
+      import 路径，证据哈希应不动）。这才是 C1/A2 真正要的「可移植性实证」。
+  (b) flight_ops 自己重写一份最小 build/evaluate/release。**不动 retail_ops**，
+      但代码重复，且重复本身就是「build 层尚不可移植」的活证据。
+- flight_ops task 生成器**不复制 retail 的 5 指纹 family pairing**：那套是 retail 有
+  封存 holdout 时的反污染机制；flight_ops 无封存（C1 是可移植性证明不是发布判定），
+  更简单的 train/dev split + 内容哈希是诚实而非偷工。已在 task_plan R8 D2 非目标写明。
