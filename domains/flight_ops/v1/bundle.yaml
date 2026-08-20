@@ -1,0 +1,14 @@
+schema_version: "1.0"
+bundle_id: flight_ops
+bundle_version: "1.0.0"
+tools_file: tools.yaml
+policies_file: policies.yaml
+release_file: release.yaml
+evaluator_id: flight_ops_v1
+task_categories:
+  - lookup_status
+  - rebook_eligible
+  - rebook_denied_window
+  - rebook_denied_ownership
+  - rebook_denied_duplicate
+  - rebook_recovery

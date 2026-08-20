@@ -1,0 +1,43 @@
+schema_version: "1.0"
+tools:
+  - name: get_reservation
+    description: Look up a reservation's details and current status.
+    parameters:
+      type: object
+      properties:
+        reservation_id:
+          type: string
+          description: Reservation locator
+      required:
+        - reservation_id
+      additionalProperties: false
+  - name: rebook_flight
+    description: Rebook a reservation onto a new flight; the reservation must be looked up first and must be eligible for rebooking.
+    parameters:
+      type: object
+      properties:
+        reservation_id:
+          type: string
+          description: Reservation locator
+        reason:
+          type: string
+          enum:
+            - schedule_change
+            - missed_flight
+            - seat_issue
+            - voluntary_change
+          description: Reason for rebooking
+      required:
+        - reservation_id
+        - reason
+      additionalProperties: false
+  - name: get_flight_schedule
+    description: Look up scheduled flights for a given origin. Unrelated to reservation operations.
+    parameters:
+      type: object
+      properties:
+        origin:
+          type: string
+      required:
+        - origin
+      additionalProperties: false

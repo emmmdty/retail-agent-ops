@@ -355,14 +355,25 @@ def test_the_r3_candidate_shares_the_base_model_with_its_control() -> None:
 
 
 def test_source_layers_enforce_one_way_dependency() -> None:
-    """`docs/REPO_MAP.md` 主张依赖方向恒为 product_cli → retail_ops.* → core.*，
+    """`docs/REPO_MAP.md` 主张依赖方向恒为 product_cli → retail_ops.* / flight_ops.* → core.*，
     且 legacy 不被主线依赖。这条主张是"领域可替换"的结构证据，必须可验证而不是
-    仅写在文档里——否则下一次改动就会静默把它破坏掉。"""
+    仅写在文档里——否则下一次改动就会静默把它破坏掉。
+
+    flight_ops（R8 C1 的第二个域）必须只依赖 core，**不得反向依赖 retail_ops**
+    ——这是"证据系统可移植到第二个域"的结构证明，而不是一个共享模块的便利。
+    若 flight_ops import 了 retail_ops，第二个域就只是 retail_ops 的别名，跨域验证失效。
+    """
     src = ROOT / "src/veritool_rl"
     forbidden = {
-        "core": ("veritool_rl.retail_ops", "veritool_rl.legacy", "veritool_rl.training"),
-        "retail_ops": ("veritool_rl.legacy",),
-        "training": ("veritool_rl.legacy", "veritool_rl.retail_ops"),
+        "core": (
+            "veritool_rl.retail_ops",
+            "veritool_rl.flight_ops",
+            "veritool_rl.legacy",
+            "veritool_rl.training",
+        ),
+        "retail_ops": ("veritool_rl.legacy", "veritool_rl.flight_ops"),
+        "flight_ops": ("veritool_rl.legacy", "veritool_rl.retail_ops", "veritool_rl.training"),
+        "training": ("veritool_rl.legacy", "veritool_rl.retail_ops", "veritool_rl.flight_ops"),
     }
     violations: list[str] = []
     for layer, banned in forbidden.items():

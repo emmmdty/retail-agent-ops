@@ -1,0 +1,15 @@
+schema_version: "1.0"
+policy_version: "1.0.0"
+rebook_reasons:
+  - schedule_change
+  - missed_flight
+  - seat_issue
+  - voluntary_change
+max_transient_retries: 1
+rules:
+  - rebook_requires_lookup
+  - caller_must_own_reservation
+  - rebook_window_must_be_open
+  - duplicate_rebook_forbidden
+  - transient_retry_is_bounded
+  - tool_schema_is_strict
