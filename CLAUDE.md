@@ -96,7 +96,7 @@ git diff --check
 - **R0–R6 全部已完成**（R5 于 2026-08-16 收口，R6 泛化修复于 2026-08-17 收口）。12 周计划走完，
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
-- 当前基线：**1212 tests passed**（作者环境）／干净 clone 上**实测** 1166 passed、46 skipped、**0 failed**；
+- 当前基线：**1219 tests passed**（作者环境）／干净 clone 上**实测** 1173 passed、46 skipped、**0 failed**；
   `ruff check`、**`ruff format --check`**、`mypy`(86)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
