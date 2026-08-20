@@ -56,11 +56,7 @@ def test_each_dev_task_runs_to_its_expected_decision(bundle: object, task_set: o
     for record in task_set.dev:  # type: ignore[attr-defined]
         env = FlightOpsEnv(record.task, bundle)  # type: ignore[arg-type]
         for call in record.task.expected_calls:
-            obs = env.execute_tool(call.name, dict(call.arguments))
-            # The recovery category injects a transient failure; the oracle
-            # (like a real agent) retries the rebook once it sees transient_error.
-            if obs.ok is False and obs.error_code == "transient_error":
-                env.execute_tool(call.name, dict(call.arguments))
+            env.execute_tool(call.name, dict(call.arguments))
         if record.task.expected_decision == ExpectedDecision.INFORM:
             env.record_final_response("Here is your reservation status.")
         elif record.task.expected_decision == ExpectedDecision.DENY:

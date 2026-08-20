@@ -287,7 +287,8 @@ def _scenario_task(
             ],
             user_request=f"I want to rebook reservation {reservation_id} again.",
         )
-    # REBOOK_RECOVERY: transient failure then retry succeeds.
+    # REBOOK_RECOVERY: transient failure then retry succeeds. The oracle must
+    # call rebook_flight twice — first fails transiently, second succeeds.
     return _make_task(
         scenario,
         split,
@@ -297,9 +298,17 @@ def _scenario_task(
         transient=True,
         expected_decision=ExpectedDecision.ALLOW,
         expected_calls=[
-            ToolCall(name="get_reservation", arguments={"reservation_id": reservation_id}),
             ToolCall(
-                name="rebook_flight", arguments={"reservation_id": reservation_id, "reason": reason}
+                name="get_reservation",
+                arguments={"reservation_id": reservation_id},
+            ),
+            ToolCall(
+                name="rebook_flight",
+                arguments={"reservation_id": reservation_id, "reason": reason},
+            ),
+            ToolCall(
+                name="rebook_flight",
+                arguments={"reservation_id": reservation_id, "reason": reason},
             ),
         ],
         user_request=f"Please rebook my reservation {reservation_id} due to a delay.",

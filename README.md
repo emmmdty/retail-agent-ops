@@ -127,7 +127,7 @@ flowchart LR
 | 独立重建复验（换 seed 重训） | dev **60/60** | 同 seed 重跑**产不出逐位相同的权重**；三次同配置运行是 58–60/60，不写单点 |
 | 政策边界探针（R7） | 候选 15 个偏移量里 14 个判定全对 | **只在「已过期 14 天」一格塌到 0.375**；针对性数据修复在同源措辞面上改善、在**措辞分布外**退化，**按事先规则判负，候选未更换**（[`docs/POLICY_BOUNDARY.md`](docs/POLICY_BOUNDARY.md)） |
 | teacher 数据采集（DeepSeek） | 通过率 **99.2%** | 正式批次成本 **$0.055**（含先行批次合计约 $0.111，两批不得混为一谈） |
-| 工程基线 | **1208 tests passed**（作者环境，私有产物齐全） | **干净 clone 上实测 1162 passed / 46 skipped / 0 failed**（2026-08-20 实跑，不是由 1208 − 46 推算）；46 条跳过全部因为要读不随仓库分发的私有产物或 ignored 的 BFCL checkout。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 |
+| 工程基线 | **1212 tests passed**（作者环境，私有产物齐全） | **干净 clone 上实测 1166 passed / 46 skipped / 0 failed**（2026-08-20 实跑，不是由 1212 − 46 推算）；46 条跳过全部因为要读不随仓库分发的私有产物或 ignored 的 BFCL checkout。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 |
 | BFCL legacy 轨道 | **163/200** → **167/200** | 项目**自划**的固定单轮 AST 子集，差值置信区间跨 0，**不是**官方全量或排行榜成绩 |
 
 ## 演示
