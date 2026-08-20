@@ -179,6 +179,7 @@ def mode_sft_export(args: argparse.Namespace) -> None:
 def mode_train(args: argparse.Namespace) -> None:
     """Train QLoRA-SFT candidate."""
     import hashlib
+    import json as _json
     from veritool_rl.training.sft import run_sft
 
     sft_dir = _output_dir(args, "sft")
@@ -196,7 +197,7 @@ def mode_train(args: argparse.Namespace) -> None:
     for f in sorted(model_dir.rglob("*.safetensors")):
         if f.is_file():
             sha256_map[str(f.relative_to(model_dir))] = hashlib.sha256(f.read_bytes()).hexdigest()
-    revision = hashlib.sha256(json.dumps(sha256_map, sort_keys=True).encode()).hexdigest()[:16]
+    revision = hashlib.sha256(_json.dumps(sha256_map, sort_keys=True).encode()).hexdigest()[:16]
 
     # Project-relative paths
     rel_sft = str(sft_path.relative_to(PROJECT_ROOT))
