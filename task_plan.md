@@ -212,6 +212,14 @@ GPU **是**、商业 API **是**、封存 holdout 观测**不限次数**（用�
 - [ ] 10. 任务 C：干净 clone 复跑，把文档里那个推算值换成实测值
 - [x] 11. 任务 D：独立验收并签字 → **被 R8 Task A1 取代**（一个面试官升级为三轮严苛独立审查）
 
+### R8 D1 运行清单（seed2 方差刻画，推翻 R7 时判 D1 价值不足的判定）
+
+| # | 运行 | 用途 | 产物目录 |
+|---|---|---|---|
+| D1-0 | OOD v2.2 封存分片任务集 | 评测集（R7 已有，同步回本地） | `reports/retail_ops/v1/ood-v2.2/sealed/tasks` |
+| D1-1 | OOD v2.2 封存分片：seed2 候选 | 方差刻画 | `reports/retail_ops/v1/ood-v2.2/sealed/rebuild-seed2` |
+| D1-2 | dev 60：seed2 候选 | dev 方差区间 | `reports/retail_ops/v1/r8/dev-candidate-seed2-run` |
+
 ---
 
 ## R8 元方法论补强与岗位重定位（进行中，2026-08-19 启动）
