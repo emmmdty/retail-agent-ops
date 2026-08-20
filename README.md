@@ -127,7 +127,7 @@ flowchart LR
 | 独立重建复验（换 seed 重训） | dev **60/60** | 同 seed 重跑**产不出逐位相同的权重**；三次同配置运行是 58–60/60，不写单点 |
 | 政策边界探针（R7） | 候选 15 个偏移量里 14 个判定全对 | **只在「已过期 14 天」一格塌到 0.375**；针对性数据修复在同源措辞面上改善、在**措辞分布外**退化，**按事先规则判负，候选未更换**（[`docs/POLICY_BOUNDARY.md`](docs/POLICY_BOUNDARY.md)） |
 | teacher 数据采集（DeepSeek） | 通过率 **99.2%** | 正式批次成本 **$0.055**（含先行批次合计约 $0.111，两批不得混为一谈） |
-| 工程基线 | **1171 tests passed**（作者环境，私有产物齐全） | **干净 clone 上实测 1125 passed / 46 skipped / 0 failed**（2026-08-19 实跑，不是由 1171 − 46 推算）；46 条跳过全部因为要读不随仓库分发的私有产物或 ignored 的 BFCL checkout。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 |
+| 工程基线 | **1172 tests passed**（作者环境，私有产物齐全） | **干净 clone 上实测 1126 passed / 46 skipped / 0 failed**（2026-08-20 实跑，不是由 1172 − 46 推算）；46 条跳过全部因为要读不随仓库分发的私有产物或 ignored 的 BFCL checkout。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 |
 | BFCL legacy 轨道 | **163/200** → **167/200** | 项目**自划**的固定单轮 AST 子集，差值置信区间跨 0，**不是**官方全量或排行榜成绩 |
 
 ## 演示
@@ -171,7 +171,9 @@ env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 ```
 
 GitHub Actions workflow 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
-**仓库当前无 remote，该 workflow 从未真正跑过**——任何文档都不得声称它跑绿了。
+**2026-08-20 首次真跑通过**（commit `596eee8`，11 步全绿，2m12s）——证据见
+[`docs/CI_EVIDENCE.md`](docs/CI_EVIDENCE.md)。CI 跑的是 CPU 全链路与发布审计，
+不含 GPU / API 采集。
 
 CPU-only 镜像见 [`Dockerfile`](./Dockerfile)（刻意不含 torch）。**它于 2026-08-16
 首次实际构建并验证过**：镜像 1.05 GB，在 `--network none`（完全断网）下跑通全链路——

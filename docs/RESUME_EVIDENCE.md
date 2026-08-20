@@ -24,7 +24,7 @@
 | QLoRA 训练（`sft-006` 的两次重建） | 同配置换 seed，**242.3 / 242.2 s**，峰值均 **5.65 GB**，adapter 尺寸与 `sft-006` **逐字节相同** | `reports/…/r5/sft-006-rebuild-seed{0,1}/` |
 | **时长不可跨运行比较** | 293.7 s 与 242 s 的差是共享 GPU 上他人占用，不是配置差异 | LOG-20260814-05 的同一条边界 |
 | 推理资源 | 4-bit NF4，dev 评测峰值显存 **2.95–3.04 GB** | 各 `candidate-report.json` 的 `hardware.gpu.peak_memory_bytes` |
-| 工程基线 | **1171** tests passed（作者环境）；**干净 clone 上实测 1125 passed / 46 skipped / 0 failed**——46 条跳过全部因为要读不随仓库分发的私有产物。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 | 每次收口均重跑；干净 clone **实测**于 2026-08-19（此前文档里的数是由总数减跳过数推算的，从未实跑） |
+| 工程基线 | **1172** tests passed（作者环境）；**干净 clone 上实测 1126 passed / 46 skipped / 0 failed**——46 条跳过全部因为要读不随仓库分发的私有产物。Ruff / `ruff format --check` / mypy(89 源文件) / `uv lock --check` / 公开发布审计在这两种环境下、于该日期通过 | 每次收口均重跑；干净 clone **实测**于 2026-08-20（此前文档里的数是由总数减跳过数推算的，从未实跑） |
 | 环境缺陷修复 | `refund_denied_window` 类通过率 **30% → 95%**（暴露 `current_day` 后） | LOG-20260806-07 |
 
 ### 1.2 核心结果一：prompt × 容量（**Qwen3-4B，dev 60 条**）
@@ -338,7 +338,7 @@ OOD v1 的 `scenario_ood` 0.75 → **0.60**（`partial_refund` 1.00 → **0.00**
 
 > **RetailAgentOps｜零售工具 Agent 的单卡适配与发布流水线**（个人项目，Python/PyTorch/FastAPI）
 > - 设计并实现 `build / evaluate / release / serve` 四接口流水线，覆盖轨迹数据执行式质检、
->   冻结任务配对评测、版本化发布门禁与单卡服务；**1171** 项测试（干净 clone 上 1125 通过、
+>   冻结任务配对评测、版本化发布门禁与单卡服务；**1172** 项测试（干净 clone 上 1126 通过、
 >   46 跳过、0 失败，跳过的都要读不随仓库分发的私有产物）、Ruff/mypy/依赖锁/公开发布
 >   审计全绿，一条命令可在纯 CPU 环境复现全链路并断言内容哈希等于冻结期望值。
 > - 建立**不可伪造的证据链**：运行报告以全字段自哈希为 ID、逐产物 SHA-256 绑定、
@@ -371,7 +371,7 @@ OOD v1 的 `scenario_ood` 0.75 → **0.60**（`partial_refund` 1.00 → **0.00**
 
 > **RetailAgentOps｜LLM 候选发布的可审计判定系统**（个人项目，Python/PyTorch/PEFT/FastAPI）
 > - 设计并实现 `build / evaluate / release / serve` 四接口流水线，覆盖轨迹数据执行式质检、
->   冻结任务配对评测、版本化发布门禁与单卡服务；**1171** 项测试（干净 clone 上 1125 通过、
+>   冻结任务配对评测、版本化发布门禁与单卡服务；**1172** 项测试（干净 clone 上 1126 通过、
 >   46 跳过、0 失败，跳过的都要读不随仓库分发的私有产物）、Ruff/mypy/依赖锁/公开发布
 >   审计全绿，一条命令可在纯 CPU 环境复现全链路并断言内容哈希等于冻结期望值。
 > - 建立**不可伪造的证据链**：运行报告以全字段自哈希为 ID（`ReleaseReport.report_id` +
@@ -460,7 +460,7 @@ R5 收口后仍然打开的口子。**这一节存在的意义是：任何一条
 | 表达变体的 LLM 改写 | ~~未做~~ **已做（R6，2026-08-17）**：`TEACHER_LLM_*` 凭据到位后用 DeepSeek 生成措辞池（三份，各约 $0.006），按哈希三分、训练与评测逐条互斥。作者手写的 OOD v1 因此退出选择流程，只作独立迁移检查 |
 | 跨 benchmark（τ²-bench / ToolSandbox） | 未做，零引用。评估为低优先级：边际求职价值低于上面各项 |
 | 真实混沌演练、压测、长稳 | 未做。故障覆盖全部是进程内注入，见 `FAULT_MATRIX.md` §7 |
-| CI 真正跑绿 | 未做。仓库无 remote，workflow 已提交但从未运行过 |
+| CI 真正跑绿 | ~~未做~~ **已做（2026-08-20）**：用户授权公开发布门后 push 到 `https://github.com/emmmdty/retail-agent-ops.git`，GitHub Actions 首次真跑通过（commit `596eee8`，2m12s，11 步全绿）。证据见 `docs/CI_EVIDENCE.md` |
 | 多 seed 的方差区间 | 未做。重建复验是 n=3 次运行，足以证伪"逐位可复现"，不足以给方差的置信区间 |
 
 **已划掉的**（此前在本表、现已完成）：第三/四次 holdout 观测、跨模型规模验证、

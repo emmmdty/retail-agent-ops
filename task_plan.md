@@ -330,6 +330,109 @@ R4.5 时用户在 A（user simulator）/ B（扩工具面 15+）二选一中未�
 ## R8 授权状态（追加在 R7 授权状态之上）
 
 GPU **是**（用户 2026-08-19 批准全部 GPU 任务，每条命令仍先给精确清单）、
-商业 API **是**（C1 的 teacher 采集）、
+商业 API **是**（C1 的 teacher 采集、C2 的 teacher 采集）、
 封存 holdout 观测**否**（本轮不消耗，结论不是发布结论）、
-**C2 推翻 R4.5 时未选 B 的判定**（治理痕迹见 LOG-20260819-02）。
+**C2 推翻 R4.5 时未选 B 的判定**（治理痕迹见 LOG-20260819-02）、
+**B2 公开发布门已授权**（用户 2026-08-20 提供 remote
+`https://github.com/emmmdty/retail-agent-ops.git`，CI 真跑启动）。
+
+---
+
+## R8 D2 运行清单（C1 跨域 + C2 工具面扩容 + B2 CI 真跑）
+
+**决策记录（2026-08-20）**：用户对 C1 域、C2 工具布点、C2 候选数、B2 授权
+四项叉路回复「你判断 / 工具全面 / 5 断点 / 授权」。据此落地：
+- **C1 域 = 航班改签（flight_ops）**：政策边界是 24h 时间窗口，
+  与 `refund_deadline` 同构，政策边界探针仪器可复用；英文消费者场景。
+- **C2 工具布点 = 全订单/退款族**：15 工具，前 3 个 = 现有
+  `get_order/refund_order/get_store_hours`（让 {3} 断点复用 `sft-008`），
+  后 12 个全在订单/退款族最大化语义混淆。
+- **C2 候选 = 5 断点 {3,6,9,12,15}**：{3} 复用 `sft-008`，新训 {6,9,12,15}
+  共 4 个候选。
+- **B2**：remote `https://github.com/emmmdty/retail-agent-ops.git`，CI 真跑。
+
+### Task B2：CI 真跑（纯 CPU，公开发布门已授权）
+
+**输入**：HEAD `596eee8` 本地全门禁绿（1171 passed / ruff / format / mypy 89 /
+lock 105 / audit 437 文件 / qualification / diff）。**运行**：
+1. `git remote add origin https://github.com/emmmdty/retail-agent-ops.git`
+2. `git push -u origin main`
+3. GitHub Actions workflow `.github/workflows/ci.yml` 真跑一次 CPU smoke。
+**产物**：`docs/CI_EVIDENCE.md`（运行 URL、commit SHA、各步状态、首次运行日期）。
+**非目标**：不改 CI workflow 逻辑（只更新头部注释「尚未运行」→「首次运行于…」）；
+不下调任何门禁；不删 git 历史。
+
+### Task C1：第二个领域跨域验证（CPU 实现 + GPU 训练 + 评测）
+
+**域**：`flight_ops` v1（航班改签，英文）。
+**工具（3）**：`get_reservation` / `rebook_flight` / `get_flight_schedule`。
+**政策（2）**：`rebook_window_must_be_open`（起飞前 24h 内禁改签，与
+`refund_window_must_be_open` 同构）+ `duplicate_rebook_forbidden`（与
+`duplicate_refund_forbidden` 同构）。
+**任务类（6，镜像 retail_ops 的失败形态）**：`lookup_status` /
+`rebook_eligible` / `rebook_denied_window` / `rebook_denied_ownership` /
+`rebook_denied_duplicate` / `rebook_recovery`。
+**输入**：零售域的 build/evaluate/release 接口形状；DeepSeek teacher。
+**输出**：flight_ops domain bundle + tasks + environment + policies + 评测，
+证据链与零售域同构（`report_id` 自哈希 + 逐产物 SHA-256 + 配对可比性）。
+**影响文件**：`domains/flight_ops/v1/{bundle,tools,policies,release}.yaml`、
+`src/veritool_rl/flight_ops/{__init__,domain/{bundle,environment,tasks,policies,policy_rules},build/,evaluate/,release/}.py`、
+`tests/test_flight_ops_*.py`、治理测试扩展（`flight_ops` 不反向依赖 `retail_ops`、
+`core` 不依赖 `flight_ops`）。
+**GPU 运行清单**（每条命令执行前另给精确清单：工作目录、物理 GPU、预计时长、产物）：
+
+| # | 运行 | 用途 | 产物目录 |
+|---|---|---|---|
+| C1-0 | teacher 采集（DeepSeek，~240 条） | 训练素材 | `reports/flight_ops/v1/r9/teacher-001` |
+| C1-1 | SFT 数据导出 | 训练数据 | `reports/flight_ops/v1/r9/train-export-001` |
+| C1-2 | 训练 `sft-001`（Qwen3-4B QLoRA，~5min） | 候选 | `reports/flight_ops/v1/r9/sft-001` |
+| C1-3 | dev 60 评测：零训练基座 | 基线 | `reports/flight_ops/v1/r9/base-001` |
+| C1-4 | dev 60 评测：`sft-001` | 候选读数 | `reports/flight_ops/v1/r9/dev-candidate-001` |
+| C1-5 | OOD dev 评测：`sft-001` | 分布外读数 | `reports/flight_ops/v1/r9/ood-dev-001` |
+
+**非目标**：不改 retail_ops v1/v2 冻结契约；不在 flight_ops 上跑封存 holdout
+（本轮不是发布结论，是跨域可移植性实证）；不创建第三个域。
+
+### Task C2：工具面扩到 15+（CPU 实现 + GPU 训练 + 评测）
+
+**域**：`retail_ops` v3（15 工具，新 bundle 版本，v1/v2 逐字节不动）。
+**15 工具**（前 3 = v1，后 12 全订单/退款族）：`get_order` / `refund_order` /
+`get_store_hours` / `cancel_order` / `modify_order` / `exchange_order` /
+`get_refund_status` / `get_order_history` / `apply_refund_coupon` /
+`get_return_policy` / `check_warranty` / `process_exchange` / `escalate_refund` /
+`get_payment_method` / `get_customer_profile`。
+**断点**：{3,6,9,12,15}。{3} 复用 `sft-008`（v1 = v3 前 3 工具，可比）。
+**输入**：retail_ops build/evaluate 接口；DeepSeek teacher（每断点 ~240 条）。
+**输出**：v3 domain bundle + 断点任务生成器 + 4 个新候选 + tool selection
+准确率随工具数的退化曲线。
+**影响文件**：`domains/retail_ops/v3/{bundle,tools,policies,release}.yaml`、
+`src/veritool_rl/retail_ops/domain/bundle.py`（`_FROZEN_TOOL_NAMES` 改版本键控、
+`_SUPPORTED_BUNDLE_VERSIONS` 加 `"3.0.0"`）、
+`src/veritool_rl/retail_ops/domain/v3_tasks.py`、`tests/test_retail_ops_v3_*.py`。
+**GPU 运行清单**（每条命令执行前另给精确清单）：
+
+| # | 运行 | 用途 | 产物目录 |
+|---|---|---|---|
+| C2-6t | teacher 采集 + 导出（6 工具） | 训练素材 | `reports/retail_ops/v1/r9/toolcount-6/train` |
+| C2-6s | 训练 6 工具候选（~5min） | 候选 | `reports/retail_ops/v1/r9/toolcount-6/sft-001` |
+| C2-6d | dev 评测：6 工具候选 | tool selection 读数 | `reports/retail_ops/v1/r9/toolcount-6/dev` |
+| C2-9t | teacher 采集 + 导出（9 工具） | 训练素材 | `reports/retail_ops/v1/r9/toolcount-9/train` |
+| C2-9s | 训练 9 工具候选（~5min） | 候选 | `reports/retail_ops/v1/r9/toolcount-9/sft-001` |
+| C2-9d | dev 评测：9 工具候选 | tool selection 读数 | `reports/retail_ops/v1/r9/toolcount-9/dev` |
+| C2-12t | teacher 采集 + 导出（12 工具） | 训练素材 | `reports/retail_ops/v1/r9/toolcount-12/train` |
+| C2-12s | 训练 12 工具候选（~5min） | 候选 | `reports/retail_ops/v1/r9/toolcount-12/sft-001` |
+| C2-12d | dev 评测：12 工具候选 | tool selection 读数 | `reports/retail_ops/v1/r9/toolcount-12/dev` |
+| C2-15t | teacher 采集 + 导出（15 工具） | 训练素材 | `reports/retail_ops/v1/r9/toolcount-15/train` |
+| C2-15s | 训练 15 工具候选（~5min） | 候选 | `reports/retail_ops/v1/r9/toolcount-15/sft-001` |
+| C2-15d | dev 评测：15 工具候选 | tool selection 读数 | `reports/retail_ops/v1/r9/toolcount-15/dev` |
+| C2-3d | dev 评测：3 工具（`sft-008` 在 v3 前 3 工具任务集） | 曲线左端点 | `reports/retail_ops/v1/r9/toolcount-3/dev` |
+
+**判读**：退化曲线横轴 = 工具数（3/6/9/12/15），纵轴 = tool selection 准确率。
+结论按「只在该工具面规模上成立」陈述；不在 flight_ops 上引用此结论。
+**非目标**：不动 v1/v2 冻结契约与已有证据；不消耗封存 holdout；
+不在 15 工具面做封存（本轮是 tool selection 退化测量，不是发布判定）。
+
+### 顺序
+
+B2（最快、已授权、独立）→ C1 CPU 实现 → C1 GPU 运行 → C2 CPU 实现 →
+C2 GPU 运行 → 简历与面试材料补 C1/C2/B2 读数（Task D 后置）。

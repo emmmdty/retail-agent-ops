@@ -442,13 +442,17 @@ def test_service_credentials_never_live_in_the_repo() -> None:
 def test_ci_and_container_exist_and_do_not_overclaim() -> None:
     """P2-12：`SPEC.md` §11 的"新环境能按文档完成 CPU smoke"要有自动化背书。
 
-    同时锁住诚实口径：仓库当前无 remote，这份 workflow 从未真正运行过，
-    因此它自己必须写明这一点，交付文档里也不得出现"CI 已通过"。
+    CI 于 2026-08-20 首次真跑通过（commit `596eee8`，见 `docs/CI_EVIDENCE.md`）。
+    workflow 必须指向证据文档；交付文档提及 CI 状态时不得仍声称"未跑过"
+    （那已是假话），也不得用裸「CI 已通过」无出处。
     """
     workflow = _read(".github/workflows/ci.yml")
     for step in ("uv sync", "pytest", "ruff check", "mypy", "verify_qualification_chain.py"):
         assert step in workflow, f"CI 缺少步骤：{step}"
-    assert "尚未在" in workflow and "运行过" in workflow, "workflow 必须写明它还没真正运行过"
+    assert "docs/CI_EVIDENCE.md" in workflow, "workflow 必须指向 CI 证据文档"
+    assert "尚未在" not in workflow and "从未真正运行过" not in workflow, (
+        "workflow 不得仍声称未真正运行过——2026-08-20 已首次真跑通过"
+    )
 
     dockerfile = _read("Dockerfile")
     assert "torch" in dockerfile, "Dockerfile 必须说明为什么不含 torch"
@@ -457,7 +461,25 @@ def test_ci_and_container_exist_and_do_not_overclaim() -> None:
 
     for name in ("README.md", "docs/SYSTEM_CARD.md", "docs/MODEL_CARD.md", "docs/DEMO.md"):
         text = _read(name)
-        assert "CI 已通过" not in text, f"{name}: 不得声称 CI 已通过"
+        assert "CI 已通过" not in text, f"{name}: 不得用裸「CI 已通过」无出处"
+
+
+def test_ci_evidence_doc_has_provenance() -> None:
+    """CI 真跑的证据必须落盘且带出处——「CI 跑绿了」这条声称的可审计背书。
+
+    2026-08-20 首次真跑。证据文档必须含：run URL、commit SHA、conclusion=success、
+    首次运行日期。缺任一字段 = 把一个未审计的声称放进了简历证据链。
+    """
+    evidence = _read("docs/CI_EVIDENCE.md")
+    assert "https://github.com/emmmdty/retail-agent-ops/actions/runs/" in evidence
+    assert "596eee8" in evidence, "证据必须记首次跑绿的 commit"
+    assert "success" in evidence, "证据必须记 conclusion"
+    assert "2026-08-20" in evidence, "证据必须记首次运行日期"
+    # 反向守卫：证据文档必须写明它不证明什么——CI 只跑 CPU 全链路与发布审计，
+    # 那些是 RESUME_EVIDENCE 的口径。用「边界」一节的存在来锚定，而不是锚定
+    # 某句手挑的话（markdown 加粗会让逐字匹配失效，且话会被改写）。
+    assert "## 边界" in evidence, "证据文档必须有「边界」一节，写明 CI 不证明什么"
+    assert "模型可上线" in evidence, "证据必须写明 CI 不证明模型可上线"
 
 
 def test_holdout_ledger_is_the_single_source_of_truth() -> None:

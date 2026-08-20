@@ -17,7 +17,7 @@
 ## 本地工作区
 
 - 工作区：`/home/tjk/myProjects/internship-projects/retail-agent-ops`（独立 Git checkout，不是 linked worktree）
-- 分支：唯一 `main`，无 remote，无 submodule，无 linked worktree。
+- 分支：唯一 `main`，remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（2026-08-20 首次 push），无 submodule，无 linked worktree。
 - **本项目自 2026-08-09 起对原 `veritool-rl` 工作区零依赖**：不共享 Git 对象、不共享
   benchmark checkout、不共享虚拟环境。原工作区仍在磁盘上但只是历史存档，删除它不影响
   本项目；同样不得反向清理或覆盖它。

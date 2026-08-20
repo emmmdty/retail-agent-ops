@@ -96,7 +96,7 @@ git diff --check
 - **R0–R6 全部已完成**（R5 于 2026-08-16 收口，R6 泛化修复于 2026-08-17 收口）。12 周计划走完，
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
-- 当前基线：**1171 tests passed**（作者环境）／干净 clone 上**实测** 1125 passed、46 skipped、**0 failed**；
+- 当前基线：**1172 tests passed**（作者环境）／干净 clone 上**实测** 1126 passed、46 skipped、**0 failed**；
   `ruff check`、**`ruff format --check`**、`mypy`(86)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
@@ -171,7 +171,8 @@ git diff --check
   该机**没有 C 编译器**，且在此机引入任何第二个 Python 版本的深度学习环境，
   必须先隔离其 `TRITON_CACHE_DIR`（否则会覆盖项目自己的 triton 缓存，
   错误信息完全不指向真正原因，LOG-20260816-02）。
-- 仓库形态：唯一 `main` 分支、**无 remote**（CI workflow 已提交但从未真正跑过，
-  任何文档不得声称它跑绿了）、对原 `veritool-rl` 工作区零依赖。
+- 仓库形态：唯一 `main` 分支、remote `origin = https://github.com/emmmdty/retail-agent-ops.git`
+  （2026-08-20 首次 push 并真跑 CI 通过，commit `596eee8`，证据见 `docs/CI_EVIDENCE.md`）、
+  对原 `veritool-rl` 工作区零依赖。
 - 不自动推进 GPU 运行、模型下载、teacher API 采集，或**再消耗一次**封存 holdout 观测；
-  每条外部命令单独请示。**推送公开仓库是用户的动作。**
+  每条外部命令单独请示。

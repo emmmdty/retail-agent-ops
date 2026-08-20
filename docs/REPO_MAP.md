@@ -30,7 +30,7 @@
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
 | `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`** / **`RESULTS`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
 | `scripts/ci/` | 活动 | CPU 全链路复现校验（`verify_qualification_chain.py`），CI 与本地共用同一条命令 |
-| `.github/workflows/` | 活动 | CPU 质量门 workflow。**仓库无 remote，尚未真正运行过** |
+| `.github/workflows/` | 活动 | CPU 质量门 workflow。**2026-08-20 首次真跑通过**（commit `596eee8`，证据见 `docs/CI_EVIDENCE.md`） |
 | `Dockerfile` | 活动 | CPU-only 镜像，刻意不含 torch（重依赖只在 GPU 主机装） |
 | `tools/bfcl_eval/` | legacy | BFCL 官方 evaluator 的独立 uv 环境 |
 
@@ -172,7 +172,8 @@ base + candidate **两侧**重跑。dev 侧的 `PAIRING_FIELDS` 不含 `code_com
 
 ## 7. 独立性
 
-本项目对原 `veritool-rl` 工作区零依赖：单一 `main` 分支、0 remote、无 submodule、
-无 linked worktree、无 Git alternates、无跨仓库软链接；`data/external_repos/gorilla`
+本项目对原 `veritool-rl` 工作区零依赖：单一 `main` 分支、
+remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（2026-08-20 首次 push）、
+无 submodule、无 linked worktree、无 Git alternates、无跨仓库软链接；`data/external_repos/gorilla`
 是自包含的 BFCL 固定 checkout（见 `data/external_repos/BFCL_PIN.txt`）。
 删除原工作区不会影响本项目的任何命令。

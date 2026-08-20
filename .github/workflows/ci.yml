@@ -1,8 +1,9 @@
 # RetailAgentOps CPU 回归。
 #
-# 仓库当前没有 remote（见 docs/REPO_MAP.md §7），因此这份 workflow **尚未在
-# 任何一次 push 上真正运行过**。它先提交、待用户决定公开仓库时才会生效；在此
-# 之前不得在任何文档里表述为"CI 已通过"。本地等价命令见 job 内每一步的注释。
+# 2026-08-20 首次真跑通过（commit `596eee8`，run
+# https://github.com/emmmdty/retail-agent-ops/actions/runs/32326919228，
+# 2m12s，11 步全绿）。证据落地见 docs/CI_EVIDENCE.md。本地等价命令见 job
+# 内每一步的注释。CI 跑的是 CPU 全链路与发布审计，不含 GPU / API 采集。
 name: CI
 
 on:
