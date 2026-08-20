@@ -20,7 +20,20 @@ from veritool_rl.retail_ops.domain.policy_rules import PolicyRule, resolve_rules
 #:
 #: v2 与 v1 的工具名与类别完全相同：变的是 `refund_order` 的参数（新增必填
 #: `idempotency_key`）与政策规则的表达形式，不是领域本身。
-_FROZEN_TOOL_NAMES = ("get_order", "refund_order", "get_store_hours")
+#: v3 是 C2 工具面扩容：15 工具，前 3 与 v1/v2 相同（用于退化曲线左端点复用）。
+_FROZEN_TOOL_NAMES_V1_V2 = ("get_order", "refund_order", "get_store_hours")
+_FROZEN_TOOL_NAMES_V3 = (
+    "get_order", "refund_order", "get_store_hours",
+    "cancel_order", "modify_order", "exchange_order",
+    "get_refund_status", "get_order_history", "apply_refund_coupon",
+    "get_return_policy", "check_warranty", "process_exchange",
+    "escalate_refund", "get_payment_method", "get_customer_profile",
+)
+_FROZEN_TOOL_NAMES: dict[str, tuple[str, ...]] = {
+    "1.0.0": _FROZEN_TOOL_NAMES_V1_V2,
+    "2.0.0": _FROZEN_TOOL_NAMES_V1_V2,
+    "3.0.0": _FROZEN_TOOL_NAMES_V3,
+}
 _FROZEN_CATEGORIES = (
     "lookup_status",
     "refund_eligible",
@@ -29,7 +42,7 @@ _FROZEN_CATEGORIES = (
     "refund_denied_duplicate",
     "refund_recovery",
 )
-_SUPPORTED_BUNDLE_VERSIONS = ("1.0.0", "2.0.0")
+_SUPPORTED_BUNDLE_VERSIONS = ("1.0.0", "2.0.0", "3.0.0")
 
 
 class RetailOpsBundle(StrictModel):
@@ -37,11 +50,11 @@ class RetailOpsBundle(StrictModel):
 
     schema_version: Literal["1.0", "2.0"] = "1.0"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0", "2.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "2.0.0", "3.0.0"] = "1.0.0"
     tools_file: str
     policies_file: str
     release_file: str
-    evaluator_id: Literal["retail_ops_v1"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3"] = "retail_ops_v1"
     task_categories: list[str]
 
 
@@ -110,9 +123,12 @@ def load_bundle(bundle_dir: Path) -> LoadedRetailOpsBundle:
     release = ReleasePolicyConfig.model_validate(_read_yaml(bundle_dir / bundle.release_file))
     if bundle.bundle_version not in _SUPPORTED_BUNDLE_VERSIONS:
         raise ValueError(f"未知 bundle 版本: {bundle.bundle_version}")
+    expected_tools = _FROZEN_TOOL_NAMES.get(bundle.bundle_version)
+    if expected_tools is None:
+        raise ValueError(f"未知 bundle 版本的工具集合: {bundle.bundle_version}")
     if (
         tuple(bundle.task_categories) != _FROZEN_CATEGORIES
-        or tuple(tool.name for tool in tools) != _FROZEN_TOOL_NAMES
+        or tuple(tool.name for tool in tools) != expected_tools
     ):
         raise ValueError("RetailOps 工具集合或顺序不符合冻结契约")
     reason_schema = tools[1].parameters.get("properties", {}).get("reason", {})
@@ -155,7 +171,7 @@ def _require_version_consistency(
     变成整数）。放宽会让 v1 失去类型层的保护，因此在这里把 v1 的约束**显式**加回来：
     v1 的每一份已产出证据都依赖这些值，它们不能因为 v2 的存在而变得可改。
     """
-    expected_schema = "1.0" if bundle.bundle_version == "1.0.0" else "2.0"
+    expected_schema = "1.0" if bundle.bundle_version in ("1.0.0", "3.0.0") else "2.0"
     versions = {
         "tools": tool_document.schema_version,
         "policies": policies.schema_version,

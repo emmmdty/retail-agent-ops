@@ -1,0 +1,222 @@
+schema_version: "1.0"
+tools:
+  # === First 3 = v1 (for {3} breakpoint reuse with sft-008) ===
+  - name: get_order
+    description: 查询订单详情与当前状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: refund_order
+    description: 为符合政策的订单办理退款；调用前必须先查询订单。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - damaged
+            - wrong_item
+            - not_as_described
+            - changed_mind
+          description: 退款原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: get_store_hours
+    description: 查询指定城市门店营业时间，与订单操作无关。
+    parameters:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+      additionalProperties: false
+  # === Next 12: order/refund-adjacent (semantically similar, confuse-prone) ===
+  - name: cancel_order
+    description: 取消一个尚未发货的订单；调用前必须先查询订单状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - changed_mind
+            - duplicate_order
+            - billing_error
+            - quality_concern
+          description: 取消原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: modify_order
+    description: 修改订单的收货地址或商品规格；已发货订单不可修改。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        field:
+          type: string
+          enum:
+            - shipping_address
+            - quantity
+            - size
+          description: 要修改的字段
+        value:
+          type: string
+          description: 新值
+      required:
+        - order_id
+        - field
+        - value
+      additionalProperties: false
+  - name: exchange_order
+    description: 将已收货的商品换货；需要先查询订单并验证符合换货政策。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - defective
+            - wrong_item
+            - not_as_described
+          description: 换货原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: get_refund_status
+    description: 查询指定订单的退款进度和状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: get_order_history
+    description: 查询客户的订单历史列表。
+    parameters:
+      type: object
+      properties:
+        customer_id:
+          type: string
+          description: 客户ID
+      required:
+        - customer_id
+      additionalProperties: false
+  - name: apply_refund_coupon
+    description: 为已退款订单发放优惠券补偿；调用前必须先查询退款状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        coupon_type:
+          type: string
+          enum:
+            - store_credit
+            - percentage_off
+            - free_shipping
+          description: 优惠券类型
+      required:
+        - order_id
+        - coupon_type
+      additionalProperties: false
+  - name: get_return_policy
+    description: 查询指定商品类别的退货政策和时限。
+    parameters:
+      type: object
+      properties:
+        product_category:
+          type: string
+          description: 商品类别
+      required:
+        - product_category
+      additionalProperties: false
+  - name: check_warranty
+    description: 检查指定商品的保修状态和剩余期限。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: process_exchange
+    description: 执行换货操作；需要先查询订单并验证换货资格。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        new_item:
+          type: string
+          description: 换入商品ID
+      required:
+        - order_id
+        - new_item
+      additionalProperties: false
+  - name: escalate_refund
+    description: 将退款请求升级到人工审核。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          description: 升级原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: get_payment_method
+    description: 查询订单的支付方式和支付状态。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: get_customer_profile
+    description: 查询客户的基本信息和账户状态。
+    parameters:
+      type: object
+      properties:
+        customer_id:
+          type: string
+          description: 客户ID
+      required:
+        - customer_id
+      additionalProperties: false
