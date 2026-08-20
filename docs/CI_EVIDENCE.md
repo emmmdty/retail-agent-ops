@@ -18,6 +18,7 @@
 | 总时长 | 2m16s（job 自身 2m12s） |
 | conclusion | **success** |
 | runner | `ubuntu-latest`（GitHub 托管） |
+| pytest 计数 | **1124 passed / 47 skipped**（1171 收集；47 跳过含 `test_demo_video` 无 ffprobe） |
 
 ## 逐步结果（全部 success）
 
@@ -50,8 +51,38 @@ env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 git diff --check
 ```
 
-本地在 commit `596eee8` 上实测全绿（1171 passed / 67.6s），与 CI 的 88s 一致
-（GitHub 2 核 runner 慢约 1.3×，主要差在 pytest 那一步）。
+本地在 commit `596eee8` 上实测全绿（作者环境 1171 passed / 67.6s，私有产物齐全），
+与 CI 的 88s 一致（GitHub 2 核 runner 慢约 1.3×，主要差在 pytest 那一步）。
+
+## 第二次运行（首次包含 CI 证据治理测试本身）
+
+第一次跑的是 `596eee8`，那时 `docs/CI_EVIDENCE.md` 与
+`test_ci_evidence_doc_has_provenance` 还不存在。落地证据后提交 `1dde7ca` 并重跑，
+确认 CI 在「包含自身证据与治理测试」的提交上仍绿。
+
+| 字段 | 值 |
+|---|---|
+| run URL | https://github.com/emmmdty/retail-agent-ops/actions/runs/32327892465 |
+| commit SHA | `1dde7ca55ba9cf27837d3a00ef5ab6a59f5a8236`（`1dde7ca`，`feat(r8): B2 CI 真跑通过`） |
+| 起止 | 2026-08-20T03:20:47Z → 2026-08-20T03:23:01Z |
+| 总时长 | 2m14s |
+| conclusion | **success** |
+| pytest 计数 | **1125 passed / 47 skipped**（1172 收集；新增的 `test_ci_evidence_doc_has_provenance` 在 CI 上通过） |
+
+## 两个干净环境的计数差异（必须同时披露）
+
+同一个 commit 在两个干净环境上跑出**不同的 passed/skipped 拆分**，总数相同（1172）：
+
+| 环境 | passed | skipped | 差异来源 |
+|---|---|---|---|
+| 作者环境（私有产物齐全） | **1172** | 0 | 私有产物 + ffprobe 都在 |
+| 本地干净 clone（2026-08-20 实跑） | **1126** | 46 | 私有产物缺失，ffprobe 在 |
+| GitHub Actions runner | **1125** | 47 | 私有产物缺失 + **无 ffprobe**（多 1 个 skip） |
+
+`test_the_author_environment_baseline_never_appears_without_the_clean_clone_one`
+锁住的就是这件事：**写作者环境基线的地方必须同时披露干净 clone 基线，且
+passed + skipped 必须等于收集总数**（1126 + 46 = 1172 ✓）。两个干净环境的
+skip 数差 1（ffprobe），是环境差异不是代码差异。
 
 ## 已知非阻塞警告
 
