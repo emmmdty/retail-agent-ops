@@ -178,6 +178,7 @@ def mode_sft_export(args: argparse.Namespace) -> None:
 
 def mode_train(args: argparse.Namespace) -> None:
     """Train QLoRA-SFT candidate."""
+    import hashlib
     from veritool_rl.training.sft import run_sft
 
     sft_dir = _output_dir(args, "sft")
@@ -186,12 +187,26 @@ def mode_train(args: argparse.Namespace) -> None:
         print(f"ERROR: SFT data not found at {sft_path}")
         sys.exit(1)
 
+    # Compute model revision and file_sha256
+    model_dir = Path(args.model_path)
+    sha256_map = {}
+    for f in sorted(model_dir.rglob("*.json")):
+        if f.is_file():
+            sha256_map[str(f.relative_to(model_dir))] = hashlib.sha256(f.read_bytes()).hexdigest()
+    for f in sorted(model_dir.rglob("*.safetensors")):
+        if f.is_file():
+            sha256_map[str(f.relative_to(model_dir))] = hashlib.sha256(f.read_bytes()).hexdigest()
+    revision = hashlib.sha256(json.dumps(sha256_map, sort_keys=True).encode()).hexdigest()[:16]
+
+    # Project-relative paths
+    rel_sft = str(sft_path.relative_to(PROJECT_ROOT))
     output_dir = _output_dir(args, "train")
     config = {
-        "pipeline": "train_export",
         "model": {
             "name": args.model_path,
             "load_in_4bit": True,
+            "revision": revision,
+            "file_sha256": sha256_map,
         },
         "lora": {
             "r": 16,
@@ -200,17 +215,14 @@ def mode_train(args: argparse.Namespace) -> None:
             "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
         },
         "data": {
-            "train_path": str(sft_path),
-            "eval_path": str(sft_path),  # use same for eval during training
+            "train_path": rel_sft,
+            "eval_path": rel_sft,
         },
         "training": {
-            "num_train_epochs": 3,
-            "per_device_train_batch_size": 1,
-            "gradient_accumulation_steps": 1,
-            "learning_rate": 2e-4,
-            "warmup_ratio": 0.1,
-            "logging_steps": 10,
-            "save_strategy": "epoch",
+            "epochs": 3,
+            "batch_size": 1,
+            "grad_accum": 1,
+            "lr": 2e-4,
         },
     }
 
