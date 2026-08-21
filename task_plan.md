@@ -436,3 +436,68 @@ lock 105 / audit 437 文件 / qualification / diff）。**运行**：
 
 B2（最快、已授权、独立）→ C1 CPU 实现 → C1 GPU 运行 → C2 CPU 实现 →
 C2 GPU 运行 → 简历与面试材料补 C1/C2/B2 读数（Task D 后置）。
+
+---
+
+## R9 数据多样性扩展实验（进行中，2026-08-21 启动）
+
+**总体目标**：分两阶段做扩展实验，验证"数据量"与"数据多样性"的独立贡献。
+- Phase A：只增加数据量（240→2000），保持工具/场景/模板不变 → 验证"数据量"的独立贡献
+- Phase B：增加数据多样性（3→5 工具，6→12 场景，12→60+ 模板） → 验证"多样性"的独立贡献
+
+**核心问题**：OOD 泛化差，究竟是数据不够多，还是数据不够多样？
+
+**非目标**：
+- 不换模型（仍是 Qwen3-4B + QLoRA）
+- 不换训练方法（仍是 SFT）
+- 不做封存 holdout 观测
+- 不改发布门禁阈值
+- 不改 parser / max_steps / verify_final_state（Phase A+B 均不改）
+
+---
+
+### Phase A：数据量消融（纯 volume effect）
+
+**设计**：唯一变量是训练样本数。工具、场景、模板、口吻、工程约束全部不变。
+
+| 维度 | baseline | Phase A | 变化 |
+|---|---|---|---|
+| 训练量 | 240 条 | **1,600 条** | ×6.7 |
+| 工具 | 2 个 | 2 个 | 不变 |
+| 场景 | 6 类 | 6 类 | 不变 |
+| 模板 | 12 句 | 12 句 | 不变 |
+| 口吻 | 书面正式 | 书面正式 | 不变 |
+| epoch | 3 | 3 | 不变 |
+| 梯度步数 | ~75 | ~600 | ×8（由数据量自然增长） |
+
+**实现方式**：对现有 240 条训练数据做 oversampling：
+- 每条原始样本通过 **不同的 order_id/reason/margin 组合** 生成变体
+- 保持 user_request 模板不变（仍是那 12 句），只替换其中的实体
+- 目标 2,000 条，去重后保留唯一模板+实体组合
+- 按 sha256 切分 train/dev/holdout = 80/10/10
+
+**评测**：
+- dev（模板内）：原有 60 条，不变
+- OOD v2（模板外）：原有 60 条，不变
+- oversampled OOD：新增 60 条，用与训练集相同的 12 模板但不同的实体组合
+
+**判读规则**：
+| 结果 | 判定 |
+|---|---|
+| OOD ≥ 0.70 | 数据量是重要因素，继续 Phase B |
+| OOD 改善但 < 0.70 | 数据量有帮助但不够，Phase B 必须做 |
+| OOD 无改善 | 数据量不是瓶颈，需重新诊断 |
+
+**Phase A 运行清单**（每条命令执行前另给精确清单：工作目录、物理 GPU、预计时长、产物）：
+
+| # | 运行 | 用途 | 产物目录 |
+|---|---|---|---|
+| A-0 | Oversample 240→2000 条（CPU，实体替换，不改模板） | 训练数据 | `data/private/retail_ops/v1/r9/phase-a` |
+| A-1 | 训练 `sft-001`（Qwen3-4B QLoRA，~15min） | 候选 | `reports/retail_ops/v1/r9/phase-a/sft-001` |
+| A-2 | Dev 评测（原有 60 条） | 模板内退化检查 | `reports/retail_ops/v1/r9/phase-a/dev-001` |
+| A-3 | OOD 评测（原有 60 条） | 核心对比 | `reports/retail_ops/v1/r9/phase-a/ood-001` |
+| A-4 | Oversampled OOD 评测（新增 60 条） | 实体泛化 | `reports/retail_ops/v1/r9/phase-a/ood-oversampled-001` |
+
+**判读**：Phase A 结果写入 `findings.md` 和 `progress.md`，然后请求用户确认是否进入 Phase B。
+
+**当前状态**：A-0 完成（2000 条 oversampled 数据已生成），A-1~A-4 待执行。

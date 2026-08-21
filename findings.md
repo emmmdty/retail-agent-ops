@@ -1422,3 +1422,40 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
   `model_dir.iterdir()` 的直接子文件，不进入子目录。若模型目录有嵌套结构（如
   checkpoint 子目录），会遗漏文件。当前 Qwen3 模型文件都是扁平的所以不影响，
   但这是一个潜在的坑。
+
+## R9 Phase A：数据量消融（2026-08-21，CPU）
+
+### Oversampling 实现
+
+- **数据结构**：原始 240 条训练数据，6 个场景各 40 条，42 个不同的 user_request 模板
+  （替换 order_id 后）。
+- **变体生成**：对每条原始样本生成 7-8 个变体，替换 order_id（随机 16 位 hex）、
+  reason（从 4 个中轮换）、margin（从 7 个值中轮换）、customer_id（从 CUST001-CUST010
+  中轮换），保持 user_request 模板不变。
+- **去重**：同一模板+同一实体组合只保留一条，最终生成 2000 条，无重复。
+- **切分**：按 sha256 切分 train/dev/holdout = 80/10/10（1600/200/200）。
+- **场景分布**：train 集中 lookup_status 303、refund_eligible 283、refund_denied_duplicate
+  261、refund_recovery 261、refund_denied_ownership 251、refund_denied_window 241。
+
+### Phase A 配置
+
+- 训练配置：`configs/retail_ops/build/retail_ops_v1_r9_phase_a_sft.yaml`
+- 评测配置：
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_dev.yaml`（原有 60 条）
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood.yaml`（原有 60 条）
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood_oversampled.yaml`（新增 60 条）
+
+### 待执行
+
+- A-1：训练 Phase A 候选（gpu-5090，~15min）
+- A-2：Dev 评测（原有 60 条）
+- A-3：OOD 评测（原有 60 条）
+- A-4：oversampled OOD 评测（新增 60 条）
+
+### 判读规则（在看到结果前写定）
+
+| 结果 | 判定 |
+|---|---|
+| OOD ≥ 0.70 | 数据量是重要因素，继续 Phase B |
+| OOD 改善但 < 0.70 | 数据量有帮助但不够，Phase B 必须做 |
+| OOD 无改善 | 数据量不是瓶颈，需重新诊断 |

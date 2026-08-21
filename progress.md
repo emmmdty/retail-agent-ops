@@ -1018,3 +1018,15 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 
 - B2 CI 真跑 + C1/C2 代码合并后：1171 → 1199 → 1212 → **1219**（最终确认）。
 - 干净 clone 实测：**1173 passed / 46 skipped / 0 failed**（2026-08-21 重跑确认，数字未变）。
+
+## 2026-08-21 — R9 Phase A：数据量消融启动
+
+- **Phase A 目标**：验证"数据量"的独立贡献（240→1600 条）。
+- **Oversampling 完成**：原始 240 条训练数据生成 2000 条变体，去重后 1600/200/200
+  （train/dev/holdout = 80/10/10）。
+- **配置文件已创建**：
+  - `configs/retail_ops/build/retail_ops_v1_r9_phase_a_sft.yaml`（训练）
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_dev.yaml`（dev 评测）
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood.yaml`（OOD 评测）
+  - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood_oversampled.yaml`（oversampled OOD 评测）
+- **待执行**：训练 Phase A 候选 + 三组评测（gpu-5090）。
