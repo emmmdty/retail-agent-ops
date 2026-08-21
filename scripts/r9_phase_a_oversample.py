@@ -103,12 +103,41 @@ def apply_variant(
         new_calls = []
         for call in new_task["expected_calls"]:
             new_call = copy.deepcopy(call)
-            if "args" in new_call and "order_id" in new_call["args"]:
-                new_call["args"]["order_id"] = order_id
+            # expected_calls 中的键可能是 'args' 或 'arguments'
+            call_args = new_call.get("args") or new_call.get("arguments", {})
+            if "order_id" in call_args:
+                call_args["order_id"] = order_id
             new_calls.append(new_call)
         new_task["expected_calls"] = new_calls
 
     return new_task
+
+
+def apply_variant_to_trajectory(
+    trajectory: dict[str, Any],
+    old_order_id: str,
+    new_order_id: str,
+    new_reason: str,
+) -> dict[str, Any]:
+    """更新 trajectory steps 中的 tool_call arguments。"""
+    import copy
+    new_traj = copy.deepcopy(trajectory)
+
+    if "steps" not in new_traj:
+        return new_traj
+
+    for step in new_traj["steps"]:
+        if "tool_call" in step and step["tool_call"] is not None:
+            tc = step["tool_call"]
+            if "arguments" in tc:
+                # 更新 order_id
+                if "order_id" in tc["arguments"] and tc["arguments"]["order_id"] == old_order_id:
+                    tc["arguments"]["order_id"] = new_order_id
+                # 更新 reason（如果存在）
+                if "reason" in tc["arguments"] and tc["arguments"]["reason"] in _REASONS:
+                    tc["arguments"]["reason"] = new_reason
+
+    return new_traj
 
 
 def main():
@@ -142,6 +171,17 @@ def main():
         task = sample["trajectory"]["task"]
         template = get_user_request_template(task["user_request"])
 
+        # 获取原始 order_id（用于更新 trajectory steps）
+        old_order_id = None
+        if "expected_calls" in task and task["expected_calls"]:
+            first_call = task["expected_calls"][0]
+            # expected_calls 中的键可能是 'args' 或 'arguments'
+            call_args = first_call.get("args") or first_call.get("arguments", {})
+            if "order_id" in call_args:
+                old_order_id = call_args["order_id"]
+        if old_order_id is None and "initial_state" in task and "orders" in task["initial_state"]:
+            old_order_id = next(iter(task["initial_state"]["orders"]), None)
+
         # 确定这个样本需要生成多少变体
         n_variants = variants_per_sample + (1 if i < remainder else 0)
 
@@ -163,8 +203,14 @@ def main():
                         break
             seen_combinations.add(combo_key)
 
-            # 应用变体
+            # 应用变体到 task
             new_task = apply_variant(task, order_id, reason, margin, customer_id, template)
+
+            # 应用变体到 trajectory（更新 steps 中的 tool_call arguments）
+            new_trajectory = apply_variant_to_trajectory(
+                sample["trajectory"], old_order_id, order_id, reason
+            )
+            new_trajectory["task"] = new_task
 
             # 构造新的样本
             new_sample = {
@@ -173,10 +219,7 @@ def main():
                     json.dumps(new_task, sort_keys=True).encode()
                 ).hexdigest(),
                 "task_id": new_task["task_id"],
-                "trajectory": {
-                    **sample["trajectory"],
-                    "task": new_task,
-                },
+                "trajectory": new_trajectory,
             }
             all_samples.append(new_sample)
 
