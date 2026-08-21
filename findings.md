@@ -1462,28 +1462,37 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
 
 ### Phase A 结果（2026-08-21）
 
-**训练**：Qwen3-4B + QLoRA full linear（7 投影层），r=16/alpha=32，1600 条 train，3 epoch。
-adapter 66MB（vs baseline 的 23MB），训练正常完成。
+**第一次运行（数据不一致）**：
+oversampling 脚本未更新 trajectory steps 中的 tool_call arguments，导致 user_request/
+initial_state 里的 order_id 是新的，但 steps 里的 tool_call 还是旧的。训练数据不一致
+导致 task_success 从 0.800 暴跌到 0.133。
 
-**Dev 评测（原有 60 条）**：
+**根因**：`apply_variant` 函数更新了 task 中的 `expected_calls`，但没有更新
+`trajectory.steps` 中的 `tool_call.arguments`。同时 `expected_calls` 中的键是
+`arguments` 而非 `args`，代码检查了错误的键名。
+
+**修复**：
+1. 新增 `apply_variant_to_trajectory` 函数，更新 steps 中的 tool_call arguments
+2. 修复 `apply_variant` 中 `expected_calls` 的键名检查（`args` → `arguments`）
+3. 重新生成 oversampled 数据并验证一致性（1600 条全部通过）
+
+**第二次运行（修复后）**：
 
 | 指标 | baseline (sft-008) | Phase A 候选 | 变化 |
 |---|---|---|---|
-| task_success | 0.800 (48/60) | **0.133 (8/60)** | **−0.667** |
-| policy_violation | 0 | 0 | 不变 |
+| task_success | 0.800 (48/60) | **0.983 (59/60)** | **+0.183** |
+| policy_violation | 0 | 1 | +1 |
 | invalid_call | 0 | 0 | 不变 |
 | schema_valid_rate | 1.000 | 1.000 | 不变 |
-| failure_type | premature_final_response | premature_final_response (52) | 同类但量级不同 |
-| tool_selection_accuracy | 0.708 | 0.708 | 不变 |
-| recovery_success | 0.700 | 0.700 | 不变 |
+| failure_type | — | policy_violation (1) | — |
 
-**OOD 评测**：进程异常退出，未产出结果。
+**判读**：修复数据一致性后，Phase A 候选在 dev 上显著优于 baseline。
+task_success 从 0.800 提升到 0.983，只新增 1 次 policy_violation。
 
-**判读**：**Phase A 判负——数据量不是瓶颈。**
-- task_success 从 0.800 暴跌到 0.133，数据量增加 6.7 倍反而严重恶化
-- 格式/安全指标不变（0 违规、0 非法调用、schema 1.0），说明模型学到了格式但学不会任务
-- 失败模式仍是 `premature_final_response`，与 baseline 相同但量级从 12/60 增到 52/60
-- **可能原因**：1600 条 oversampled 数据中，同一模板的大量变体让模型过拟合到"调一次就停"的模式，而不是学会多步执行
+**OOD 评测**：多次尝试均失败（进程异常退出），未产出结果。
 
-**按 Spec §2.3 判读规则**：OOD 无改善（实际严重恶化）→ **数据量不是瓶颈，需重新诊断。**
-Phase B（数据多样性扩展）的方向仍值得尝试，但需要先诊断 Phase A 失败的根因。
+**按 Spec §2.3 判读**：
+- Dev 显著改善 → 数据量有帮助
+- OOD 未完成 → 无法判断是否 ≥ 0.70
+- 结论：**数据一致性是之前失败的根因，修复后数据量增加确实有帮助。
+  需要完成 OOD 评测才能判断是否需要进入 Phase B。**

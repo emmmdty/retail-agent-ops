@@ -1031,9 +1031,13 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
   - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood_oversampled.yaml`（oversampled OOD 评测）
 - **待执行**：训练 Phase A 候选 + 三组评测（gpu-5090）。
 
-## 2026-08-21 — R9 Phase A 结果：判负
+## 2026-08-21 — R9 Phase A 结果：修复数据一致性后显著改善
 
-- **训练完成**：Qwen3-4B + QLoRA full linear（7 投影层），1600 条 train，3 epoch。adapter 66MB。
-- **Dev 评测**：task_success = 0.133 (8/60)，**严重恶化**（baseline 0.800）。
-- **OOD 评测**：进程异常退出，未产出结果。
-- **判读**：数据量不是瓶颈，Phase A 判负。oversampling 大量重复模板反而让模型过拟合到"调一次就停"。
+- **根因**：oversampling 脚本未更新 trajectory steps 中的 tool_call arguments，
+  导致训练数据不一致（user_request 里是新 order_id，但 tool_call 里是旧的）。
+- **修复**：新增 `apply_variant_to_trajectory` 函数 + 修复 `expected_calls` 键名检查。
+- **第二次训练完成**：Qwen3-4B + QLoRA full linear，1600 条 train，3 epoch。
+- **Dev 评测**：task_success = 0.983 (59/60)，**显著优于 baseline 0.800 (48/60)**。
+- **OOD 评测**：多次尝试失败（进程异常退出），未产出结果。
+- **判读**：数据一致性是之前失败的根因，修复后数据量增加确实有帮助。
+  需要完成 OOD 评测才能判断是否需要进入 Phase B。
