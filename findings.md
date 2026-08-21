@@ -1459,3 +1459,31 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
 | OOD ≥ 0.70 | 数据量是重要因素，继续 Phase B |
 | OOD 改善但 < 0.70 | 数据量有帮助但不够，Phase B 必须做 |
 | OOD 无改善 | 数据量不是瓶颈，需重新诊断 |
+
+### Phase A 结果（2026-08-21）
+
+**训练**：Qwen3-4B + QLoRA full linear（7 投影层），r=16/alpha=32，1600 条 train，3 epoch。
+adapter 66MB（vs baseline 的 23MB），训练正常完成。
+
+**Dev 评测（原有 60 条）**：
+
+| 指标 | baseline (sft-008) | Phase A 候选 | 变化 |
+|---|---|---|---|
+| task_success | 0.800 (48/60) | **0.133 (8/60)** | **−0.667** |
+| policy_violation | 0 | 0 | 不变 |
+| invalid_call | 0 | 0 | 不变 |
+| schema_valid_rate | 1.000 | 1.000 | 不变 |
+| failure_type | premature_final_response | premature_final_response (52) | 同类但量级不同 |
+| tool_selection_accuracy | 0.708 | 0.708 | 不变 |
+| recovery_success | 0.700 | 0.700 | 不变 |
+
+**OOD 评测**：进程异常退出，未产出结果。
+
+**判读**：**Phase A 判负——数据量不是瓶颈。**
+- task_success 从 0.800 暴跌到 0.133，数据量增加 6.7 倍反而严重恶化
+- 格式/安全指标不变（0 违规、0 非法调用、schema 1.0），说明模型学到了格式但学不会任务
+- 失败模式仍是 `premature_final_response`，与 baseline 相同但量级从 12/60 增到 52/60
+- **可能原因**：1600 条 oversampled 数据中，同一模板的大量变体让模型过拟合到"调一次就停"的模式，而不是学会多步执行
+
+**按 Spec §2.3 判读规则**：OOD 无改善（实际严重恶化）→ **数据量不是瓶颈，需重新诊断。**
+Phase B（数据多样性扩展）的方向仍值得尝试，但需要先诊断 Phase A 失败的根因。

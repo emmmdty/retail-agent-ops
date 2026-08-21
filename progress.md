@@ -1030,3 +1030,10 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
   - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood.yaml`（OOD 评测）
   - `configs/retail_ops/evaluate/retail_ops_v1_r9_phase_a_ood_oversampled.yaml`（oversampled OOD 评测）
 - **待执行**：训练 Phase A 候选 + 三组评测（gpu-5090）。
+
+## 2026-08-21 — R9 Phase A 结果：判负
+
+- **训练完成**：Qwen3-4B + QLoRA full linear（7 投影层），1600 条 train，3 epoch。adapter 66MB。
+- **Dev 评测**：task_success = 0.133 (8/60)，**严重恶化**（baseline 0.800）。
+- **OOD 评测**：进程异常退出，未产出结果。
+- **判读**：数据量不是瓶颈，Phase A 判负。oversampling 大量重复模板反而让模型过拟合到"调一次就停"。
