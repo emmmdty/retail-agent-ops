@@ -77,8 +77,9 @@ def mode_teacher_collect(args: argparse.Namespace) -> None:
 
     # Load teacher route
     route, api_key = load_teacher_route_from_env()
-    from veritool_rl.core.build.teacher_client import OpenAICompatibleTeacherClient
     from openai import OpenAI
+
+    from veritool_rl.core.build.teacher_client import OpenAICompatibleTeacherClient
 
     raw_client = OpenAI(api_key=api_key, base_url=route.base_url)
     client = OpenAICompatibleTeacherClient(route=route, client=raw_client)
@@ -180,6 +181,7 @@ def mode_train(args: argparse.Namespace) -> None:
     """Train QLoRA-SFT candidate."""
     import hashlib
     import json as _json
+
     from veritool_rl.training.sft import run_sft
 
     sft_dir = _output_dir(args, "sft")
@@ -231,12 +233,12 @@ def mode_train(args: argparse.Namespace) -> None:
 
 def mode_eval(args: argparse.Namespace) -> None:
     """Evaluate model on dev tasks."""
+    from veritool_rl.core.agent.qwen import QwenPolicy
     from veritool_rl.flight_ops.build.manifests import load_manifest
     from veritool_rl.flight_ops.domain.bundle import load_bundle
     from veritool_rl.flight_ops.domain.environment import FlightOpsEnv
     from veritool_rl.flight_ops.domain.tasks import build_flight_task_set
     from veritool_rl.flight_ops.evaluate.evaluation import FlightEvalConfig, run_evaluation
-    from veritool_rl.core.agent.qwen import QwenPolicy
 
     bundle = load_bundle(_bundle_dir())
     task_set = build_flight_task_set(args.dataset_version, args.seed)
@@ -264,7 +266,10 @@ def mode_eval(args: argparse.Namespace) -> None:
 
     output_dir = _output_dir(args, f"eval-{args.split}")
     evidence = run_evaluation(
-        config, task_set, policy_factory, env_factory,
+        config,
+        task_set,
+        policy_factory,
+        env_factory,
         output_dir=output_dir,
     )
 

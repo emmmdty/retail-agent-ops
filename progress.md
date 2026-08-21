@@ -990,3 +990,31 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-19 | dev 60 配对评测：`sft-009` | **59/60，1 次违规**（`sft-008` 是 58/60、2 次） |
 | 2026-08-19 | `ood_dev` 任务集重建 + 两侧评测 | `sft-008` **0.9833** vs `sft-009` **0.9500**——**退化** |
 | 2026-08-19 | 按 `3cb5619` 事先写定的规则判读 | **分支 2「修坏」，不换候选** |
+
+## 2026-08-20 — R8 D2 B2：CI 首次真跑
+
+- 用户授权公开发布门（remote `https://github.com/emmmdty/retail-agent-ops.git`）。
+- `git push -u origin main`：两次 push（`596eee8` 2m12s，`1dde7ca` 2m14s），11 步全绿。
+- 证据落盘 `docs/CI_EVIDENCE.md`（运行 URL、commit SHA、各步状态、首次运行日期）。
+- 治理测试反转：`test_ci_and_container_exist_and_do_not_overclaim` 从「必须写未跑过」
+  改为「不得仍声称未跑过」+ 指向 CI_EVIDENCE.md。**约束在现实变后会反向。**
+
+## 2026-08-20 — R8 D2 C1：flight_ops 跨域验证（gpu-5090）
+
+- flight_ops v1 bundle + tasks + environment + policies 完成（CPU 实现）。
+- teacher 采集（DeepSeek，~240 条）+ SFT 导出 → Qwen3-4B QLoRA 训练。
+- dev 评测：base 0.4833 → candidate **1.0000**，release gate **GO**。
+- 教训：teacher_client 从 retail_ops.build lift 到 core.build 证明可移植性，
+  但 ToolSchema→dict 转换是隐式契约（openai SDK 不接受 pydantic 对象）。
+
+## 2026-08-20 — R8 D2 C2：工具面扩容 + 退化曲线（gpu-5090）
+
+- retail_ops v3 bundle（15 工具）+ v3_tasks 生成器（5 断点 {3,6,9,12,15}）完成。
+- 4 个新候选训练（6/9/12/15 工具各一个 QLoRA），{3} 复用 sft-008。
+- 退化曲线：N=6/9/12/15 全部 task_success=0.45、pv=0、tool_acc=0.70。
+- **曲线平坦**：MiMo-V2.5 teacher 质量充足，4B 模型在 6~15 工具上未观察到退化。
+
+## 2026-08-20 — 测试数变化追踪
+
+- B2 CI 真跑 + C1/C2 代码合并后：1171 → 1199 → 1212 → **1219**（最终确认）。
+- 干净 clone 实测：**1173 passed / 46 skipped / 0 failed**（2026-08-21 重跑确认，数字未变）。

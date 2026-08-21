@@ -4077,3 +4077,56 @@ MLOps→SRE→ML 论文。简历重写在 A1 三轮审查完后做。
 **后果与下一步**：R8 CPU 部分完成。三轮审查分数 6.5→7.3→6.8，未到 9/10——
 统计强度是方法论限制，不是工程修复能解决的。要继续提分需要做 C1（跨域）+
 B2（CI 真跑）+ 可能的第 3 个规模点（D1，但 R7 判负）。简历已重定位为投 MLOps 岗。
+
+### LOG-20260821-01：R8 C1 跨域验证 + 教师 transport 修复 + 退化曲线
+
+- 日期：2026-08-21
+- 阶段/任务：R8 D2 收口（C1 flight_ops + C2 退化曲线 + B2 CI 真跑后治理）
+- 状态：解决
+- 关联：LOG-20260819-02（C2 推翻 R4.5 判定）、task_plan.md R8 D2
+
+**背景与难点**：R8 D2 三项并行推进（B2 CI 真跑、C1 跨域验证、C2 工具面扩容），
+完成后需要流程收口：全门禁重跑、findings/progress/PROJECT_LOG 同步、测试计数最终确认。
+
+**C1 flight_ops 跨域验证**：
+
+- flight_ops v1 bundle + 6 类任务 + environment + policies + build/evaluate/release
+  全链路完成（CPU 实现 + GPU 运行）。
+- teacher 采集（DeepSeek）+ SFT 导出 → Qwen3-4B QLoRA 训练（~5min, 5.65GB）。
+- dev 评测：base 0.4833 → candidate **1.0000**，release gate **GO**。
+- **教训**：teacher_client 从 retail_ops.build lift 到 core.build 证明了可移植性——
+  flight_ops 的 build 层只需 import core.build 的泛型函数，不需要依赖 retail_ops。
+  但 ToolSchema→dict 转换是隐式契约：openai SDK 的 `chat.completions.create(tools=[...])`
+  类型提示是 `list[dict] | None`，Pydantic 对象不会在类型检查时被拦截，运行时才报错。
+
+**C2 退化曲线**：
+
+- retail_ops v3 bundle（15 工具）+ v3_tasks 生成器完成。
+- 5 个断点 {3,6,9,12,15}：{3} 复用 sft-008，{6,9,12,15} 各新训一个 QLoRA 候选。
+- **退化曲线平坦**：N=6/9/12/15 全部 task_success=0.45、pv=0、tool_acc=0.70。
+  无下降趋势。
+- **归因**：teacher（MiMo-V2.5）质量充足，4B 模型在 6~15 工具规模上能力足够。
+  但 0.45 的 task_success 较低，可能是容量或数据问题而非工具数问题。
+- **诚实边界**：仅在一个 teacher/provider/模型/任务集组合上测量。
+  不能声称"工具数不影响 tool selection"的一般性结论。
+
+**B2 CI 真跑后治理**：
+
+- 首次 push 后 GitHub Actions 真跑通过（commit `596eee8`，2m12s，11 步全绿）。
+- 治理测试反转：`test_ci_and_container_exist_and_do_not_overclaim` 从「必须写未跑过」
+  改为「不得仍声称未跑过」。**约束在现实变后会反向。**
+
+**全门禁重跑结果**：
+
+- pytest: 1219 passed（作者环境）
+- ruff check: All checks passed
+- ruff format --check: 206 files already formatted
+- mypy: Success, no issues found (107 source files)
+- uv lock --check: Resolved 105 packages
+- audit_public_release: 通过（471 tracked files）
+- verify_qualification_chain: 通过
+- git diff --check: 干净
+- 干净 clone 实测：1173 passed / 46 skipped / 0 failed（数字未变）
+
+**决定与方案**：R8 D2 三项（B2/C1/C2）全部完成。R8 元方法论补强轨道的剩余工作是
+Task D（简历与面试材料重写），需在 A1 三轮审查完成后启动。

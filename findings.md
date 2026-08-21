@@ -1392,3 +1392,33 @@ HF `generate` 是同步阻塞调用，无法从外部杀死。实现是：单 wo
 - flight_ops 不复制 retail 的 5 指纹 family pairing：那套是 retail 有封存 holdout 时的
   反污染机制；flight_ops 无封存（C1 是可移植性证明不是发布判定），更简单的
   train/dev split + 内容哈希是诚实而非偷工。已在 task_plan R8 D2 非目标写明。
+
+## C2 退化曲线：工具数 6→15 不导致退化（2026-08-21，gpu-5090）
+
+- **退化曲线平坦**：N=6/9/12/15 四个断点全部 task_success=0.45、pv=0、tool_acc=0.70。
+  曲线无下降趋势。{3} 断点复用 sft-008（v1 的 3 工具训练），{6,9,12,15} 各新训一个
+  Qwen3-4B QLoRA 候选。
+- **归因**：teacher（MiMo-V2.5）质量充足，4B 模型在 6~15 工具规模上能力足够，
+  未观察到工具选择退化。但 0.45 的 task_success 较低（六类中多步类需要多次正确调用），
+  且 pv=0 说明模型不违规但也不总是完成任务——可能是容量或数据问题而非工具数问题。
+- **诚实边界**：仅在一个 teacher/provider（MiMo-V2.5）、一个模型（Qwen3-4B）、
+  一个任务集（retail_ops v3 六类）上测量。不能声称"工具数不影响 tool selection"的一般性
+  结论。不同模型规模、不同工具语义重叠度、不同任务复杂度下结论可能不同。
+
+## C1 flight_ops 集成修复：隐式契约与模式统一（2026-08-21）
+
+- **teacher_data ToolSchema→dict（openai SDK 兼容）**：flight_ops 的 teacher 采集调用
+  `core.build.teacher_client.OpenAICompatibleTeacherClient`，但 ToolSchema 是 Pydantic
+  对象，openai SDK 的 `chat.completions.create(tools=[...])` 不接受 Pydantic 实例——
+  需要 `model_dump()` 转为 dict。这是隐式契约：SDK 类型提示不拦截 Pydantic 对象，
+  运行时才报错。修复点在 flight_ops 的 teacher collection loop。
+- **run.py train config schema（UserSFTConfig 严格模式）**：flight_ops 的 run.py
+  构造 SFT config dict 时直接用字面量，没有通过 `UserSFTConfig` 校验。严格模式下
+  缺字段/类型不匹配会直接报 ValidationError，比静默跑错配置更安全。
+- **eval 用 QwenPolicy.from_config（替代不存在的 load_model）**：flight_ops 的 eval
+  入口原先调用不存在的 `load_model`，改为 `QwenPolicy.from_config(dict)`——
+  与 retail_ops 的 eval 入口统一。
+- **model sha256 非递归包含所有文件**：flight_ops 的 model pin 计算只遍历
+  `model_dir.iterdir()` 的直接子文件，不进入子目录。若模型目录有嵌套结构（如
+  checkpoint 子目录），会遗漏文件。当前 Qwen3 模型文件都是扁平的所以不影响，
+  但这是一个潜在的坑。

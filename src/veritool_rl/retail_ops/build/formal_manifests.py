@@ -142,7 +142,7 @@ class FormalDatasetReceipt(StrictModel):
     bundle_version: Literal["1.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
     parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
-    evaluator_id: Literal["retail_ops_v1"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3"] = "retail_ops_v1"
     seed: Literal[0] = 0
     split_task_counts: dict[str, int]
     split_category_counts: dict[str, dict[str, int]]

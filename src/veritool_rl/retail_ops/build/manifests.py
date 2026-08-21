@@ -29,7 +29,7 @@ class TaskManifest(StrictModel):
     bundle_id: Literal["retail_ops"] = "retail_ops"
     #: qualification 轨道同时服务 v1 与 v2 bundle；正式数据集轨道仍然只接受 v1
     #: （`formal_manifests` 显式拒绝其它版本）。
-    bundle_version: Literal["1.0.0", "2.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "2.0.0", "3.0.0"] = "1.0.0"
     bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     split: Literal["train", "dev", "qualification", "holdout"]
     seed: int

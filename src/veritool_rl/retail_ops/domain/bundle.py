@@ -23,11 +23,21 @@ from veritool_rl.retail_ops.domain.policy_rules import PolicyRule, resolve_rules
 #: v3 是 C2 工具面扩容：15 工具，前 3 与 v1/v2 相同（用于退化曲线左端点复用）。
 _FROZEN_TOOL_NAMES_V1_V2 = ("get_order", "refund_order", "get_store_hours")
 _FROZEN_TOOL_NAMES_V3 = (
-    "get_order", "refund_order", "get_store_hours",
-    "cancel_order", "modify_order", "exchange_order",
-    "get_refund_status", "get_order_history", "apply_refund_coupon",
-    "get_return_policy", "check_warranty", "process_exchange",
-    "escalate_refund", "get_payment_method", "get_customer_profile",
+    "get_order",
+    "refund_order",
+    "get_store_hours",
+    "cancel_order",
+    "modify_order",
+    "exchange_order",
+    "get_refund_status",
+    "get_order_history",
+    "apply_refund_coupon",
+    "get_return_policy",
+    "check_warranty",
+    "process_exchange",
+    "escalate_refund",
+    "get_payment_method",
+    "get_customer_profile",
 )
 _FROZEN_TOOL_NAMES: dict[str, tuple[str, ...]] = {
     "1.0.0": _FROZEN_TOOL_NAMES_V1_V2,
