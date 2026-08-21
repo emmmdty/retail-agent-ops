@@ -146,12 +146,13 @@ def run_toolcount(n: int, dataset_version: str, seed: int, model_path: str) -> d
     def env_factory(task):
         return RetailOpsEnv(task, bundle)
     def policy_factory(task):
-        return QwenPolicy.from_config({"model_name": model_path, "adapter_path": adapter_path, "max_new_tokens": 256})
+        return QwenPolicy.from_config({"model_name": model_path, "adapter_path": adapter_rel, "max_new_tokens": 256})
 
+    adapter_rel = str(train_out.relative_to(PROJECT_ROOT) / "adapter")
     eval_config = FlightEvalConfig(
         dataset_version=dataset_version, bundle_sha256=bundle.bundle_sha256,
         manifest_sha256="a" * 64, seed=seed, split="dev",
-        model_name=model_path.split("/")[-1], adapter_path=adapter_path,
+        model_name=model_path.split("/")[-1], adapter_path=adapter_rel,
     )
     eval_out = out / "eval-dev"
     eval_out.mkdir(parents=True, exist_ok=True)
