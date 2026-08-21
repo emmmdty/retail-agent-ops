@@ -20,7 +20,7 @@ model:
     vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
 adapter:
   path: reports/retail_ops/v1/r9/phase-a/sft-001/adapter
-  file_sha256: null  # 训练后填充
+  file_sha256: "05391943d4249886dc680a8651e4165afcade8ccabf79e126e7cf05defd56835"
 generation:
   max_new_tokens: 1024
   temperature: 0.0
