@@ -296,7 +296,7 @@ Details in [`docs/REBUILD_VERIFICATION.md`](docs/REBUILD_VERIFICATION.md).
 | QLoRA training (all-linear — **three** runs of the `sft-006` config) | 3 epochs / 75 steps. Wall time `sft-006` **293.7 s** / rebuild A **242.3 s** / rebuild B **242.2 s** (the spread is other users on the shared GPU, **not a config difference**); `cuda_peak_allocated` **5.65 GB** in all three; adapter **66,127,776 B (63 MiB)**, byte-identical in size across all three |
 | Evaluation inference peak memory | 4-bit NF4, **2.95–3.04 GB** |
 | Serving throughput, four tiers | merged + vLLM is **3.32×** the current serving stack, and the factor is **multiplicative**: dropping NF4 gives 1.64× (no new dependency), swapping the engine gives another 2.02× |
-| Engineering baseline | **1219 tests passed** (author's machine, with the private artifacts present); **on a clean clone, measured 1173 passed / 46 skipped / 0 failed** (actually run on 2026-08-20, not derived from 1219 − 46) — all 46 skips are tests that need artifacts not distributed with the repo, or the ignored BFCL checkout. Ruff / `ruff format --check` / mypy (89 files) / `uv lock --check` / public-release audit passed in both of those environments on that date |
+| Engineering baseline | **1220 tests passed** (author's machine, with the private artifacts present); **on a clean clone, measured 1174 passed / 46 skipped / 0 failed** (actually run on 2026-08-22, not derived from 1220 − 46) — all 46 skips are tests that need artifacts not distributed with the repo, or the ignored BFCL checkout. Ruff / `ruff format --check` / mypy (89 files) / `uv lock --check` / public-release audit passed in both of those environments on that date |
 
 ---
 

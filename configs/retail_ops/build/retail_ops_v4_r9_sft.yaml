@@ -1,5 +1,6 @@
-# R9 Phase A: Oversampled OOD 评测（新增 60 条，同模板不同实体）
-pipeline: formal_dev_candidate
+# R9 Phase B: SFT 训练 — Qwen3-4B + QLoRA full linear
+# 480 train tasks, 3 epoch, r=16, alpha=32, lr=2e-4
+pipeline: sft
 model:
   name: models/Qwen3-4B-pinned
   load_in_4bit: true
@@ -18,22 +19,21 @@ model:
     tokenizer.json: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
     tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
     vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
-adapter:
-  run_dir: reports/retail_ops/v1/r9/phase-a/sft-001
-  file_sha256:
-    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
-    adapter_config.json: "d25cb3d67958c7219f57d5605ca9d0eaa8a8d5f092ef5bca484b3049b0c0faa2"
-    adapter_model.safetensors: "6efca6d663559e34a6237876f65486f879c35d1de0be9d3ccf8dc91918fdf269"
-    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
-    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
-    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
-    training_args.bin: "eb7b59bdb02607b8ff6f8924603d94283b190aec0c9c02781b4de2de4bad2102"
-generation:
-  max_new_tokens: 1024
-  temperature: 0.0
-  top_p: 1.0
-dataset:
-  manifest_path: manifests/retail_ops/v1/ood_v2_20260817/dev.json
-  split: dev
-bundle:
-  path: domains/retail_ops/v1
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+data:
+  train_relpath: sft.jsonl
+  eval_relpath: dev.jsonl
+training:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8
+  lr: 2.0e-4
+  max_seq_len: 1024
+  bf16: true
+  gradient_checkpointing: true
+  assistant_only_loss: true
+  verify_adapter_reload: true

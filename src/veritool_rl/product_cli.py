@@ -725,7 +725,7 @@ _FORMAL_FREEZE_KEYS = {"pipeline", "bundle_dir", "dataset_version"}
 
 
 def _run_formal_freeze(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    """从冻结 bundle 生成正式 240/60/120 任务集，写私有真值与公开 answer-free manifest。
+    """从冻结 bundle 生成正式任务集，写私有真值与公开 answer-free manifest。
 
     绝不读取 `os.environ`：这条流水线只依赖 bundle 文件和 config 里的
     `dataset_version`，与 teacher provider 无关。
@@ -736,7 +736,12 @@ def _run_formal_freeze(args: argparse.Namespace, config: dict[str, Any]) -> None
     bundle_dir = _bundle_dir(config)
     dataset_version = _dataset_version(config)
     bundle = load_bundle(bundle_dir)
-    task_set = build_formal_task_set(dataset_version, args.seed)
+    if bundle.bundle.bundle_version == "4.0.0":
+        from veritool_rl.retail_ops.domain.formal_tasks import build_v4_task_set
+
+        task_set = build_v4_task_set(dataset_version, args.seed)
+    else:
+        task_set = build_formal_task_set(dataset_version, args.seed)
     private_root = _r2_private_root(dataset_version)
     write_formal_task_set(task_set, bundle, private_root, args.output_dir)
 

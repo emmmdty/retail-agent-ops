@@ -121,6 +121,7 @@ def apply_variant_to_trajectory(
 ) -> dict[str, Any]:
     """更新 trajectory steps 中的 tool_call arguments。"""
     import copy
+
     new_traj = copy.deepcopy(trajectory)
 
     if "steps" not in new_traj:
@@ -173,7 +174,7 @@ def main():
 
         # 获取原始 order_id（用于更新 trajectory steps）
         old_order_id = None
-        if "expected_calls" in task and task["expected_calls"]:
+        if task.get("expected_calls"):
             first_call = task["expected_calls"][0]
             # expected_calls 中的键可能是 'args' 或 'arguments'
             call_args = first_call.get("args") or first_call.get("arguments", {})

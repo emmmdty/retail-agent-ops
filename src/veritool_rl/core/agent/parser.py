@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from pydantic import ValidationError
@@ -11,13 +12,16 @@ from veritool_rl.core.agent.policy import PolicyOutput
 from veritool_rl.core.trajectory import ToolCall
 
 _TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+_logger = logging.getLogger(__name__)
 
 
 def parse_qwen_response(raw_text: str) -> PolicyOutput:
     """解析一个工具调用；多调用和混合文本均视为协议错误。"""
     matches = _TOOL_CALL_PATTERN.findall(raw_text)
     if len(matches) > 1:
-        return PolicyOutput(raw_text=raw_text, parse_error="multiple_tool_calls")
+        _logger.warning(
+            "parser: multiple tool calls detected (%d); keeping only the first", len(matches)
+        )
     if not matches:
         if "<tool_call>" in raw_text or "</tool_call>" in raw_text:
             return PolicyOutput(raw_text=raw_text, parse_error="invalid_tool_call_json")

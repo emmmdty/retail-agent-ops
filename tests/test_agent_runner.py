@@ -19,16 +19,30 @@ def test_qwen_parser_accepts_one_hermes_tool_call() -> None:
     assert output.tool_call.arguments == {"order_id": "O-1"}
 
 
-def test_qwen_parser_rejects_multiple_or_malformed_tool_calls() -> None:
+def test_qwen_parser_uses_first_tool_call_when_multiple_returned() -> None:
+    """Multiple tool calls should pick the FIRST one, not error.
+
+    This fixes the refund_then_cancel scenario where the teacher returns
+    get_order for both the primary AND other order in a single response.
+    """
     from veritool_rl.core.agent.parser import parse_qwen_response
 
     multiple = parse_qwen_response(
-        '<tool_call>{"name":"get_order","arguments":{}}</tool_call>'
+        '<tool_call>{"name":"get_order","arguments":{"order_id":"O-1"}}</tool_call>'
         '<tool_call>{"name":"refund_order","arguments":{}}</tool_call>'
     )
+
+    assert multiple.parse_error is None
+    assert multiple.tool_call is not None
+    assert multiple.tool_call.name == "get_order"
+    assert multiple.tool_call.arguments == {"order_id": "O-1"}
+
+
+def test_qwen_parser_rejects_malformed_tool_call() -> None:
+    from veritool_rl.core.agent.parser import parse_qwen_response
+
     malformed = parse_qwen_response("<tool_call>{not-json}</tool_call>")
 
-    assert multiple.parse_error == "multiple_tool_calls"
     assert malformed.parse_error == "invalid_tool_call_json"
 
 

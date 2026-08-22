@@ -1,0 +1,88 @@
+# RetailOps v4 工具 schema（Phase B：5 工具 + 语义重叠）。
+#
+# 相对 v1 的变化：
+#   - get_order / refund_order / get_store_hours：逐字节不变。
+#   - 新增 get_refund_status：查询退款进度，与 get_order 在"退款信息"上有语义重叠。
+#   - 新增 cancel_order：取消尚未发货的订单，与 refund_order 在"订单状态变更"上有语义重叠。
+#
+# 关键设计：两个新工具与原有工具有**语义重叠**，模型需要学会在多个可能的工具中
+# 选择正确的那个。具体来说：
+#   - 用户问"我的退款到哪了"→ get_refund_status（不是 get_order）
+#   - 用户问"帮我退这个订单"→ refund_order（不是 cancel_order）
+#   - 用户问"取消这个订单"→ cancel_order（不是 refund_order）
+schema_version: "4.0"
+tools:
+  # === v1 原有三工具（逐字节不变） ===
+  - name: get_order
+    description: 查询订单详情与当前状态。当用户想了解订单的物流、价格、状态等信息时使用。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: refund_order
+    description: 为符合政策的订单办理退款；调用前必须先查询订单。当用户要求退款时使用此工具，而非 cancel_order。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - damaged
+            - wrong_item
+            - not_as_described
+            - changed_mind
+          description: 退款原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false
+  - name: get_store_hours
+    description: 查询指定城市门店营业时间，与订单操作无关。
+    parameters:
+      type: object
+      properties:
+        city:
+          type: string
+      required:
+        - city
+      additionalProperties: false
+  # === 新增工具（与原有工具存在语义重叠） ===
+  - name: get_refund_status
+    description: 查询退款处理进度与状态。当用户想知道退款是否到账、处理到哪一步时使用此工具，而非 get_order。get_order 查的是订单本身，get_refund_status 查的是退款流程。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+      required:
+        - order_id
+      additionalProperties: false
+  - name: cancel_order
+    description: 取消一个尚未发货的订单；调用前必须先查询订单状态。当用户要求取消订单而非退款时使用此工具，而非 refund_order。cancel_order 是取消订单，refund_order 是退回已付款项。
+    parameters:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: 订单号
+        reason:
+          type: string
+          enum:
+            - changed_mind
+            - duplicate_order
+            - billing_error
+            - quality_concern
+          description: 取消原因
+      required:
+        - order_id
+        - reason
+      additionalProperties: false

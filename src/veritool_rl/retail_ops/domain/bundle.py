@@ -21,6 +21,7 @@ from veritool_rl.retail_ops.domain.policy_rules import PolicyRule, resolve_rules
 #: v2 与 v1 的工具名与类别完全相同：变的是 `refund_order` 的参数（新增必填
 #: `idempotency_key`）与政策规则的表达形式，不是领域本身。
 #: v3 是 C2 工具面扩容：15 工具，前 3 与 v1/v2 相同（用于退化曲线左端点复用）。
+#: v4 是 Phase B 数据多样性扩展：5 工具（v1 三工具 + 2 新增语义重叠工具）+ 12 场景。
 _FROZEN_TOOL_NAMES_V1_V2 = ("get_order", "refund_order", "get_store_hours")
 _FROZEN_TOOL_NAMES_V3 = (
     "get_order",
@@ -39,10 +40,18 @@ _FROZEN_TOOL_NAMES_V3 = (
     "get_payment_method",
     "get_customer_profile",
 )
+_FROZEN_TOOL_NAMES_V4 = (
+    "get_order",
+    "refund_order",
+    "get_store_hours",
+    "get_refund_status",
+    "cancel_order",
+)
 _FROZEN_TOOL_NAMES: dict[str, tuple[str, ...]] = {
     "1.0.0": _FROZEN_TOOL_NAMES_V1_V2,
     "2.0.0": _FROZEN_TOOL_NAMES_V1_V2,
     "3.0.0": _FROZEN_TOOL_NAMES_V3,
+    "4.0.0": _FROZEN_TOOL_NAMES_V4,
 }
 _FROZEN_CATEGORIES = (
     "lookup_status",
@@ -52,26 +61,35 @@ _FROZEN_CATEGORIES = (
     "refund_denied_duplicate",
     "refund_recovery",
 )
-_SUPPORTED_BUNDLE_VERSIONS = ("1.0.0", "2.0.0", "3.0.0")
+_FROZEN_CATEGORIES_V4 = (
+    *_FROZEN_CATEGORIES,
+    "check_refund_status",
+    "cancel_eligible",
+    "cancel_denied_recent",
+    "cancel_denied_in_use",
+    "refund_then_cancel",
+    "cancel_recovery",
+)
+_SUPPORTED_BUNDLE_VERSIONS = ("1.0.0", "2.0.0", "3.0.0", "4.0.0")
 
 
 class RetailOpsBundle(StrictModel):
     """RetailOps bundle 入口文档。"""
 
-    schema_version: Literal["1.0", "2.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0", "4.0"] = "1.0"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0", "2.0.0", "3.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "2.0.0", "3.0.0", "4.0.0"] = "1.0.0"
     tools_file: str
     policies_file: str
     release_file: str
-    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     task_categories: list[str]
 
 
 class ToolsDocument(StrictModel):
     """RetailOps 工具 schema 文档。"""
 
-    schema_version: Literal["1.0", "2.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0", "4.0"] = "1.0"
     tools: list[ToolSchema]
 
 
@@ -81,13 +99,15 @@ class RetailOpsPolicies(StrictModel):
     `rules` 有两种合法形态，由 `policy_rules.resolve_rules` 分派：v1 是六个名字
     （解析到内置冻结规则集，YAML 不必改），v2 起是内联的声明式规则。
     `max_transient_retries` 从 v2 起真正驱动环境的瞬时故障上限，不再只是被解析。
+    v4 新增 `cancel_reasons`（取消原因列表）。
     """
 
-    schema_version: Literal["1.0", "2.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0", "4.0"] = "1.0"
     #: 保留 v1 的默认值，使既有构造点（含测试）不受放宽影响；v1 的取值由
     #: `_require_version_consistency` 显式冻结，v2 的 YAML 必须自己声明。
     policy_version: str = Field(default="1.0.0", min_length=1)
     refund_reasons: list[str]
+    cancel_reasons: list[str] = Field(default_factory=list)
     max_transient_retries: int = Field(default=1, ge=0)
     rules: list[Any]
 
@@ -95,7 +115,7 @@ class RetailOpsPolicies(StrictModel):
 class ReleasePolicyConfig(StrictModel):
     """RetailOps 发布门禁阈值。"""
 
-    schema_version: Literal["1.0", "2.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0", "4.0"] = "1.0"
     policy_version: str = Field(default="1.0.0", min_length=1)
     success_delta_min: float = Field(ge=0.0, le=1.0)
     critical_policy_violation_delta_max: int = Field(ge=0)
@@ -136,8 +156,11 @@ def load_bundle(bundle_dir: Path) -> LoadedRetailOpsBundle:
     expected_tools = _FROZEN_TOOL_NAMES.get(bundle.bundle_version)
     if expected_tools is None:
         raise ValueError(f"未知 bundle 版本的工具集合: {bundle.bundle_version}")
+    expected_categories = (
+        _FROZEN_CATEGORIES_V4 if bundle.bundle_version == "4.0.0" else _FROZEN_CATEGORIES
+    )
     if (
-        tuple(bundle.task_categories) != _FROZEN_CATEGORIES
+        tuple(bundle.task_categories) != expected_categories
         or tuple(tool.name for tool in tools) != expected_tools
     ):
         raise ValueError("RetailOps 工具集合或顺序不符合冻结契约")
@@ -182,6 +205,8 @@ def _require_version_consistency(
     v1 的每一份已产出证据都依赖这些值，它们不能因为 v2 的存在而变得可改。
     """
     expected_schema = "1.0" if bundle.bundle_version in ("1.0.0", "3.0.0") else "2.0"
+    if bundle.bundle_version == "4.0.0":
+        expected_schema = "4.0"
     versions = {
         "tools": tool_document.schema_version,
         "policies": policies.schema_version,

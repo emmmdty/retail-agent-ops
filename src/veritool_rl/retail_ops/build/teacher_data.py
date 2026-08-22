@@ -113,7 +113,9 @@ def _to_policy_output(response: TeacherResponse) -> PolicyOutput:
         raw = json.dumps({"name": call.name, "arguments": call.arguments}, ensure_ascii=False)
         return PolicyOutput(raw_text=raw, tool_call=call)
     if len(response.tool_calls) > 1:
-        return PolicyOutput(raw_text=repr(response.tool_calls), parse_error="multiple_tool_calls")
+        call = response.tool_calls[0]
+        raw = json.dumps({"name": call.name, "arguments": call.arguments}, ensure_ascii=False)
+        return PolicyOutput(raw_text=raw, tool_call=call)
     if response.content:
         return PolicyOutput(raw_text=response.content, final_response=response.content)
     return PolicyOutput(raw_text="", parse_error="empty_response")

@@ -9,11 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from veritool_rl.core.generators import trajectory_to_sft_example
 from veritool_rl.core.trajectory.schema import (
-    Trajectory,
-    TaskSpec,
-    TaskScenario,
     ExpectedDecision,
+    TaskScenario,
     TerminationReason,
+    Trajectory,
 )
 
 

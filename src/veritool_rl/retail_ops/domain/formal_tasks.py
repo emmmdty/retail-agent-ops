@@ -180,6 +180,61 @@ class FormalTaskSet(StrictModel):
             ):
                 raise ValueError(f"{field} 跨 split 重叠")
 
+    def assert_exact_quotas_v4(self) -> None:
+        """Verify v4 totals: 12 scenarios × (40/10/20) = 480/120/240."""
+        expected_per_category = {
+            FormalSplit.TRAIN: 40,
+            FormalSplit.DEV: 10,
+            FormalSplit.HOLDOUT: 20,
+        }
+        for split, expected_count in expected_per_category.items():
+            records = self.records(split)
+            if len(records) != expected_count * len(_V4_SCENARIOS):
+                raise ValueError(f"v4 {split} 任务总数不符合冻结配额")
+            if any(record.task.split != split.value for record in records):
+                raise ValueError(f"v4 {split} 容器与任务 split 不一致")
+            scenario_counts = Counter(record.task.scenario for record in records)
+            if scenario_counts != dict.fromkeys(_V4_SCENARIOS, expected_count):
+                raise ValueError(f"v4 {split} 类别配额不符合冻结契约")
+
+            families: dict[str, list[FormalTaskRecord]] = {}
+            for record in records:
+                expected = FormalTaskRecord.from_task(record.task, record.variant_index)
+                if any(
+                    getattr(record, field) != getattr(expected, field)
+                    for field in _FINGERPRINT_FIELDS
+                ):
+                    raise ValueError(f"v4 {split} 记录指纹与 task/variant 不一致")
+                if record.task.metadata.get("variant_index") != record.variant_index:
+                    raise ValueError(f"v4 {split} task 与 record 的 variant_index 不一致")
+                families.setdefault(record.family_fingerprint, []).append(record)
+
+            if not families:
+                raise ValueError(f"v4 {split} 不包含 semantic family")
+            for family_records in families.values():
+                if len(family_records) != 2:
+                    raise ValueError(f"v4 {split} 的每个 semantic family 必须恰有两个变体")
+                if {record.variant_index for record in family_records} != {0, 1}:
+                    raise ValueError(f"v4 {split} family 的 variant_index 必须精确为 0 和 1")
+
+        for field in (
+            "task_fingerprint",
+            "family_fingerprint",
+            "content_fingerprint",
+            "source_fingerprint",
+            "derivation_fingerprint",
+        ):
+            values = {
+                split: {getattr(record, field) for record in self.records(split)}
+                for split in FormalSplit
+            }
+            if (
+                not values[FormalSplit.TRAIN].isdisjoint(values[FormalSplit.DEV])
+                or not values[FormalSplit.TRAIN].isdisjoint(values[FormalSplit.HOLDOUT])
+                or not values[FormalSplit.DEV].isdisjoint(values[FormalSplit.HOLDOUT])
+            ):
+                raise ValueError(f"v4 {field} 跨 split 重叠")
+
 
 def build_formal_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
     """Build the approved 240/60/120 family-first R2 task contract."""
@@ -353,8 +408,13 @@ def _materialize_task(
     other_customer_id = f"C-{identity[12:24].upper()}"
     order_id = f"O-{identity[24:36].upper()}"
     policy_state = family["primary_policy_state"]
+    scenario = TaskScenario(family["scenario"])
     primary_owner = (
         other_customer_id if policy_state.get("owner") == "other_customer" else customer_id
+    )
+    margin = (
+        family.get("primary_policy_state", {}).get("refund_deadline", _CURRENT_DAY + 14)
+        - _CURRENT_DAY
     )
     primary_order = {
         "customer_id": primary_owner,
@@ -363,6 +423,16 @@ def _materialize_task(
         "refund_status": policy_state["refund_status"],
     }
     orders = {order_id: primary_order}
+    # REFUND_THEN_CANCEL 需要第二个订单（other_order）
+    other_short = identity[36:48].upper() if len(identity) > 48 else identity[:12].upper()
+    other_order_id = f"O-{other_short}OTHER"
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        orders[other_order_id] = {
+            "customer_id": primary_owner,
+            "status": "pending",
+            "refund_deadline": _CURRENT_DAY + margin,
+            "refund_status": "none",
+        }
     for distractor_index in range(family["distractor_count"]):
         distractor_digest = _sha256({"identity": identity, "distractor_index": distractor_index})
         distractor_order_id = f"O-{distractor_digest[:12].upper()}"
@@ -379,13 +449,16 @@ def _materialize_task(
         "orders": orders,
     }
     target_state = copy.deepcopy(initial_state)
-    scenario = TaskScenario(family["scenario"])
     reason = str(family["reason"])
     expected_calls = [
         ToolCall(
             name=str(call["name"]),
             arguments={
-                key: order_id if value == "primary_order" else value
+                key: order_id
+                if value == "primary_order"
+                else other_order_id
+                if value == "other_order"
+                else value
                 for key, value in dict(call["arguments"]).items()
             },
         )
@@ -393,20 +466,34 @@ def _materialize_task(
     ]
     decision = ExpectedDecision(family["expected_decision"])
     if decision is ExpectedDecision.ALLOW:
-        target_state["orders"][order_id]["refund_status"] = "refunded"
+        cancel_scenarios = {
+            TaskScenario.CANCEL_ELIGIBLE,
+            TaskScenario.CANCEL_RECOVERY,
+        }
+        if scenario in cancel_scenarios:
+            target_state["orders"][order_id]["status"] = "cancelled"
+            target_state["orders"][order_id]["cancel_status"] = "cancelled"
+        elif scenario is TaskScenario.REFUND_THEN_CANCEL:
+            target_state["orders"][order_id]["refund_status"] = "refunded"
+            target_state["orders"][other_order_id]["status"] = "cancelled"
+            target_state["orders"][other_order_id]["cancel_status"] = "cancelled"
+        else:
+            target_state["orders"][order_id]["refund_status"] = "refunded"
 
     return TaskSpec(
         task_id=_sha256({"task_identity": identity}),
         split=split.value,
         scenario=scenario,
-        user_request=_user_request(scenario, order_id, reason, variant_index),
+        user_request=_user_request(
+            scenario, order_id, reason, variant_index, other_order_id
+        ),
         initial_state=initial_state,
         target_state=target_state,
         expected_calls=expected_calls,
         expected_decision=decision,
         required_reads=[order_id],
         transient_failures=dict(family["transient_failure_rule"]),
-        max_steps=5 if scenario is TaskScenario.REFUND_RECOVERY else 4,
+        max_steps=5 if scenario in {TaskScenario.REFUND_RECOVERY, TaskScenario.REFUND_THEN_CANCEL, TaskScenario.CANCEL_RECOVERY} else 4,
         metadata={
             "dataset_version": dataset_version,
             "generator_id": _GENERATOR_ID,
@@ -505,7 +592,10 @@ def _normalized_argument(key: str, value: Any, primary_order_id: str) -> Any:
     return "primary_order" if value == primary_order_id else "other_order"
 
 
-def _user_request(scenario: TaskScenario, order_id: str, reason: str, variant_index: int) -> str:
+def _user_request(
+    scenario: TaskScenario, order_id: str, reason: str,
+    variant_index: int, other_order_id: str = "",
+) -> str:
     requests = {
         TaskScenario.LOOKUP_STATUS: (
             f"请查询订单 {order_id} 的当前状态。",
@@ -532,8 +622,293 @@ def _user_request(scenario: TaskScenario, order_id: str, reason: str, variant_in
             f"订单 {order_id} 需因 {reason} 退款，如服务暂时失败请再试一次。",
         ),
     }
-    return requests[scenario][variant_index]
+    if scenario in requests:
+        return requests[scenario][variant_index]
+    return _v4_user_request_fallback(scenario, order_id, reason, other_order_id)
+
+
+def _v4_user_request_fallback(
+    scenario: TaskScenario, order_id: str, reason: str,
+    other_order_id: str = "",
+) -> str:
+    """v4 新增场景的用户请求（固定书面正式口吻）。"""
+    if scenario is TaskScenario.CHECK_REFUND_STATUS:
+        return f"请查询订单 {order_id} 的退款处理进度。"
+    if scenario is TaskScenario.CANCEL_ELIGIBLE:
+        return f"请取消订单 {order_id}，原因是 {reason}。"
+    if scenario is TaskScenario.CANCEL_DENIED_RECENT:
+        return f"请评估订单 {order_id} 是否满足取消条件，告诉我能否取消以及原因。"
+    if scenario is TaskScenario.CANCEL_DENIED_IN_USE:
+        return f"请查询订单 {order_id} 并判断 {reason} 取消是否可办。"
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        return f"请先为订单 {order_id} 办理退款，再取消订单 {other_order_id}。"
+    if scenario is TaskScenario.CANCEL_RECOVERY:
+        return f"请取消订单 {order_id}，原因是 {reason}；临时失败时重试一次。"
+    msg = f"不支持的场景: {scenario}"
+    raise ValueError(msg)
 
 
 def _sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# v4 Phase B: 12-scenario task generation
+# ---------------------------------------------------------------------------
+
+_V4_SCENARIOS = (
+    TaskScenario.LOOKUP_STATUS,
+    TaskScenario.REFUND_ELIGIBLE,
+    TaskScenario.REFUND_DENIED_WINDOW,
+    TaskScenario.REFUND_DENIED_OWNERSHIP,
+    TaskScenario.REFUND_DENIED_DUPLICATE,
+    TaskScenario.REFUND_RECOVERY,
+    TaskScenario.CHECK_REFUND_STATUS,
+    TaskScenario.CANCEL_ELIGIBLE,
+    TaskScenario.CANCEL_DENIED_RECENT,
+    TaskScenario.CANCEL_DENIED_IN_USE,
+    TaskScenario.REFUND_THEN_CANCEL,
+    TaskScenario.CANCEL_RECOVERY,
+)
+
+_V4_CANCEL_REASONS = ("changed_mind", "duplicate_order", "billing_error", "quality_concern")
+
+
+def _v4_scenario_contract(
+    scenario: TaskScenario,
+    state_variant: int,
+    margin: int,
+    reason: str,
+) -> tuple[ExpectedDecision, list[dict[str, Any]], dict[str, int], dict[str, Any]]:
+    """v4 新增6 场景的合约。原有 6 场景复用 _scenario_contract。"""
+    get_order: dict[str, Any] = {"name": "get_order", "arguments": {"order_id": "primary_order"}}
+    get_refund_status: dict[str, Any] = {
+        "name": "get_refund_status",
+        "arguments": {"order_id": "primary_order"},
+    }
+    cancel: dict[str, Any] = {
+        "name": "cancel_order",
+        "arguments": {"order_id": "primary_order", "reason": reason},
+    }
+    cancel_other: dict[str, Any] = {
+        "name": "cancel_order",
+        "arguments": {"order_id": "other_order", "reason": _V4_CANCEL_REASONS[0]},
+    }
+    refund: dict[str, Any] = {
+        "name": "refund_order",
+        "arguments": {"order_id": "primary_order", "reason": reason},
+    }
+
+    if scenario is TaskScenario.CHECK_REFUND_STATUS:
+        refund_statuses = (
+            "processing",
+            "completed",
+            "denied",
+            "pending",
+            "none",
+            "refunded",
+            "processing",
+        )
+        return (
+            ExpectedDecision.INFORM,
+            [get_refund_status],
+            {},
+            {
+                "refund_status": refund_statuses[state_variant],
+                "refund_deadline": _CURRENT_DAY + margin,
+            },
+        )
+    if scenario is TaskScenario.CANCEL_ELIGIBLE:
+        return (
+            ExpectedDecision.ALLOW,
+            [get_order, cancel],
+            {},
+            {
+                "owner": "customer",
+                "status": "pending",
+                "refund_deadline": _CURRENT_DAY + margin,
+                "refund_status": "none",
+            },
+        )
+    if scenario is TaskScenario.CANCEL_DENIED_RECENT:
+        return (
+            ExpectedDecision.DENY,
+            [get_order],
+            {},
+            {
+                "owner": "customer",
+                "status": "pending",
+                "refund_deadline": _CURRENT_DAY - margin,
+                "refund_status": "none",
+            },
+        )
+    if scenario is TaskScenario.CANCEL_DENIED_IN_USE:
+        return (
+            ExpectedDecision.DENY,
+            [get_order],
+            {},
+            {
+                "owner": "customer",
+                "status": "shipped",
+                "refund_deadline": _CURRENT_DAY + margin,
+                "refund_status": "none",
+            },
+        )
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        get_order_other: dict[str, Any] = {
+            "name": "get_order",
+            "arguments": {"order_id": "other_order"},
+        }
+        return (
+            ExpectedDecision.ALLOW,
+            [get_order, refund, get_order_other, cancel_other],
+            {},
+            {
+                "owner": "customer",
+                "refund_deadline": _CURRENT_DAY + margin,
+                "refund_status": "none",
+            },
+        )
+    if scenario is TaskScenario.CANCEL_RECOVERY:
+        return (
+            ExpectedDecision.ALLOW,
+            [get_order, copy.deepcopy(cancel), copy.deepcopy(cancel)],
+            {"cancel_order": 1},
+            {
+                "owner": "customer",
+                "status": "pending",
+                "refund_deadline": _CURRENT_DAY + margin,
+                "refund_status": "none",
+            },
+        )
+    msg = f"不支持的 v4 场景: {scenario}"
+    raise ValueError(msg)
+
+
+def _v4_scenario_contract_dispatch(
+    scenario: TaskScenario,
+    state_variant: int,
+    margin: int,
+    reason: str,
+) -> tuple[ExpectedDecision, list[dict[str, Any]], dict[str, int], dict[str, Any]]:
+    """根据场景分派到 v1 或 v4 合约。"""
+    v4_new = {
+        TaskScenario.CHECK_REFUND_STATUS,
+        TaskScenario.CANCEL_ELIGIBLE,
+        TaskScenario.CANCEL_DENIED_RECENT,
+        TaskScenario.CANCEL_DENIED_IN_USE,
+        TaskScenario.REFUND_THEN_CANCEL,
+        TaskScenario.CANCEL_RECOVERY,
+    }
+    if scenario in v4_new:
+        return _v4_scenario_contract(scenario, state_variant, margin, reason)
+    return _scenario_contract(scenario, state_variant, margin, reason)
+
+
+def _v4_user_request(scenario: TaskScenario, order_id: str, reason: str, variant_index: int) -> str:
+    """返回 v4 场景的用户请求。新场景使用固定口吻（书面正式）。"""
+    if scenario is TaskScenario.CHECK_REFUND_STATUS:
+        return f"请查询订单 {order_id} 的退款处理进度。"
+    if scenario is TaskScenario.CANCEL_ELIGIBLE:
+        return f"请取消订单 {order_id}，原因是 {reason}。"
+    if scenario is TaskScenario.CANCEL_DENIED_RECENT:
+        return f"请评估订单 {order_id} 是否满足取消条件，告诉我能否取消以及原因。"
+    if scenario is TaskScenario.CANCEL_DENIED_IN_USE:
+        return f"请查询订单 {order_id} 并判断 {reason} 取消是否可办。"
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        other = f"O-OTHER{order_id[1:]}" if len(order_id) > 1 else "O-OTHER"
+        return f"请先为订单 {order_id} 办理退款，再取消关联订单 {other}。"
+    if scenario is TaskScenario.CANCEL_RECOVERY:
+        return f"请取消订单 {order_id}，原因是 {reason}；临时失败时重试一次。"
+    return _user_request(scenario, order_id, reason, variant_index)
+
+
+def _v4_family_spec(
+    dataset_version: str,
+    scenario: TaskScenario,
+    scenario_index: int,
+    state_variant: int,
+    context_variant: int,
+) -> dict[str, Any]:
+    margin = _MARGINS[state_variant]
+    cancel_scenarios = {
+        TaskScenario.CANCEL_ELIGIBLE,
+        TaskScenario.CANCEL_DENIED_RECENT,
+        TaskScenario.CANCEL_DENIED_IN_USE,
+        TaskScenario.CANCEL_RECOVERY,
+    }
+    if scenario in cancel_scenarios:
+        idx = (scenario_index + state_variant * 5 + context_variant) % len(_V4_CANCEL_REASONS)
+        reason = _V4_CANCEL_REASONS[idx]
+    elif scenario is TaskScenario.REFUND_THEN_CANCEL:
+        reason = _REASONS[(scenario_index + state_variant * 5 + context_variant) % 4]
+    else:
+        reason = _REASONS[(scenario_index + state_variant * 5 + context_variant) % 4]
+    decision, call_sequence, transient_rule, policy_state = _v4_scenario_contract_dispatch(
+        scenario, state_variant, margin, reason
+    )
+    return {
+        "dataset_version": dataset_version,
+        "scenario": scenario.value,
+        "state_variant": state_variant,
+        "context_variant": context_variant,
+        "primary_policy_state": policy_state,
+        "reason": reason,
+        "distractor_count": context_variant,
+        "expected_decision": decision.value,
+        "required_reads": ["primary_order"],
+        "call_sequence": call_sequence,
+        "transient_failure_rule": transient_rule,
+    }
+
+
+def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
+    """Build v4 Phase B task set: 12 scenarios × 35 families × 2 variants = 840 tasks.
+
+    Quotas per scenario: train=20 families (40 tasks), dev=5 families (10 tasks),
+    holdout=10 families (20 tasks).
+    """
+    if not dataset_version:
+        raise ValueError("dataset_version 不能为空")
+
+    records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
+    for scenario_index, scenario in enumerate(_V4_SCENARIOS):
+        families = sorted(
+            (
+                _v4_family_spec(
+                    dataset_version, scenario, scenario_index, state_variant, context_variant
+                )
+                for state_variant in range(7)
+                for context_variant in range(5)
+            ),
+            key=lambda family: _sha256({"family": family}),
+        )
+        for family_index, family in enumerate(families):
+            split = (
+                FormalSplit.TRAIN
+                if family_index < 20
+                else FormalSplit.DEV
+                if family_index < 25
+                else FormalSplit.HOLDOUT
+            )
+            family_fingerprint = _sha256({"family": family})
+            for variant_index in range(2):
+                task = _materialize_task(
+                    dataset_version=dataset_version,
+                    seed=seed,
+                    split=split,
+                    family=family,
+                    family_fingerprint=family_fingerprint,
+                    variant_index=variant_index,
+                )
+                records[split].append(FormalTaskRecord.from_task(task, variant_index))
+
+    task_set = FormalTaskSet(
+        dataset_version=dataset_version,
+        seed=seed,
+        train=tuple(records[FormalSplit.TRAIN]),
+        dev=tuple(records[FormalSplit.DEV]),
+        holdout=tuple(records[FormalSplit.HOLDOUT]),
+    )
+    task_set.assert_exact_quotas_v4()
+    return task_set

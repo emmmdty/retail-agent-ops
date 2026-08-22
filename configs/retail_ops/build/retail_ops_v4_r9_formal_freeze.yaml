@@ -1,0 +1,4 @@
+# R9 Phase B: formal_freeze — 生成 v4 正式任务集（12 场景 × 840 任务）
+pipeline: formal_freeze
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v4_20260822

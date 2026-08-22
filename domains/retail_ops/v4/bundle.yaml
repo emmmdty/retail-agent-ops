@@ -1,0 +1,22 @@
+schema_version: "4.0"
+bundle_id: retail_ops
+bundle_version: "4.0.0"
+tools_file: tools.yaml
+policies_file: policies.yaml
+release_file: release.yaml
+evaluator_id: retail_ops_v4
+task_categories:
+  # 原有 6 类（与 v1 相同）
+  - lookup_status
+  - refund_eligible
+  - refund_denied_window
+  - refund_denied_ownership
+  - refund_denied_duplicate
+  - refund_recovery
+  # 新增 6 类
+  - check_refund_status
+  - cancel_eligible
+  - cancel_denied_recent
+  - cancel_denied_in_use
+  - refund_then_cancel
+  - cancel_recovery

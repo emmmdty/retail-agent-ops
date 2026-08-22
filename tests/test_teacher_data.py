@@ -1381,3 +1381,85 @@ def test_append_terminal_response_skips_a_trailing_failed_refund() -> None:
     assert result["messages"][-1]["content"] == (
         "已为订单 O-1 按 damaged 办理退款，当前退款状态为 refunded。"
     )
+
+
+# ---------------------------------------------------------------------------
+# _to_policy_output: multiple tool calls should return the first one
+# ---------------------------------------------------------------------------
+
+
+def _make_response(tool_calls=(), content=None):
+    return TeacherResponse(
+        model="test-model",
+        tool_calls=tool_calls,
+        content=content,
+    )
+
+
+def test_to_policy_output_single_tool_call():
+    from veritool_rl.retail_ops.build.teacher_data import _to_policy_output
+
+    call = ToolCall(name="get_order", arguments={"order_id": "O-1"})
+    resp = _make_response(tool_calls=(call,))
+    out = _to_policy_output(resp)
+    assert out.tool_call is not None
+    assert out.tool_call.name == "get_order"
+    assert out.parse_error is None
+
+
+def test_to_policy_output_multiple_tool_calls_returns_first():
+    from veritool_rl.retail_ops.build.teacher_data import _to_policy_output
+
+    first = ToolCall(name="get_order", arguments={"order_id": "O-1"})
+    second = ToolCall(name="refund", arguments={"order_id": "O-2"})
+    resp = _make_response(tool_calls=(first, second))
+    out = _to_policy_output(resp)
+    assert out.tool_call is not None
+    assert out.tool_call.name == "get_order"
+    assert out.tool_call.arguments == {"order_id": "O-1"}
+    assert out.parse_error is None
+
+
+def test_to_policy_output_three_tool_calls_returns_first():
+    from veritool_rl.retail_ops.build.teacher_data import _to_policy_output
+
+    calls = tuple(ToolCall(name=f"tool_{i}", arguments={"i": i}) for i in range(3))
+    resp = _make_response(tool_calls=calls)
+    out = _to_policy_output(resp)
+    assert out.tool_call is not None
+    assert out.tool_call.name == "tool_0"
+
+
+def test_to_policy_output_content_only():
+    from veritool_rl.retail_ops.build.teacher_data import _to_policy_output
+
+    resp = _make_response(content="Done.")
+    out = _to_policy_output(resp)
+    assert out.final_response == "Done."
+    assert out.tool_call is None
+
+
+def test_to_policy_output_empty_response():
+    from veritool_rl.retail_ops.build.teacher_data import _to_policy_output
+
+    resp = _make_response()
+    out = _to_policy_output(resp)
+    assert out.parse_error == "empty_response"
+
+
+# ---------------------------------------------------------------------------
+# parser.py: multiple tool_call blocks should also return the first one
+# ---------------------------------------------------------------------------
+
+
+def test_parser_multiple_tool_calls_returns_first():
+    from veritool_rl.core.agent.parser import parse_qwen_response
+
+    raw = (
+        '<tool_call>\n{"name": "get_order", "arguments": {"order_id": "O-1"}}\n</tool_call>'
+        '<tool_call>\n{"name": "refund", "arguments": {"order_id": "O-2"}}\n</tool_call>'
+    )
+    out = parse_qwen_response(raw)
+    assert out.tool_call is not None
+    assert out.tool_call.name == "get_order"
+    assert out.parse_error is None

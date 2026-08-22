@@ -34,6 +34,7 @@ class RetailOpsEnv(ToolEnv):
         }
         self._terminal_response = False
         self._refund_applied = False
+        self._cancel_applied = False
         self._refund_results: dict[str, dict[str, Any]] = {}
         self._refund_parameters = self._required_parameters(bundle, "refund_order")
 
@@ -52,10 +53,16 @@ class RetailOpsEnv(ToolEnv):
                 error_code="unknown_tool",
                 error=f"未知工具: {name}",
             )
-        if canonical_name == "get_order":
-            return self._get_order(arguments)
-        if canonical_name == "refund_order":
-            return self._refund_order(arguments)
+        dispatch = {
+            "get_order": self._get_order,
+            "refund_order": self._refund_order,
+            "get_store_hours": self._get_store_hours,
+            "get_refund_status": self._get_refund_status,
+            "cancel_order": self._cancel_order,
+        }
+        handler = dispatch.get(canonical_name)
+        if handler is not None:
+            return handler(arguments)
         return self._get_store_hours(arguments)
 
     def get_state(self) -> dict[str, Any]:
@@ -74,7 +81,8 @@ class RetailOpsEnv(ToolEnv):
             ExpectedDecision.DENY,
         }:
             return float(reads_complete and self._terminal_response and state_matches and clean)
-        return float(reads_complete and state_matches and clean and self._refund_applied)
+        action_applied = self._refund_applied or self._cancel_applied
+        return float(reads_complete and state_matches and clean and action_applied)
 
     def check_policy(self) -> list[str]:
         return list(self._violations)
@@ -90,6 +98,8 @@ class RetailOpsEnv(ToolEnv):
             "get_order": "读取指定订单的当前详情。",
             "refund_order": "核验后执行符合退款政策的订单退款。",
             "get_store_hours": "读取指定城市的门店营业时间。",
+            "get_refund_status": "查询指定订单的退款处理进度。",
+            "cancel_order": "核验后取消尚未发货的订单。",
         }
         for schema in self._bundle.tools:
             alias = f"{schema.name}_{rng.randrange(1000, 10000)}"
@@ -231,6 +241,109 @@ class RetailOpsEnv(ToolEnv):
         return Observation(
             ok=True,
             content={"city": arguments["city"], "hours": "09:00-18:00"},
+        )
+
+    def _get_refund_status(self, arguments: dict[str, Any]) -> Observation:
+        """查询退款处理进度。与 get_order 的语义重叠：两者都能看到退款信息，
+        但 get_refund_status 专门返回退款流程状态，get_order 返回订单整体详情。"""
+        if not self._valid_arguments(arguments, {"order_id"}):
+            return self._invalid_arguments("get_refund_status")
+        order_id = arguments["order_id"]
+        self._reads.add(order_id)
+        self._record_expected_call("get_refund_status", arguments)
+        order = self._orders().get(order_id)
+        if order is None or order.get("customer_id") != self._state.get("customer_id"):
+            return Observation(
+                ok=False,
+                error_code="not_found",
+                error="订单不存在或不可见",
+            )
+        refund_status = order.get("refund_status", "none")
+        return Observation(
+            ok=True,
+            content={
+                "order_id": order_id,
+                "refund_status": refund_status,
+                "refund_deadline": order.get("refund_deadline"),
+            },
+        )
+
+    def _cancel_order(self, arguments: dict[str, Any]) -> Observation:
+        """取消尚未发货的订单。与 refund_order 的语义重叠：两者都改变订单状态，
+        但 cancel_order 是取消订单，refund_order 是退回已付款项。"""
+        if not self._valid_arguments(arguments, {"order_id", "reason"}):
+            return self._invalid_arguments("cancel_order")
+        order_id = arguments["order_id"]
+        reason = arguments["reason"]
+        order = self._orders().get(order_id)
+
+        # 取消前必须先查询（与 refund_order 相同的守卫逻辑）
+        if order_id not in self._reads:
+            return self._deny(
+                "cancel_requires_lookup",
+                "取消订单前必须先查询订单状态",
+            )
+        if order is None:
+            return Observation(
+                ok=False,
+                error_code="not_found",
+                error="订单不存在或不可见",
+            )
+        if order.get("customer_id") != self._state.get("customer_id"):
+            return self._deny(
+                "customer_must_own_order",
+                "只能操作自己的订单",
+            )
+
+        # 已发货/已取消的订单不可取消
+        status = order.get("status", "")
+        if status in ("shipped", "delivered", "cancelled"):
+            return self._deny(
+                "cancel_window_must_be_open",
+                f"订单已{status}，无法取消",
+            )
+
+        # 取消窗口检查：超过退款截止日期的订单不可取消
+        current_day = int(self._state.get("current_day", 0))
+        refund_deadline = int(order.get("refund_deadline", 0))
+        if refund_deadline > 0 and current_day > refund_deadline:
+            return self._deny(
+                "cancel_window_must_be_open",
+                "订单已超过取消期限",
+            )
+
+        # 重复取消检查
+        if order.get("cancel_status") == "cancelled":
+            return self._deny(
+                "duplicate_cancel_forbidden",
+                "该订单已取消",
+            )
+
+        # 已退款的订单不可取消（退款优先级高于取消）
+        if order.get("refund_status") == "refunded":
+            return self._deny(
+                "cancel_window_must_be_open",
+                "订单已退款，无法取消",
+            )
+
+        if reason not in ("changed_mind", "duplicate_order", "billing_error", "quality_concern"):
+            return self._invalid_arguments("cancel_order")
+
+        self._record_expected_call("cancel_order", arguments)
+        remaining = self._remaining_failures.get("cancel_order", 0)
+        if remaining:
+            self._remaining_failures["cancel_order"] = remaining - 1
+            return Observation(
+                ok=False,
+                error_code="transient_error",
+                error="取消服务暂时不可用，请重试",
+            )
+        order["status"] = "cancelled"
+        order["cancel_status"] = "cancelled"
+        self._cancel_applied = True
+        return Observation(
+            ok=True,
+            content={"order_id": order_id, "cancel_status": "cancelled"},
         )
 
     def _orders(self) -> dict[str, dict[str, Any]]:

@@ -25,9 +25,11 @@ from veritool_rl.retail_ops.domain.formal_tasks import (
 )
 
 _DATASET_VERSION = "retail_ops_v1_r2_20260722"
+_V4_DATASET_VERSION = "retail_ops_v4_20260822"
 _GENERATOR_ID = "family_sha256_v1"
 _PARSER_ID = "hermes-single-call-v1"
 _EVALUATOR_ID = "retail_ops_v1"
+_V4_EVALUATOR_ID = "retail_ops_v4"
 _SEED = 0
 _SCENARIO_ORDER = (
     TaskScenario.LOOKUP_STATUS,
@@ -36,6 +38,20 @@ _SCENARIO_ORDER = (
     TaskScenario.REFUND_DENIED_OWNERSHIP,
     TaskScenario.REFUND_DENIED_DUPLICATE,
     TaskScenario.REFUND_RECOVERY,
+)
+_V4_SCENARIO_ORDER = (
+    TaskScenario.LOOKUP_STATUS,
+    TaskScenario.REFUND_ELIGIBLE,
+    TaskScenario.REFUND_DENIED_WINDOW,
+    TaskScenario.REFUND_DENIED_OWNERSHIP,
+    TaskScenario.REFUND_DENIED_DUPLICATE,
+    TaskScenario.REFUND_RECOVERY,
+    TaskScenario.CHECK_REFUND_STATUS,
+    TaskScenario.CANCEL_ELIGIBLE,
+    TaskScenario.CANCEL_DENIED_RECENT,
+    TaskScenario.CANCEL_DENIED_IN_USE,
+    TaskScenario.REFUND_THEN_CANCEL,
+    TaskScenario.CANCEL_RECOVERY,
 )
 _EXPECTED_PER_CATEGORY = {
     FormalSplit.TRAIN: 40,
@@ -67,13 +83,15 @@ class _FormalSplitEvidence(StrictModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal["retail_ops_v1_r2_20260722"] = "retail_ops_v1_r2_20260722"
+    dataset_version: Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"] = (
+        "retail_ops_v1_r2_20260722"
+    )
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
     parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
-    evaluator_id: Literal["retail_ops_v1"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     split: Literal["train", "dev", "holdout"]
     task_count: int = Field(ge=1)
@@ -89,11 +107,13 @@ class _FormalSplitEvidence(StrictModel):
     def validate_public_evidence(self) -> Self:
         """Enforce frozen quotas and ordered fingerprint cardinalities."""
         split = FormalSplit(self.split)
+        is_v4 = self.bundle_version == "4.0.0"
+        scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
         expected_per_category = _EXPECTED_PER_CATEGORY[split]
-        expected_counts = {scenario.value: expected_per_category for scenario in _SCENARIO_ORDER}
+        expected_counts = {scenario.value: expected_per_category for scenario in scenario_order}
         if self.category_counts != expected_counts:
             raise ValueError(f"{split.value} category_counts 不符合冻结配额")
-        expected_total = expected_per_category * len(_SCENARIO_ORDER)
+        expected_total = expected_per_category * len(scenario_order)
         if self.task_count != expected_total:
             raise ValueError(f"{split.value} task_count 不符合冻结配额")
         for field in _FINGERPRINT_FIELDS:
@@ -136,13 +156,15 @@ class FormalDatasetReceipt(StrictModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal["retail_ops_v1_r2_20260722"] = "retail_ops_v1_r2_20260722"
+    dataset_version: Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"] = (
+        "retail_ops_v1_r2_20260722"
+    )
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
     parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
-    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     split_task_counts: dict[str, int]
     split_category_counts: dict[str, dict[str, int]]
@@ -151,12 +173,14 @@ class FormalDatasetReceipt(StrictModel):
     @model_validator(mode="after")
     def validate_dataset_evidence(self) -> Self:
         """Require the exact three split quotas and public file bindings."""
+        is_v4 = self.bundle_version == "4.0.0"
+        scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
         expected_task_counts = {
-            split.value: count * len(_SCENARIO_ORDER)
+            split.value: count * len(scenario_order)
             for split, count in _EXPECTED_PER_CATEGORY.items()
         }
         expected_category_counts = {
-            split.value: {scenario.value: count for scenario in _SCENARIO_ORDER}
+            split.value: {scenario.value: count for scenario in scenario_order}
             for split, count in _EXPECTED_PER_CATEGORY.items()
         }
         if self.split_task_counts != expected_task_counts:
@@ -219,13 +243,15 @@ class _FormalPrivateTaskRow(StrictModel):
     """Private line binding complete task truth to formal provenance."""
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal["retail_ops_v1_r2_20260722"] = "retail_ops_v1_r2_20260722"
+    dataset_version: Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"] = (
+        "retail_ops_v1_r2_20260722"
+    )
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
-    bundle_version: Literal["1.0.0"] = "1.0.0"
+    bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
     parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
-    evaluator_id: Literal["retail_ops_v1"] = "retail_ops_v1"
+    evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     task: TaskSpec
     task_fingerprint: Fingerprint
@@ -241,8 +267,14 @@ class _FormalPrivateTaskRow(StrictModel):
         record: FormalTaskRecord,
         *,
         bundle_sha256: str,
+        dataset_version: str = "retail_ops_v1_r2_20260722",
+        bundle_version: str = "1.0.0",
+        evaluator_id: str = "retail_ops_v1",
     ) -> _FormalPrivateTaskRow:
         return cls(
+            dataset_version=dataset_version,
+            bundle_version=bundle_version,
+            evaluator_id=evaluator_id,
             bundle_sha256=bundle_sha256,
             task=record.task.model_copy(deep=True),
             task_fingerprint=record.task_fingerprint,
@@ -274,8 +306,12 @@ def write_formal_task_set(
     parser_id: str = _PARSER_ID,
 ) -> FormalDatasetReceipt:
     """Write immutable private truth and answer-free public R2 metadata."""
-    task_set.assert_exact_quotas()
-    if task_set.dataset_version != _DATASET_VERSION:
+    is_v4 = bundle.bundle.bundle_version == "4.0.0"
+    scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
+    expected_dataset = _V4_DATASET_VERSION if is_v4 else _DATASET_VERSION
+    expected_evaluator = _V4_EVALUATOR_ID if is_v4 else _EVALUATOR_ID
+    task_set.assert_exact_quotas_v4() if is_v4 else task_set.assert_exact_quotas()
+    if task_set.dataset_version != expected_dataset:
         raise ValueError("正式数据 dataset_version 不符合冻结契约")
     if task_set.generator_id != _GENERATOR_ID:
         raise ValueError("正式数据 generator_id 不符合冻结契约")
@@ -285,13 +321,11 @@ def write_formal_task_set(
         raise ValueError("正式数据 parser_id 不符合冻结契约")
     if (
         bundle.bundle.bundle_id != "retail_ops"
-        or bundle.bundle.bundle_version != "1.0.0"
-        or bundle.bundle.evaluator_id != _EVALUATOR_ID
+        or bundle.bundle.bundle_version not in ("1.0.0", "4.0.0")
+        or bundle.bundle.evaluator_id != expected_evaluator
     ):
         raise ValueError("正式数据 bundle/evaluator provenance 不符合冻结契约")
-    if tuple(bundle.bundle.task_categories) != tuple(
-        scenario.value for scenario in _SCENARIO_ORDER
-    ):
+    if tuple(bundle.bundle.task_categories) != tuple(scenario.value for scenario in scenario_order):
         raise ValueError("bundle 类别顺序不符合正式数据契约")
     _validate_output_pair(private_output_dir, public_output_dir)
 
@@ -364,6 +398,9 @@ def _write_staged_task_set(
             _FormalPrivateTaskRow.from_record(
                 record,
                 bundle_sha256=bundle.bundle_sha256,
+                dataset_version=task_set.dataset_version,
+                bundle_version=bundle.bundle.bundle_version,
+                evaluator_id=bundle.bundle.evaluator_id,
             )
             for record in task_set.records(split)
         ]
@@ -394,13 +431,16 @@ def _write_staged_task_set(
         public_output_dir / "holdout-receipt.json",
         split_evidence[FormalSplit.HOLDOUT].model_dump(mode="json"),
     )
-    # 正式数据集轨道是 v1 专属的：`_require_formal_contract` 已拒绝其它 bundle 版本，
-    # 这里把那条运行期保证收窄成类型事实。v2 的任务集必须作为**独立 dataset artifact**
-    # 存在（自己的 version、自己的 manifest），不能挂在这份冻结 receipt 下。
-    if bundle.bundle.bundle_version != "1.0.0":
-        raise ValueError("正式数据集 receipt 只接受 v1 bundle")
+    # 正式数据集轨道：v1 和 v4 各自使用冻结 receipt。
+    if bundle.bundle.bundle_version not in ("1.0.0", "4.0.0"):
+        raise ValueError("正式数据集 receipt 只接受 v1 或 v4 bundle")
+    expected_dataset = (
+        "retail_ops_v4_20260822"
+        if bundle.bundle.bundle_version == "4.0.0"
+        else "retail_ops_v1_r2_20260722"
+    )
     receipt = FormalDatasetReceipt(
-        dataset_version="retail_ops_v1_r2_20260722",
+        dataset_version=expected_dataset,
         generator_id="family_sha256_v1",
         bundle_id=bundle.bundle.bundle_id,
         bundle_version=bundle.bundle.bundle_version,
@@ -533,6 +573,8 @@ def _split_evidence_values(
 ) -> dict[str, object]:
     records = task_set.records(split)
     counts = Counter(record.task.scenario.value for record in records)
+    is_v4 = bundle.bundle.bundle_version == "4.0.0"
+    scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
     return {
         "dataset_version": task_set.dataset_version,
         "generator_id": task_set.generator_id,
@@ -544,7 +586,9 @@ def _split_evidence_values(
         "seed": task_set.seed,
         "split": split.value,
         "task_count": len(records),
-        "category_counts": {scenario.value: counts[scenario.value] for scenario in _SCENARIO_ORDER},
+        "category_counts": {
+            scenario.value: counts.get(scenario.value, 0) for scenario in scenario_order
+        },
         **{
             field: [getattr(record, field.removesuffix("s")) for record in records]
             for field in _FINGERPRINT_FIELDS
@@ -688,9 +732,11 @@ def _parse_and_validate_private_rows(
     if len(lines) != evidence.task_count:
         raise ValueError("formal artifact 任务数量与公开证据不一致")
     rows = [_FormalPrivateTaskRow.model_validate_json(line) for line in lines]
+    is_v4 = evidence.bundle_version == "4.0.0"
+    scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
     expected_scenarios = [
         scenario
-        for scenario in _SCENARIO_ORDER
+        for scenario in scenario_order
         for _ in range(evidence.category_counts[scenario.value])
     ]
     records: list[FormalTaskRecord] = []

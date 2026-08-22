@@ -4130,3 +4130,83 @@ B2（CI 真跑）+ 可能的第 3 个规模点（D1，但 R7 判负）。简历�
 
 **决定与方案**：R8 D2 三项（B2/C1/C2）全部完成。R8 元方法论补强轨道的剩余工作是
 Task D（简历与面试材料重写），需在 A1 三轮审查完成后启动。
+
+### LOG-20260822-01：R9 Phase B——v4 工具/场景扩展 + 教师采集（含三轮 bug 修复）
+
+- 日期：2026-08-22
+- 阶段/任务：R9 / Phase B 数据多样性扩展
+- 状态：进行中
+- 关联：`docs/R9_SPEC.md` §3、`docs/handoffs/2026-08-21-r9-phase-b-execution-prompt.md`
+
+**背景与难点**：R9 Phase B 目标是验证数据多样性（3→5 工具、6→12 场景）对 OOD 泛化
+的独立贡献。v4 bundle 新增 get_refund_status 和 cancel_order 两个语义重叠工具，
+以及 6 个新场景。教师采集过程中发现三类阻塞级 bug。
+
+**三轮 bug 修复**：
+
+| 轮次 | 根因 | 修复 | 效果 |
+|---|---|---|---|
+| 第 1 轮 | `_materialize_task` 对 ALLOW 决策只设 `refund_status=refunded`，不设 `status=cancelled` | 新增 cancel 场景的 target_state 处理 | cancel_eligible 0/40 → 40/40 |
+| 第 2 轮 | `_to_policy_output()` 拒绝多工具调用（返回 `multiple_tool_calls` 错误） | 改为取第一个工具调用 | refund_then_cancel 0/40 → 37/40 |
+| 第 3 轮 | cancel_order 环境方法不检查 refund_deadline 时间窗口 | 新增时间窗口检查 | cancel_denied_recent 3/40 → 待验证 |
+
+**用户请求措辞优化**（第 3 轮同步）：
+
+cancel_denied_recent 的用户请求从「请检查订单 X 是否能因 Y 取消」改为
+「请评估订单 X 是否满足取消条件，告诉我能否取消以及原因」。目的是让 teacher
+理解这是「评估判断」任务而非「执行取消」任务。
+
+**判读**：如果措辞优化后 cancel_denied_recent 通过率从 3/40 提升到 30+/40，
+说明用户请求的措辞对 teacher 行为有显著引导作用——这是一个可复用的经验：
+**DENY 类场景的用户请求应明确要求「评估/判断」而非「检查/执行」**。
+
+**当前采集状态**：437/480 (91%) 接受，费用 ~¥10（含 6-7 轮重跑）。
+等待措辞优化后重跑以验证 cancel_denied_recent 改善。
+
+**后果与下一步**：
+- 措辞优化已写入代码，需重新 formal_freeze + teacher_collect
+- 如果 cancel_denied_recent 达到 30+/40，写结论报告
+- 如果未达预期，分析是否需要改 system prompt 或增加 few-shot 示例
+
+### LOG-20260822-02：R9 Phase B 教师采集——措辞优化验证成功，475/480 (99%)
+
+- 日期：2026-08-22
+- 阶段/任务：R9 / Phase B 教师采集
+- 状态：解决
+- 关联：LOG-20260822-01
+
+**背景与难点**：前一轮采集 cancel_denied_recent 只有 3/40 (8%) 通过率。根因分析
+显示 88% 的 teacher 在该场景下直接调用 cancel_order（应该拒绝），而不是先评估
+再判断。用户请求「请检查订单 X 是否能因 Y 取消」被 teacher 理解为「检查后取消」。
+
+**证据**：
+- 前一轮 cancel_denied_recent：3/40 (8%)，35/40 尝试 cancel_order 后被环境拒绝
+- 措辞从「请检查订单 X 是否能因 Y 取消」改为「请评估订单 X 是否满足取消条件，
+  告诉我能否取消以及原因」
+- 新一轮采集：cancel_denied_recent **40/40 (100%)**
+
+**最终结果（单轮）**：
+
+| 场景 | 通过率 |
+|---|---|
+| cancel_denied_in_use | 40/40 (100%) |
+| cancel_denied_recent | **40/40 (100%)** ✅ |
+| cancel_eligible | 40/40 (100%) |
+| cancel_recovery | 40/40 (100%) |
+| check_refund_status | 40/40 (100%) |
+| lookup_status | 40/40 (100%) |
+| refund_denied_duplicate | 38/40 (95%) |
+| refund_denied_ownership | 40/40 (100%) |
+| refund_denied_window | 38/40 (95%) |
+| refund_eligible | 40/40 (100%) |
+| refund_recovery | 40/40 (100%) |
+| refund_then_cancel | 39/40 (98%) |
+| **总计** | **475/480 (99%)** |
+
+**结论**：用户请求措辞对 teacher 行为有显著引导作用。DENY 类场景的用户请求
+应明确要求「评估/判断」而非「检查/执行」。这是一个可复用的经验。
+
+**费用**：单轮 ¥1.12（含 reasoning tokens 按 output 计费）。累计 ~¥11（含
+前期重跑）。
+
+**后果与下一步**：进入 train_export + SFT 训练 + 全套评测。

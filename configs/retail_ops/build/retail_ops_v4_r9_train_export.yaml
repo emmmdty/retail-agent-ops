@@ -1,0 +1,11 @@
+# R9 Phase B: train_export — 导出 v4 SFT 训练数据
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260822
+dataset_version: retail_ops_v4_20260822
+teacher_attempt_id: teacher-v4-001
+attempt_id: train-export-v4-001
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+sft_paraphrase: null

@@ -1,0 +1,8 @@
+# R9 Phase B: teacher_collect — 对 v4 train split 采集 teacher 轨迹
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260822
+dataset_version: retail_ops_v4_20260822
+attempt_id: teacher-v4-001
+max_episodes_per_task: 2
+max_request_attempts: 3

@@ -168,6 +168,16 @@ V1_RULE_NAMES = (
     "tool_schema_is_strict",
 )
 
+#: v4 新增的三个取消相关规则名字（与 v1 规则共存）。
+V4_CANCEL_RULE_NAMES = (
+    "cancel_requires_lookup",
+    "cancel_window_must_be_open",
+    "duplicate_cancel_forbidden",
+)
+
+#: v4 的完整规则名字集合。
+V4_RULE_NAMES = V1_RULE_NAMES + V4_CANCEL_RULE_NAMES
+
 #: 前四条是引擎可强制的退款拒绝规则；后两条（重试上限、schema 严格性）描述的不是
 #: "什么时候拒绝退款"，由环境的其它部分强制，各自有独立的测试。把它们塞进拒绝规则集
 #: 会让「规则 = 拒绝条件」这个语义变浑。
@@ -201,11 +211,35 @@ V1_BUILTIN_RULES: tuple[PolicyRule, ...] = (
     ),
 )
 
+#: v4 取消订单的内置规则。取消规则直接在环境里求值（cancel_order 方法），
+#: 这里只声明它们的存在，让 policies.yaml 的规则名集合完整。
+V4_BUILTIN_CANCEL_RULES: tuple[PolicyRule, ...] = (
+    PolicyRule(
+        rule_id="cancel_requires_lookup",
+        violation="cancel_without_lookup",
+        error="取消订单前必须先查询订单状态",
+        when=Predicate(fact="order_was_read", operator="is", operand=False),
+    ),
+    PolicyRule(
+        rule_id="cancel_window_must_be_open",
+        violation="cancel_not_eligible",
+        error="订单已超过取消期限",
+        when=Predicate(fact="days_past_deadline", operator="gt", operand=0),
+    ),
+    PolicyRule(
+        rule_id="duplicate_cancel_forbidden",
+        violation="duplicate_cancel",
+        error="订单已经取消",
+        when=Predicate(fact="already_refunded", operator="is", operand=True),
+    ),
+)
+
 
 def resolve_rules(raw_rules: Sequence[Any]) -> tuple[PolicyRule, ...]:
     """把 `policies.yaml` 的 `rules:` 解析成可执行规则。
 
-    - 全是字符串 → v1 形态，按名字解析到内置冻结规则集（YAML 不需要改）；
+    - 全是字符串且等于 V1_RULE_NAMES → v1 形态，按名字解析到内置冻结规则集；
+    - 全是字符串且等于 V4_RULE_NAMES → v4 形态，使用 v4 内置规则集；
     - 全是 mapping → v2 形态，规则内联在 YAML 里，改阈值不需要碰 Python。
 
     **不允许混用**：一半名字一半内联意味着"这份政策到底由谁定义"没有唯一答案。
@@ -214,10 +248,12 @@ def resolve_rules(raw_rules: Sequence[Any]) -> tuple[PolicyRule, ...]:
         msg = "policies.rules 不得为空"
         raise ValueError(msg)
     if all(isinstance(entry, str) for entry in raw_rules):
-        if tuple(raw_rules) != V1_RULE_NAMES:
-            msg = "名字形态的 rules 必须逐字等于 v1 冻结集合"
-            raise ValueError(msg)
-        return V1_BUILTIN_RULES
+        if tuple(raw_rules) == V1_RULE_NAMES:
+            return V1_BUILTIN_RULES
+        if tuple(raw_rules) == V4_RULE_NAMES:
+            return V1_BUILTIN_RULES + V4_BUILTIN_CANCEL_RULES
+        msg = "名字形态的 rules 必须逐字等于 v1 或 v4 冻结集合"
+        raise ValueError(msg)
     if all(isinstance(entry, Mapping) for entry in raw_rules):
         return tuple(parse_rule_spec(entry) for entry in raw_rules)
     msg = "policies.rules 不得混用名字与内联规则"
