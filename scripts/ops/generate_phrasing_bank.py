@@ -82,12 +82,20 @@ _CLASSIFY_SYSTEM = (
 def _generate_prompt(intent: str, styles: Sequence[str], count: int) -> str:
     brief = INTENT_BRIEFS[intent]
     style_list = "、".join(styles)
+    needs_other = "{other_order_id}" in brief
+    placeholder_rule = (
+        f"1. 每句必须恰好包含一次 `{ORDER_ID_PLACEHOLDER}` 占位符（订单号会在之后填入），"
+        "不要自己编订单号；"
+    )
+    if needs_other:
+        placeholder_rule += (
+            "同时恰好包含一次 `{other_order_id}` 占位符（第二个订单号会在之后填入）；"
+        )
     return (
         f"情境：{brief}\n\n"
         f"请写出 {count} 句**不同的**顾客原话，覆盖这些风格：{style_list}。\n\n"
         "硬性要求：\n"
-        f"1. 每句必须恰好包含一次 `{ORDER_ID_PLACEHOLDER}` 占位符（订单号会在之后填入），"
-        "不要自己编订单号；\n"
+        f"{placeholder_rule}\n"
         "2. 只写顾客说的话，**不要**写客服的回复，不要写系统提示；\n"
         "3. 不要出现任何英文函数名或字段名；\n"
         "4. **绝对不要让顾客说出这单的状态**——不要写「已经过期了」「不是我下的单」"

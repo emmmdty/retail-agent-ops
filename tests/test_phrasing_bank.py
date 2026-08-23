@@ -19,6 +19,7 @@ import pytest
 from veritool_rl.retail_ops.build.phrasing_bank import (
     INTENT_BRIEFS,
     INTENT_REFUND,
+    INTENT_REFUND_RETRY,
     INTENT_STATUS,
     PARTITION_SALT,
     PARTITIONS,
@@ -302,7 +303,13 @@ def test_asking_for_more_than_the_pool_is_an_error_not_a_silent_repeat() -> None
 
 
 def test_the_real_bank_supports_the_planned_augmentation() -> None:
-    """真实措辞池必须撑得起本轮计划的每任务改写数，否则计划本身不成立。"""
+    """bank-001 是 v1 时代（3 意图）的素材，必须撑得起当时的每任务改写数。
+
+    v4 时代的增强由 bank-v4 承担（含全部 7 个意图），那份池子生成后
+    由 `test_intent_coverage_passes_when_every_bucket_is_full` 的同一套
+    `assert_intent_coverage` 在导出时把关——`load_paraphrase_plan`
+    会拒绝覆盖不足的池子。
+    """
     bank_path = (
         Path(__file__).resolve().parents[1]
         / "data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722"
@@ -312,7 +319,11 @@ def test_the_real_bank_supports_the_planned_augmentation() -> None:
         pytest.skip("措辞池是 ignored 私有产物，未同步到本机时跳过")
     records = load_phrasing_bank(bank_path)
     assert_partitions_are_disjoint(records)
-    assert_intent_coverage(records, minimum=12)
+    legacy_intents = (INTENT_STATUS, INTENT_REFUND, INTENT_REFUND_RETRY)
+    for partition in PARTITIONS:
+        index = intent_index(records, partition)
+        for intent in legacy_intents:
+            assert len(index.get(intent, ())) >= 12, (partition, intent)
     train_index = intent_index(records, "train_aug")
-    for intent in INTENT_BRIEFS:
+    for intent in legacy_intents:
         assert len(train_index[intent]) >= 3, intent

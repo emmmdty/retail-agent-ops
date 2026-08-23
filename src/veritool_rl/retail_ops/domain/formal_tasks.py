@@ -480,20 +480,23 @@ def _materialize_task(
         else:
             target_state["orders"][order_id]["refund_status"] = "refunded"
 
+    _multi_call_scenarios = {
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+        TaskScenario.CANCEL_RECOVERY,
+    }
     return TaskSpec(
         task_id=_sha256({"task_identity": identity}),
         split=split.value,
         scenario=scenario,
-        user_request=_user_request(
-            scenario, order_id, reason, variant_index, other_order_id
-        ),
+        user_request=_user_request(scenario, order_id, reason, variant_index, other_order_id),
         initial_state=initial_state,
         target_state=target_state,
         expected_calls=expected_calls,
         expected_decision=decision,
         required_reads=[order_id],
         transient_failures=dict(family["transient_failure_rule"]),
-        max_steps=5 if scenario in {TaskScenario.REFUND_RECOVERY, TaskScenario.REFUND_THEN_CANCEL, TaskScenario.CANCEL_RECOVERY} else 4,
+        max_steps=5 if scenario in _multi_call_scenarios else 4,
         metadata={
             "dataset_version": dataset_version,
             "generator_id": _GENERATOR_ID,
@@ -593,8 +596,11 @@ def _normalized_argument(key: str, value: Any, primary_order_id: str) -> Any:
 
 
 def _user_request(
-    scenario: TaskScenario, order_id: str, reason: str,
-    variant_index: int, other_order_id: str = "",
+    scenario: TaskScenario,
+    order_id: str,
+    reason: str,
+    variant_index: int,
+    other_order_id: str = "",
 ) -> str:
     requests = {
         TaskScenario.LOOKUP_STATUS: (
@@ -628,7 +634,9 @@ def _user_request(
 
 
 def _v4_user_request_fallback(
-    scenario: TaskScenario, order_id: str, reason: str,
+    scenario: TaskScenario,
+    order_id: str,
+    reason: str,
     other_order_id: str = "",
 ) -> str:
     """v4 新增场景的用户请求（固定书面正式口吻）。"""

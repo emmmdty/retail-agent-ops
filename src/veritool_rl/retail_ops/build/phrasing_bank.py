@@ -69,6 +69,9 @@ PARTITIONS: tuple[Partition, ...] = ("train_aug", "ood_dev", "ood_sealed")
 #: 每条措辞必须带的占位符。少了它，任务生成时就填不进订单号。
 ORDER_ID_PLACEHOLDER = "{order_id}"
 
+#: v4 双订单场景（refund_then_cancel）的第二个占位符。
+OTHER_ORDER_ID_PLACEHOLDER = "{other_order_id}"
+
 #: **按「顾客意图」而不是「场景」组织。**
 #:
 #: 这是本模块最容易搞错、也最要紧的一点。回去核对 `formal_tasks._user_request` 会发现：
@@ -84,11 +87,34 @@ ORDER_ID_PLACEHOLDER = "{order_id}"
 INTENT_STATUS = "status_inquiry"
 INTENT_REFUND = "refund_request"
 INTENT_REFUND_RETRY = "refund_request_retry"
+# v4 新增意图（Phase B 数据多样性扩展）
+INTENT_REFUND_STATUS = "refund_status_inquiry"
+INTENT_CANCEL = "cancel_request"
+INTENT_CANCEL_RETRY = "cancel_request_retry"
+INTENT_REFUND_THEN_CANCEL = "refund_then_cancel_request"
 
 INTENT_BRIEFS: dict[str, str] = {
     INTENT_STATUS: "顾客想知道某个订单现在到哪一步了，只是问进度，没有要退款。",
     INTENT_REFUND: "顾客要为某个订单退款。他只说自己想退，并不知道也不评论这单到底能不能退。",
     INTENT_REFUND_RETRY: ("顾客要为某个订单退款，并且额外交代一句：如果系统临时出错，就再试一次。"),
+    # v4 新增
+    INTENT_REFUND_STATUS: (
+        "顾客想查询某个订单的**退款处理进度**（钱到没到账、办到哪一步了），"
+        "不是问物流，也不是新发起一笔退款。"
+    ),
+    INTENT_CANCEL: (
+        "顾客想**取消**某个还没发货的订单。他只说想取消，并不知道也不评论这单到底能不能取消。"
+        "注意：是取消订单，不是退款——不要出现「退钱」「退款」这类字眼。"
+    ),
+    INTENT_CANCEL_RETRY: (
+        "顾客要**取消**某个还没发货的订单，并且额外交代一句：如果系统临时出错，就再试一次。"
+        "不要出现「退钱」「退款」这类字眼。"
+    ),
+    INTENT_REFUND_THEN_CANCEL: (
+        "顾客有两笔关联订单：他要为先前的 {order_id} 办理退款，"
+        "然后**取消**另一笔 {other_order_id}。两笔都要提到，先说退款那笔再说取消那笔。"
+        "取消那笔不要说成退款。"
+    ),
 }
 
 #: 场景 → 意图。四个退款场景共用同一个意图，这正是冻结契约的形状。
@@ -99,6 +125,13 @@ SCENARIO_INTENTS: dict[TaskScenario, str] = {
     TaskScenario.REFUND_DENIED_OWNERSHIP: INTENT_REFUND,
     TaskScenario.REFUND_DENIED_DUPLICATE: INTENT_REFUND,
     TaskScenario.REFUND_RECOVERY: INTENT_REFUND_RETRY,
+    # v4 新增
+    TaskScenario.CHECK_REFUND_STATUS: INTENT_REFUND_STATUS,
+    TaskScenario.CANCEL_ELIGIBLE: INTENT_CANCEL,
+    TaskScenario.CANCEL_DENIED_RECENT: INTENT_CANCEL,
+    TaskScenario.CANCEL_DENIED_IN_USE: INTENT_CANCEL,
+    TaskScenario.CANCEL_RECOVERY: INTENT_CANCEL_RETRY,
+    TaskScenario.REFUND_THEN_CANCEL: INTENT_REFUND_THEN_CANCEL,
 }
 
 #: 措辞里**绝不能**出现的状态泄漏。顾客一旦说出「已经过期了」「不是我的单」
@@ -127,7 +160,16 @@ _MAX_CHARS = 160
 
 #: 措辞里绝不该出现的东西：工具名与内部字段名。措辞是顾客说的话，
 #: 一旦出现 `get_order` 这种词，就等于把解法直接喂给模型。
-_FORBIDDEN_TOKENS = ("get_order", "refund_order", "get_store_hours", "tool_call", "refund_status")
+_FORBIDDEN_TOKENS = (
+    "get_order",
+    "refund_order",
+    "get_store_hours",
+    "get_refund_status",
+    "cancel_order",
+    "tool_call",
+    "refund_status",
+    "cancel_status",
+)
 
 
 class PhrasingRecord(StrictModel):
@@ -179,12 +221,18 @@ def validate_phrasing(text: str) -> str | None:
 
     这一层**不判断语义**——语义由生成脚本的回环分类负责。
     这里只挡住那些一眼就不能用的：缺占位符、长度离谱、把工具名写进了顾客的话。
+    占位符有两种合法形态：
+    1. 恰好一个 `{order_id}`（单订单意图）；
+    2. 恰好一个 `{order_id}` + 恰好一个 `{other_order_id}`（双订单意图）。
     """
     if ORDER_ID_PLACEHOLDER not in text:
         return "缺少 {order_id} 占位符"
     if text.count(ORDER_ID_PLACEHOLDER) != 1:
         return "{order_id} 占位符出现多次"
-    body = text.replace(ORDER_ID_PLACEHOLDER, "")
+    has_other = OTHER_ORDER_ID_PLACEHOLDER in text
+    if has_other and text.count(OTHER_ORDER_ID_PLACEHOLDER) != 1:
+        return "{other_order_id} 占位符出现多次"
+    body = text.replace(ORDER_ID_PLACEHOLDER, "").replace(OTHER_ORDER_ID_PLACEHOLDER, "")
     if len(body) < _MIN_CHARS:
         return f"正文过短（{len(body)} < {_MIN_CHARS}）"
     if len(body) > _MAX_CHARS:
@@ -194,7 +242,7 @@ def validate_phrasing(text: str) -> str | None:
         if token in lowered:
             return f"出现内部标识 {token!r}"
     if "{" in body or "}" in body:
-        return "含 {order_id} 之外的占位符"
+        return "含未识别的占位符"
     leak = LEAKAGE_PATTERN.search(body)
     if leak is not None:
         # 顾客说出订单状态 = 把答案写进请求。Agent 不查订单也能猜对，
@@ -371,6 +419,7 @@ def paraphrases_for_task(
     task_key: str,
     count: int,
     order_id: str,
+    other_order_id: str = "",
 ) -> list[str]:
     """为一条任务确定性地取 `count` 条互不相同的措辞，并填入订单号。
 
@@ -384,6 +433,10 @@ def paraphrases_for_task(
 
     `count` 超过池子大小时抛错，而不是静默重复——重复的改写等于把同一句抄 N 遍，
     那不是增强，是把一条样本的权重调高，两者的实验含义完全不同。
+
+    双订单意图（`{other_order_id}` 在场）要求调用方提供 `other_order_id`；
+    单订单措辞混进双订单任务时同样抛错——填不出第二个订单号的改写
+    会让「先退款再取消」退化成只有一半语义的监督信号。
     """
     pool = index.get(intent, ())
     if count > len(pool):
@@ -392,4 +445,13 @@ def paraphrases_for_task(
     picked = [pool[(offset + step) % len(pool)] for step in range(count)]
     if len({record.phrasing_id for record in picked}) != count:
         raise ValueError(f"任务 {task_key} 取到了重复措辞")
-    return [record.text.replace(ORDER_ID_PLACEHOLDER, order_id) for record in picked]
+    filled: list[str] = []
+    for record in picked:
+        text = record.text.replace(ORDER_ID_PLACEHOLDER, order_id)
+        if OTHER_ORDER_ID_PLACEHOLDER in text:
+            if not other_order_id:
+                msg = f"任务 {task_key} 的措辞含 {OTHER_ORDER_ID_PLACEHOLDER} 但未提供第二订单号"
+                raise ValueError(msg)
+            text = text.replace(OTHER_ORDER_ID_PLACEHOLDER, other_order_id)
+        filled.append(text)
+    return filled

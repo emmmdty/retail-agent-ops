@@ -1,0 +1,18 @@
+# R9 Phase B 第三轮导出：与 v4-002 的唯一差别是去掉 refund_then_cancel 的
+# sft_oversample（LOG-20260822-04：该场景训练信号内部不一致——教师「先查两单」序
+# 与 Oracle 交错序并存，oversample 放大到 21% 后 dev 从 4/10 恶化到 0/10）。
+# 措辞增强保持不变（per_task=3），隔离「oversample」这一个变量。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260822
+dataset_version: retail_ops_v4_20260822
+teacher_attempt_id: teacher-v4-001
+attempt_id: train-export-v4-003
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  per_task: 3

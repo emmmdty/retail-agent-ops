@@ -46,6 +46,13 @@ from veritool_rl.retail_ops.domain.ood_v2_tasks import (
     OOD_V2_TASKS_PER_SCENARIO,
     build_ood_v2_tasks,
 )
+from veritool_rl.retail_ops.domain.ood_v4_tasks import (
+    OOD_V4_DATASET_VERSION,
+    OOD_V4_GENERATOR_ID,
+    OOD_V4_SCENARIOS,
+    OOD_V4_TASKS_PER_SCENARIO,
+    build_ood_v4_tasks,
+)
 from veritool_rl.retail_ops.domain.policy_boundary_tasks import (
     POLICY_BOUNDARY_DATASET_VERSION,
     POLICY_BOUNDARY_GENERATOR_ID,
@@ -67,6 +74,8 @@ OodDatasetVersion = Literal[
     # 用的是与冻结数据集同源的措辞，因此登记在这里只是为了共用 manifest 与评测路径，
     # 不代表它能回答泛化问题。见 domain/policy_boundary_tasks.py 的模块说明。
     "retail_ops_policy_boundary_v1_20260819",
+    # v4 跨工具泛化（Phase B）：bank-v4 素材、12 场景、5 工具 bundle。
+    "retail_ops_ood_v4_20260823",
 ]
 
 _ALLOWED_DATASET_VERSIONS: tuple[str, ...] = get_args(OodDatasetVersion)
@@ -185,12 +194,20 @@ def build_ood_task_set(
         dataset_version = OOD_DATASET_VERSION
         expected_counts = None
     else:
-        tasks = build_ood_v2_tasks(phrasing.index, seed)
-        generator_id = OOD_V2_GENERATOR_ID
-        dataset_version = phrasing.dataset_version
-        expected_counts = {
-            scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS
-        }
+        if phrasing.dataset_version == OOD_V4_DATASET_VERSION:
+            tasks = build_ood_v4_tasks(phrasing.index, seed)
+            generator_id = OOD_V4_GENERATOR_ID
+            dataset_version = phrasing.dataset_version
+            expected_counts = {
+                scenario.value: OOD_V4_TASKS_PER_SCENARIO for scenario in OOD_V4_SCENARIOS
+            }
+        else:
+            tasks = build_ood_v2_tasks(phrasing.index, seed)
+            generator_id = OOD_V2_GENERATOR_ID
+            dataset_version = phrasing.dataset_version
+            expected_counts = {
+                scenario.value: OOD_V2_TASKS_PER_SCENARIO for scenario in OOD_V2_SCENARIOS
+            }
         if dataset_version not in _ALLOWED_DATASET_VERSIONS:
             raise ValueError(
                 f"未知的 OOD dataset_version: {dataset_version!r}——"

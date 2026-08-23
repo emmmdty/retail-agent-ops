@@ -4210,3 +4210,106 @@ cancel_denied_recent 的用户请求从「请检查订单 X 是否能因 Y 取�
 前期重跑）。
 
 **后果与下一步**：进入 train_export + SFT 训练 + 全套评测。
+
+### LOG-20260822-03：R9 Phase B 首轮训练与评测——两个根因定位（措辞增强缺失 + 工具混淆）
+
+- 日期：2026-08-22
+- 阶段/任务：R9 / Phase B 首轮候选评测与诊断
+- 状态：观察（诊断完成，修复待执行）
+- 关联：LOG-20260822-01、LOG-20260822-02、`docs/R9_SPEC.md` §3.3
+
+**背景与难点**：Phase B 候选 `sft-001`（480 条 SFT，3 epoch）训练完成后，
+dev 0.95 (114/120)、OOD v2 dev 0.8167。OOD 读数显著低于 sft-008 的 0.9833，
+需要判断是「多样性假设被证伪」还是对照不干净。
+
+**证据（逐场景拆解，同一 adapter 两次评测）**：
+
+| 场景 | v4 dev（训练措辞） | OOD v2（新措辞） |
+|---|---|---|
+| refund_eligible | 10/10 | **2/10** |
+| 其余拒绝/查询类 | 10/10 | 0.8–1.0 |
+| refund_then_cancel | **4/10** | （v1 无此场景） |
+
+失败轨迹显示 refund_then_cancel 的失败形态是：期望
+`get_order(主)→refund_order(主)→get_order(另)→cancel_order(另)`，
+实际把 cancel_order 换成了 refund_order——该取消的订单被退款。
+
+**根因一：缺少措辞增强（主因，对照被污染）**。
+sft-008 带 R6 的 184 种措辞增强；Phase B 配置 `sft_paraphrase: null`，
+只有书面正式模板。OOD v2 的唯一自变量就是说法，正好落在 Phase B 未训练的
+维度上。refund_eligible 同一模型在训练措辞下 10/10、新措辞下 2/10，
+完整复现 R6 结论。因此 OOD 0.8167 < 0.9833 **不能**解读为
+「工具多样性假设被证伪」——Phase B 相对 sft-008 同时改了两个变量
+（+工具/场景多样性、−措辞增强），对照不成立。
+
+**根因二：refund/cancel 工具混淆（真实问题，正是 Phase B 要测的核心）**。
+v4 dev 上 refund_then_cancel 仅 4/10，语义重叠工具选择只学到 40%。
+这是低读数中的真信号。
+
+**根因三（次要放大器）：数据比例偏移**。474 条中 58% 是 DENY/INFORM
+（查询后停止解释）、42% 是 ALLOW（执行动作），比 v1 更保守。
+
+**决定与方案**：
+1. 为 6 个新场景生成措辞池（DeepSeek ~¥0.1）；旧 6 场景复用现有 bank 分片；
+2. 用现有 `sft_paraphrase` 导出变换重导训练集（纯 CPU，无需重新 teacher 采集；
+   改写只换用户的话，轨迹动作不变，`target_state`/`expected_calls` 仍成立）；
+3. 重新 SFT（同配置）+ dev/OOD v2 重评；跨工具泛化以 v4 dev 的
+   refund_then_cancel 与后续跨工具集为准。
+
+**备选方案与未选择理由**：不重跑 teacher（措辞改写在导出侧即可完成，
+省 ¥1.3 与 20 分钟）；不改 parser / max_steps / verify_final_state（硬边界）。
+
+**后果与下一步**：修复后若 refund_eligible 在 OOD 上恢复且
+refund_then_cancel 改善，则 Phase B 假设得到干净检验；若仍差，
+需分析数据比例与容量匹配问题。
+
+### LOG-20260822-04：R9 Phase B 第二轮（措辞增强）——主因修复确认，代价与 R6 同构
+
+- 日期：2026-08-22
+- 阶段/任务：R9 / Phase B 第二轮候选训练与评测
+- 状态：观察
+- 关联：LOG-20260822-03
+
+**做法**：生成 bank-v4 措辞池（7 意图 × ~85 条，599 条；refund_then_cancel
+使用 `{order_id}`+`{other_order_id}` 双占位符——为此扩展了 `phrasing_bank.py`
+的占位符校验与 `paraphrases_for_task`）；`sft_paraphrase per_task=3` +
+`sft_oversample {"refund_then_cancel": 3}` 重导训练集（2240 行），
+重新训练 `sft-002`（eval_loss 0.114 vs 首轮 0.292）。
+
+**OOD v2 读数对比（v1 bundle，60 条）**：
+
+| 指标 | sft-001（首轮） | sft-002（增强） |
+|---|---|---|
+| task_success | 0.8167 | 0.8333 |
+| **policy_violation** | **0** | **8** |
+| refund_eligible | 0.2 | **1.0** ✅ 主因修复确认 |
+| refund_denied_window | 0.9 | 1.0 |
+| refund_recovery | 0.8 | 1.0 |
+| lookup_status | 1.0 | 0.8 |
+| refund_denied_duplicate | 1.0 | **0.2** ❌ 新退化 |
+
+**判读**：
+1. **根因一修复确认**：refund_eligible 0.2→1.0，证明 LOG-20260822-03 的
+   归因（缺措辞增强）正确。Phase B 的多样性假设本身未被证伪。
+2. **代价与 R6 同构**：措辞增强教会模型「语义→行动」，ALLOW 类全面恢复，
+   但模型变得更倾向执行——duplicate-deny 场景 8 次违规（对已退款订单再次执行退款）。
+   这正是 R6 记录过的「更倾向执行」代价，规模更大（8 vs 当时的 2–7）。
+3. **意外负结果：oversample 反效果**。v4 dev 上 refund_then_cancel 从 4/10
+   恶化到 0/10。该场景在训练集中存在两种合法调用顺序（教师轨迹「先查两单再动作」
+   396 行 vs Oracle 交错序 84 行），oversample 把内部不一致的信号放大到占
+   训练集 21%。失败模式不变：把该取消的第二笔订单也退款了。
+   （教训：**oversample 只能用于信号一致的场景**。）
+
+**v4 dev 全景（sft-002）**：11/12 场景 10/10，仅 refund_then_cancel 0/10。
+
+**备选方案与未选择理由**：
+- 规范化 refund_then_cancel 调用顺序（只保留一种）后再 oversample——需要导出侧
+  过滤教师轨迹或重采，留待第三轮决策；
+- 接受 duplicate-deny 退化并如实报告——与「不牺牲安全性换成功率」的项目纪律冲突，
+  不接受为默认结论，但作为诚实读数保留。
+
+**后果与下一步**（需用户决策第三轮方向）：
+A. 修复 refund_then_cancel 数据一致性（Oracle-only 或过滤教师轨迹）+ 去掉该场景
+   oversample，重训第三轮；
+B. 针对 duplicate-deny 退化调整（如提高 DENY 类 oversample 对冲执行倾向）；
+C. 先做跨工具泛化评测集（Phase B 核心主张的正面检验），再决定是否继续调数据。

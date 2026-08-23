@@ -1,0 +1,26 @@
+# R9 Phase B 措辞增强导出：与 train-export-v4-001 的差别是启用 sft_paraphrase
+# 并对 refund_then_cancel 做 oversample。对应 LOG-20260822-03 的两个根因修复：
+#
+# 根因一（措辞增强缺失）：Phase B 首轮候选在 OOD v2 上 refund_eligible 只有 2/10，
+# 同一模型在训练措辞下是 10/10——完整复现 R6 结论。本配置为每条任务额外产出 3 条
+# 只改写 user 第一句话的样本，措辞取自 bank-v4 的 train_aug 分片（7 个意图，
+# 覆盖全部 12 个场景；refund_then_cancel 使用 {order_id}+{other_order_id} 双占位符）。
+#
+# 根因二（refund/cancel 工具混淆）：v4 dev 上 refund_then_cancel 仅 4/10，
+# 模型把该取消的订单退款了。通过 sft_oversample 把该场景权重 ×3。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260822
+dataset_version: retail_ops_v4_20260822
+teacher_attempt_id: teacher-v4-001
+attempt_id: train-export-v4-002
+sft_oversample:
+  refund_then_cancel: 3
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+
+# bank_sha256 是声明的期望值：换了池子却忘了改这里，会静默产出另一份训练集。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  per_task: 3

@@ -1,10 +1,12 @@
-# R9 Phase B: Dev 评测（v4 原有 120 条，检测退化）
+# R9 Phase B 第二轮候选（sft-002）Dev 评测。
+# sft-002 = 2240 行（474 基础 + 每任务 3 条措辞增强 + refund_then_cancel ×3 oversample）
+# 对应 LOG-20260822-03 的两个根因修复。
 pipeline: formal_dev_candidate
 bundle_dir: domains/retail_ops/v4
 dataset_version: retail_ops_v4_20260822
 dev_manifest_path: manifests/retail_ops/v1/retail_ops_v4_20260822/dev.json
 models_root: models
-attempt_id: r9-phase-b-dev-candidate-001
+attempt_id: r9-phase-b-dev-candidate-003
 model:
   repo: Qwen/Qwen3-4B
   revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
@@ -24,14 +26,14 @@ model:
     tokenizer_config.json: "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
     vocab.json: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
 adapter:
-  run_dir: reports/retail_ops/v1/r9/phase-b/sft-001
+  run_dir: reports/retail_ops/v1/r9/phase-b/sft-003
   file_sha256:
     README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
-    adapter_config.json: "8887e7e68b1e96f2526bc4079142ef7afca96b54294dd4b95462f57ae487fa59"
-    adapter_model.safetensors: "56b0fba7f88a6eeaaef412234b08b76deb97769afdc519b5660777eb2dfee891"
+    adapter_config.json: "2cb42df3c144abf062f19746f99d20760b82dca81ae658e5c97a4d20db938236"
+    adapter_model.safetensors: "f37c50a6ec147434b80d5d47fe9e943c4b41d2a8691b26635e1caed409e5be0a"
     chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
     tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
     tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
-    training_args.bin: "60e6ef6154bed721a45fe42b2de3ee923a4fedcdca858cb6c46c129e70576f93"
+    training_args.bin: "c3034540a92b332ce9f545d5285659883f23780ee1b4a4cf399a526fecc8fa85"
 generation:
   max_new_tokens: 256

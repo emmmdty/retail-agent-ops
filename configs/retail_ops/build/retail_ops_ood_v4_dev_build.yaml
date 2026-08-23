@@ -1,0 +1,17 @@
+# OOD v4（dev）：**跨工具泛化**的分布外任务集（Phase B 核心检验）。
+#
+# 12 场景 × 每场景 10 条 = 120，v4 bundle（5 工具），措辞取自 bank-v4 的
+# `ood_dev` 分片——与训练增强用的 `train_aug` 逐条互斥。
+#
+# 它与 OOD v2 的分工见 `domain/ood_v4_tasks.py`：v2 只测「换说法还成不成」，
+# v4 同时压「说法泛化 × 语义重叠工具选择」两个轴。refund_then_cancel 是
+# 双订单任务，gold 要求对第二笔订单 cancel_order——把取消做成退款
+# （LOG-20260822-03/04 观察到的混淆）在这里有专门的计量口径。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v4
+phrasing:
+  dataset_version: retail_ops_ood_v4_20260823
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  partition: ood_dev
+boundary: false

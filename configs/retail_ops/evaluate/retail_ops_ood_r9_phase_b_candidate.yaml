@@ -1,10 +1,8 @@
-# R9 Phase B: Dev 评测（v4 原有 120 条，检测退化）
-pipeline: formal_dev_candidate
-bundle_dir: domains/retail_ops/v4
-dataset_version: retail_ops_v4_20260822
-dev_manifest_path: manifests/retail_ops/v1/retail_ops_v4_20260822/dev.json
+# R9 Phase B 候选（sft-001）在 OOD v2 dev 上的评测。
+# v1 bundle 任务集（3 工具），测试加新工具后旧场景是否退化。
+pipeline: ood_candidate
+bundle_dir: domains/retail_ops/v1
 models_root: models
-attempt_id: r9-phase-b-dev-candidate-001
 model:
   repo: Qwen/Qwen3-4B
   revision: "8cd0101f70cac4f1efcebc979faf483558e39297"

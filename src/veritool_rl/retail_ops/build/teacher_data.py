@@ -689,6 +689,21 @@ def _task_order_id(task: TaskSpec) -> str:
     return order_id
 
 
+def _task_other_order_id(task: TaskSpec) -> str:
+    """取双订单场景（refund_then_cancel）的第二订单号。
+
+    判定依据是 `expected_calls` 里 cancel_order 的目标订单号——它与主订单号不同，
+    且正是改写模板 `{other_order_id}` 要填的那个值。单订单任务返回空串。
+    """
+    for call in task.expected_calls:
+        if call.name != "cancel_order":
+            continue
+        target = call.arguments.get("order_id")
+        if isinstance(target, str) and target and target != _task_order_id(task):
+            return target
+    return ""
+
+
 def _rewrite_user_request(sft_example: dict[str, Any], text: str) -> dict[str, Any]:
     """只替换首条 user 消息的 content。
 
@@ -806,6 +821,7 @@ def export_formal_train(
                 task_key=task_id,
                 count=sft_paraphrase.per_task,
                 order_id=_task_order_id(record.task),
+                other_order_id=_task_other_order_id(record.task),
             ):
                 sft_rows.extend(_rewrite_user_request(sft_example, text) for _ in range(repeat))
 

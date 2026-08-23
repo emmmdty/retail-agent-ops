@@ -9,7 +9,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 from weakref import WeakSet
 
 from pydantic import ConfigDict, Field, model_validator
@@ -267,9 +267,13 @@ class _FormalPrivateTaskRow(StrictModel):
         record: FormalTaskRecord,
         *,
         bundle_sha256: str,
-        dataset_version: str = "retail_ops_v1_r2_20260722",
-        bundle_version: str = "1.0.0",
-        evaluator_id: str = "retail_ops_v1",
+        dataset_version: Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"] = (
+            "retail_ops_v1_r2_20260722"
+        ),
+        bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0",
+        evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = (
+            "retail_ops_v1"
+        ),
     ) -> _FormalPrivateTaskRow:
         return cls(
             dataset_version=dataset_version,
@@ -393,14 +397,20 @@ def _write_staged_task_set(
     """Populate already-created staging roots and return their public receipt."""
 
     split_evidence: dict[FormalSplit, FormalTaskManifest | FormalHoldoutReceipt] = {}
+    is_v4_bundle = bundle.bundle.bundle_version == "4.0.0"
+    row_dataset_version = cast(
+        Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"],
+        task_set.dataset_version,
+    )
+    row_evaluator_id = bundle.bundle.evaluator_id
     for split in FormalSplit:
         rows = [
             _FormalPrivateTaskRow.from_record(
                 record,
                 bundle_sha256=bundle.bundle_sha256,
-                dataset_version=task_set.dataset_version,
-                bundle_version=bundle.bundle.bundle_version,
-                evaluator_id=bundle.bundle.evaluator_id,
+                dataset_version=row_dataset_version,
+                bundle_version="4.0.0" if is_v4_bundle else "1.0.0",
+                evaluator_id=row_evaluator_id,
             )
             for record in task_set.records(split)
         ]
@@ -440,7 +450,9 @@ def _write_staged_task_set(
         else "retail_ops_v1_r2_20260722"
     )
     receipt = FormalDatasetReceipt(
-        dataset_version=expected_dataset,
+        dataset_version=cast(
+            Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822"], expected_dataset
+        ),
         generator_id="family_sha256_v1",
         bundle_id=bundle.bundle.bundle_id,
         bundle_version=bundle.bundle.bundle_version,
