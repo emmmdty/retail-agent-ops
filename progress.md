@@ -1041,3 +1041,37 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 - **OOD 评测**：多次尝试失败（进程异常退出），未产出结果。
 - **判读**：数据一致性是之前失败的根因，修复后数据量增加确实有帮助。
   需要完成 OOD 评测才能判断是否需要进入 Phase B。
+
+## 2026-08-22 — R9 Phase B：数据多样性扩展（三轮迭代）
+
+- **v4 bundle 落地**：5 工具（新增 get_refund_status / cancel_order，语义重叠设计）、
+  12 场景、7 条政策规则。教师采集修复三类阻塞 bug 后达 **474/480 (99%)**，
+  单轮费用 ¥1.27。
+- **关键 bug 修复**（详见 LOG-20260822-01/02）：
+  target_state 缺 cancel_status；`_to_policy_output` 拒绝多工具调用；
+  cancel_order 缺时间窗口检查；cancel_denied_recent 措辞
+  「请检查」→「请评估」（8% → 100% 通过率）。
+- **bank-v4 措辞池**：7 意图 × ~85 条 = 599 条，含 `{other_order_id}` 双占位符扩展。
+- **三轮候选**：
+
+| 候选 | 数据 | v4 dev | OOD v2 | OOD v4（跨工具） |
+|---|---|---|---|---|
+| sft-001 | 480（纯正式模板） | 0.95 / pv0 | 0.8167 / pv0 | — |
+| sft-002 | 2240（+措辞×3, rtc oversample×3） | 0.917 / pv0 | 0.8333 / pv8 | — |
+| sft-003 | 1920（+措辞×3） | 0.917 / pv0 | **0.8667** / pv7 | **0.8917** / pv2 |
+
+- **核心发现**：① refund_eligible OOD 0.2→1.0 确认「缺措辞增强」主因；
+  ② 执行倾向代价与 R6 同构（duplicate-deny pv 上升）；③ refund_then_cancel
+  双订单场景全轮失败（dev 4/10→0/10），与措辞增强负相关，oversample 反而有害；
+  ④ 单订单跨工具选择已学会（OOD v4 11/12 场景 ≥0.8）。
+- **新基础设施**：OOD v4 跨工具评测集（12×10=120，受控版本
+  `retail_ops_ood_v4_20260823`）、`domain/ood_v4_tasks.py`。
+- **收尾文档**：`docs/R9_PHASE_B_RESULTS.md`；
+  第四轮交接：`docs/handoffs/2026-08-23-r9-phase-b-round4-execution-prompt.md`。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-22 | teacher_collect ×N（含 bug 重跑） | 最终 474/480 (99%)；累计 API ~¥11 |
+| 2026-08-22 | bank-v4 生成 | 599 条，sha256 `aa6ccee3…` |
+| 2026-08-22 | SFT ×3（sft-001/002/003） | eval_loss 0.292 / 0.114 / 0.107 |
+| 2026-08-22 | 三候选 × 三评测面 | 见上表 |

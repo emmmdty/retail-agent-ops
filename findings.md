@@ -1496,3 +1496,25 @@ task_success 从 0.800 提升到 0.983，只新增 1 次 policy_violation。
 - OOD 未完成 → 无法判断是否 ≥ 0.70
 - 结论：**数据一致性是之前失败的根因，修复后数据量增加确实有帮助。
   需要完成 OOD 评测才能判断是否需要进入 Phase B。**
+
+## R9 Phase B 发现（2026-08-22）
+
+- **措辞增强的因果再次确认**：refund_eligible 在训练措辞下 10/10、新措辞下 0.2；
+  加 bank-v4 措辞增强（per_task=3）后 OOD 恢复到 1.0。与 R6 结论同构，
+  且首次在多工具场景上复现。
+- **措辞增强的代价也是同构的**：模型更倾向执行——OOD v2 上 duplicate-deny
+  从 1.0 跌到 0.2–0.4（pv 7–8）。R6 记录过同一机制，规模更大。
+- **oversample 只能用于信号一致的场景**：refund_then_cancel 训练数据存在两种
+  合法调用顺序（教师「先查两单」vs Oracle 交错序），×3 oversample 后 dev
+  4/10 → 0/10。去掉 oversample 也没恢复——说明崩坏与措辞增强本身负相关，
+  不是采样权重问题。
+- **单订单跨工具选择可学**：sft-003 在 OOD v4 上 check_refund_status、
+  cancel_eligible、cancel_recovery 全部 1.0——语义重叠工具（get_refund_status
+  vs get_order；cancel_order vs refund_order 的单向场景）选择没有问题。
+- **双订单复合动作是当前唯一硬失败**：refund_then_cancel 要求「退 A 后对 B 执行
+  取消」，模型稳定地把 B 也退款。三轮均 0/10（除无增强首轮 4/10）。
+  下一步方向是提高 cancel 动作先验，不是调该场景采样权重。
+- **教师采集工程经验**：DENY 类场景用户请求必须写「评估/判断」而非
+  「检查/执行」（cancel_denied_recent 8%→100%）；reasoning_content 按 output
+  计费且无法通过 extra_body 关闭（直连 API 亦然）；缓存命中约 78%，
+  单轮全量采集 ~¥1.3。
