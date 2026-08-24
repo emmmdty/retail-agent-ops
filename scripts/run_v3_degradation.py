@@ -56,7 +56,7 @@ def _make_env():
 
 def run_teacher(tool_count: int, output_dir: Path) -> int:
     """Collect teacher trajectories."""
-    from veritool_rl.core.agent.qwen import load_teacher_route
+    from veritool_rl.core.build.teacher_route import load_teacher_route
     from veritool_rl.retail_ops.build.teacher_data import (
         TeacherCollectionConfig,
         collect_teacher_attempt,
