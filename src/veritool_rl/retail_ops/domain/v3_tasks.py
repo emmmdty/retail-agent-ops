@@ -191,7 +191,7 @@ def _make_task(
         target_state["orders"][order_id]["refund_status"] = "refunded"
     if expected_calls is None:
         expected_calls = []
-    task_id = f"{scenario.value}:{split.value}:{order_id}:{margin}"
+    task_id = f"{scenario.value}-{split.value}-{order_id}-{margin}"
     return TaskSpec(
         task_id=task_id,
         split=split.value,
