@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>flight_ops 跨域发布判定报告</title>
+<style>
+  :root { --green: #16a34a; --red: #dc2626; --gray: #6b7280; --border: #e5e7eb; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif; color: #111827; line-height: 1.6; max-width: 960px; margin: 0 auto; padding: 2rem; background: #f9fafb; }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .meta { color: var(--gray); font-size: 0.875rem; margin-bottom: 1.5rem; }
+  .decision-box { background: #f0fdf4; border: 2px solid var(--green); border-radius: 8px; padding: 1rem 1.5rem; margin-bottom: 2rem; }
+  .decision-box .label { font-size: 0.875rem; color: var(--gray); }
+  .decision-box .value { font-size: 2rem; font-weight: 700; color: var(--green); }
+  .decision-box .desc { font-size: 0.875rem; color: #374151; margin-top: 0.25rem; }
+  h2 { font-size: 1.25rem; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.375rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-bottom: 1.5rem; }
+  th, td { padding: 0.5rem 0.75rem; border: 1px solid var(--border); text-align: right; }
+  th { background: #f3f4f6; font-weight: 600; text-align: left; }
+  td:first-child { text-align: left; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8125rem; }
+  .pass { color: var(--green); font-weight: 600; }
+  .fail { color: var(--red); font-weight: 600; }
+  .hash { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; word-break: break-all; }
+  .limitations { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 6px; padding: 1rem 1.25rem; }
+  .limitations li { margin-bottom: 0.375rem; font-size: 0.875rem; }
+  .limitations li:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<h1>flight_ops 跨域发布判定报告</h1>
+<p class="meta">
+  生成时间：2026-08-24 &nbsp;|&nbsp; 阶段：R10 &nbsp;|&nbsp;
+  数据集：flight_ops_v1_r10（60 条 dev 任务）<br>
+  基座模型：Qwen3-4B-pinned（无 adapter） &nbsp;|&nbsp;
+  候选 adapter：reports/flight_ops/v1/r9/train/adapter
+</p>
+
+<div class="decision-box">
+  <div class="label">发布判定</div>
+  <div class="value">GO</div>
+  <div class="desc">候选在全部 60 条 dev 任务上达到 100% 成功，零策略违规，4/4 门禁全部通过。</div>
+</div>
+
+<h2>指标对比</h2>
+<table>
+  <thead>
+    <tr><th>指标</th><th>Base</th><th>Candidate</th><th>变化</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>task_success</td><td>0.4833 (29/60)</td><td>1.0000 (60/60)</td><td>+0.5167</td></tr>
+    <tr><td>task_success_ci95</td><td>[0.35, 0.62]</td><td>[1.00, 1.00]</td><td>—</td></tr>
+    <tr><td>policy_violation_count</td><td>30</td><td>0</td><td>−30</td></tr>
+    <tr><td>policy_violation_rate</td><td>0.5000</td><td>0.0000</td><td>−0.5000</td></tr>
+    <tr><td>tool_selection_accuracy</td><td>0.5900</td><td>1.0000</td><td>+0.4100</td></tr>
+    <tr><td>argument_accuracy</td><td>0.5000</td><td>0.7667</td><td>+0.2667</td></tr>
+    <tr><td>invalid_call_count</td><td>0</td><td>0</td><td>—</td></tr>
+    <tr><td>schema_valid_rate</td><td>1.0000</td><td>1.0000</td><td>—</td></tr>
+    <tr><td>executable_rate</td><td>1.0000</td><td>1.0000</td><td>—</td></tr>
+    <tr><td>average_turns</td><td>1.82</td><td>2.17</td><td>+0.35</td></tr>
+    <tr><td>average_tool_calls</td><td>1.48</td><td>1.50</td><td>+0.02</td></tr>
+    <tr><td>average_input_tokens</td><td>884.72</td><td>1077.17</td><td>+192.45</td></tr>
+    <tr><td>average_output_tokens</td><td>60.23</td><td>94.67</td><td>+34.44</td></tr>
+    <tr><td>average_latency_ms</td><td>1292.05</td><td>2766.89</td><td>+1474.84</td></tr>
+    <tr><td>p50_latency_ms</td><td>1172.65</td><td>2417.02</td><td>+1244.37</td></tr>
+    <tr><td>p95_latency_ms</td><td>2037.73</td><td>4344.68</td><td>+2306.95</td></tr>
+    <tr><td>verifier_reward</td><td>−0.0167</td><td>1.0000</td><td>+1.0167</td></tr>
+    <tr><td>recovery_success</td><td>0.0000</td><td>0.0000</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2>门禁结果</h2>
+<table>
+  <thead>
+    <tr><th>门禁 ID</th><th>阈值</th><th>实际值</th><th>判定</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>success_delta</td><td>≥ 0.05</td><td>+0.5167</td><td class="pass">PASS</td></tr>
+    <tr><td>policy_violation_delta</td><td>≤ 0</td><td>−30</td><td class="pass">PASS</td></tr>
+    <tr><td>invalid_call_count</td><td>= 0</td><td>0</td><td class="pass">PASS</td></tr>
+    <tr><td>evidence_complete</td><td>= true</td><td>true</td><td class="pass">PASS</td></tr>
+  </tbody>
+</table>
+
+<h2>证据链</h2>
+<h3>report_id 自哈希</h3>
+<table>
+  <thead>
+    <tr><th>角色</th><th>report_id</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>base</td><td class="hash">4a9fe7ff8477941cbc3a4bb6947fb1c0f9deb2a3279b436f2a9358daf51a6cba</td></tr>
+    <tr><td>candidate</td><td class="hash">743dda363f0b35594effe742c55a3a0fb8e59cd50c2011f3e91f8b219396e939</td></tr>
+  </tbody>
+</table>
+
+<h3>数据完整性</h3>
+<table>
+  <thead>
+    <tr><th>字段</th><th>值</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>base bundle_sha256</td><td class="hash">7405582765270cb6decb94cccb3e209ab6f290b237707e98782ae3f9307fe524</td></tr>
+    <tr><td>candidate bundle_sha256</td><td class="hash">7405582765270cb6decb94cccb3e209ab6f290b237707e98782ae3f9307fe524</td></tr>
+    <tr><td>manifest_sha256（共用）</td><td class="hash">1b0211d1edf89fd96533c1fea224fb05de0128a889ae1daa556efa1423d52de4</td></tr>
+  </tbody>
+</table>
+
+<h3>失败类型分布</h3>
+<table>
+  <thead>
+    <tr><th>失败类型</th><th>Base</th><th>Candidate</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>policy_violation</td><td>30</td><td>0</td></tr>
+    <tr><td>premature_final_response</td><td>1</td><td>0</td></tr>
+  </tbody>
+</table>
+
+<h2>局限性</h2>
+<div class="limitations">
+  <ol>
+    <li><strong>单领域</strong>：本次评估仅覆盖 flight_ops 领域，未验证跨领域泛化。</li>
+    <li><strong>60 条 dev 任务</strong>：样本量有限，置信区间较宽（base CI95: [0.35, 0.62]）。</li>
+    <li><strong>无 holdout</strong>：未设置独立 holdout 集，存在选择偏差风险。</li>
+    <li><strong>延迟上升</strong>：候选 p95 延迟 4344.68ms，较 base 上升约 2.13×，生产部署需关注。</li>
+    <li><strong>argument_accuracy 未达满分</strong>：候选 argument_accuracy 为 0.7667，虽不影响最终成功但存在参数精度空间。</li>
+  </ol>
+</div>
+
+</body>
+</html>

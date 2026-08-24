@@ -1,0 +1,41 @@
+{
+  "decision": "GO",
+  "base_report_id": "4a9fe7ff8477941cbc3a4bb6947fb1c0f9deb2a3279b436f2a9358daf51a6cba",
+  "candidate_report_id": "743dda363f0b35594effe742c55a3a0fb8e59cd50c2011f3e91f8b219396e939",
+  "base_metrics": {
+    "task_success": 0.48333333333333334,
+    "policy_violation_count": 30,
+    "invalid_call_count": 0
+  },
+  "candidate_metrics": {
+    "task_success": 1.0,
+    "policy_violation_count": 0,
+    "invalid_call_count": 0
+  },
+  "gates": [
+    {
+      "gate_id": "success_delta",
+      "passed": true,
+      "delta": 0.5166666666666666,
+      "threshold": 0.05
+    },
+    {
+      "gate_id": "policy_violation_delta",
+      "passed": true,
+      "delta": -30,
+      "threshold": 0
+    },
+    {
+      "gate_id": "invalid_call_count",
+      "passed": true,
+      "delta": null,
+      "threshold": 0
+    },
+    {
+      "gate_id": "evidence_complete",
+      "passed": true,
+      "delta": null,
+      "threshold": true
+    }
+  ]
+}
