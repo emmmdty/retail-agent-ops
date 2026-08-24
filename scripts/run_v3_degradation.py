@@ -77,14 +77,12 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
 
     config = TeacherCollectionConfig(
         dataset_version=version,
-        attempt_id=f"v3-tc{tool_count}",
         seed=0,
+        bundle_sha256=hashlib.sha256(f"v3-tc{tool_count}".encode()).hexdigest(),
+        manifest_sha256=hashlib.sha256(f"v3-tc{tool_count}-manifest".encode()).hexdigest(),
+        route_sha256=route.route_sha256,
         max_episodes_per_task=2,
         max_request_attempts=3,
-        bundle_sha256="v3",
-        tool_schema_sha256="v3",
-        system_prompt_sha256="v3",
-        config_sha256="v3",
     )
 
     evidence_dir = output_dir / "teacher"
