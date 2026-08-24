@@ -47,11 +47,11 @@ def _load_policy(model_dir: str, adapter_dir: str | None = None):
     )
 
 
-def _make_env():
+def _make_env(task):
     from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
 
     bundle = load_bundle(BUNDLE_DIR)
-    return RetailOpsEnv(bundle)
+    return RetailOpsEnv(task, bundle)
 
 
 def run_teacher(tool_count: int, output_dir: Path) -> int:
@@ -88,8 +88,7 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
     evidence_dir = output_dir / "teacher"
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
-    env = _make_env()
-    env_factory = lambda: env
+    env_factory = lambda t: _make_env(t)
 
     accepted = 0
     for i, record in enumerate(train_records):
@@ -201,11 +200,11 @@ def run_eval(tool_count: int, output_dir: Path, adapter_path: str | None = None)
 
     for record in dev_records:
         task = record.task
-        env = _make_env()
         try:
-            traj = run_episode(task, lambda: env, policy, seed=0)
+            traj = run_episode(task, _make_env, policy, seed=0)
             trajectories.append(traj)
 
+            env = _make_env(task)
             # Check success
             success = env.verify_final_state(task, traj)
             successes.append(success)
