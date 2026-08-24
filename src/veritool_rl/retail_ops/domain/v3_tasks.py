@@ -104,6 +104,10 @@ class ToolCountTaskRecord(StrictModel):
     task: TaskSpec
     content_sha256: str
 
+    @property
+    def task_fingerprint(self) -> str:
+        return self.content_sha256
+
     @classmethod
     def from_task(cls, task: TaskSpec) -> ToolCountTaskRecord:
         payload = json.dumps(
