@@ -371,10 +371,11 @@ def write_teacher_attempt_evidence(
     完整路径，也不信任路径字符串里恰好出现的目录名片段。
     """
     _validate_path_component(attempt_id, label="attempt_id")
-    _validate_path_component(evidence.task_id, label="evidence.task_id")
+    safe_task_id = evidence.task_id.replace(":", "-")
+    _validate_path_component(safe_task_id, label="evidence.task_id (sanitized)")
     attempt_dir = _resolve_within(private_root, "teacher-collection", attempt_id)
     attempt_dir.mkdir(parents=True, exist_ok=True)
-    target = attempt_dir / f"{evidence.task_id}.json"
+    target = attempt_dir / f"{safe_task_id}.json"
     if target.exists() or target.is_symlink():
         msg = f"拒绝覆盖已有采集证据: {target}"
         raise FileExistsError(msg)
