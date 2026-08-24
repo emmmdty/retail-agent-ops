@@ -37,6 +37,7 @@ from veritool_rl.retail_ops.release.release import (
     GateResult,
     GateSchemaVersion,
     ReleaseDecision,
+    _gates_v1_2_with_ood,
     build_release_gates,
 )
 
@@ -47,6 +48,9 @@ class FormalReleaseReport(StrictModel):
     `deployment` 是可执行的回滚指令而不是描述性字段：`serve` 按它选择加载
     base+adapter 还是回滚到冻结 base，因此它与 `decision` 的一致性由模型校验
     强制，不能被调用方单独改写。
+
+    v1.2 新增可选 OOD 字段：`ood_report_id` / `ood_task_success`。
+    值为 `None` 时不参与自哈希，保证旧版本报告的 report_id 复算不变。
     """
 
     schema_version: GateSchemaVersion = "1.0"
@@ -81,6 +85,12 @@ class FormalReleaseReport(StrictModel):
     failed_gate_ids: list[str]
     base_metrics: dict[str, Any]
     candidate_metrics: dict[str, Any]
+    #: v1.2 新增：OOD 评测的 report_id（可选，`None` 时不参与自哈希）。
+    ood_report_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    #: v1.2 新增：候选在 OOD 评测集上的任务成功率（可选）。
+    ood_task_success: float | None = Field(default=None, ge=0.0, le=1.0)
+    #: v1.2 新增：基座在 OOD 评测集上的任务成功率（可选）。
+    base_ood_task_success: float | None = Field(default=None, ge=0.0, le=1.0)
 
     _validate_metrics = field_validator("base_metrics", "candidate_metrics")(validate_json_value)
 
@@ -116,6 +126,7 @@ def decide_formal_release(
     *,
     gate_schema_version: GateSchemaVersion = "1.0",
     paired_outcomes: Sequence[tuple[bool, bool]] | None = None,
+    ood_evidence: tuple[dict[str, Any] | None, dict[str, Any] | None] | None = None,
 ) -> FormalReleaseReport:
     """在证明两份 sealed 报告可配对后，按冻结策略给出 GO/NO-GO。
 
@@ -125,20 +136,47 @@ def decide_formal_release(
     `gate_schema_version` **默认 v1.0**：磁盘上两次 NO-GO 判定就是它得出的，
     改默认值会让历史结论与新口径复算结论无法区分。v1.1 的语义见
     `release.GATE_IDS_V1_1`。
+
+    `ood_evidence` 是 v1.2 的可选参数：`(base_ood_metrics, candidate_ood_metrics)`。
+    传入时计算 OOD 门禁；不传时 OOD 门禁判 FAIL（缺证据不是通过的理由）。
     """
     require_comparable_sealed_runs(base, candidate)
 
     evidence_complete = base.evidence_complete and candidate.evidence_complete
-    gates = build_release_gates(
-        base.metrics,
-        candidate.metrics,
-        evidence_complete=evidence_complete,
-        policy=policy,
-        schema_version=gate_schema_version,
-        paired_outcomes=paired_outcomes,
-    )
+    if gate_schema_version == "1.2" and ood_evidence is not None:
+        base_ood, cand_ood = ood_evidence
+        gates = _gates_v1_2_with_ood(
+            base.metrics,
+            candidate.metrics,
+            evidence_complete=evidence_complete,
+            policy=policy,
+            paired_outcomes=paired_outcomes,
+            baseline_ood_metrics=base_ood,
+            candidate_ood_metrics=cand_ood,
+        )
+    else:
+        gates = build_release_gates(
+            base.metrics,
+            candidate.metrics,
+            evidence_complete=evidence_complete,
+            policy=policy,
+            schema_version=gate_schema_version,
+            paired_outcomes=paired_outcomes,
+        )
     failed_gate_ids = [gate.gate_id for gate in gates if not gate.passed]
     decision = ReleaseDecision.NO_GO if failed_gate_ids else ReleaseDecision.GO
+
+    # OOD 可选字段
+    ood_report_id = None
+    ood_task_success = None
+    base_ood_task_success = None
+    if ood_evidence is not None:
+        base_ood, cand_ood = ood_evidence
+        if cand_ood is not None:
+            ood_task_success = cand_ood.get("task_success")
+        if base_ood is not None:
+            base_ood_task_success = base_ood.get("task_success")
+
     return FormalReleaseReport(
         schema_version=gate_schema_version,
         decision=decision,
@@ -166,6 +204,9 @@ def decide_formal_release(
         failed_gate_ids=failed_gate_ids,
         base_metrics=base.metrics,
         candidate_metrics=candidate.metrics,
+        ood_report_id=ood_report_id,
+        ood_task_success=ood_task_success,
+        base_ood_task_success=base_ood_task_success,
     )
 
 

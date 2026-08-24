@@ -68,11 +68,22 @@ GATE_IDS_V1_1 = (
     "evidence_complete",
 )
 
-GateSchemaVersion = Literal["1.0", "1.1"]
+#: v1.2：在 v1.1 基础上追加 OOD 门禁。
+#:
+#: OOD 评测从"诊断量"升级为"门禁项"，让发布判定同时覆盖模板内和模板外。
+#: v1.1 的全部门禁原样保留，只在末尾追加两个新项。
+GATE_IDS_V1_2 = (
+    *GATE_IDS_V1_1,
+    "ood_task_success_min",
+    "ood_success_delta_min",
+)
+
+GateSchemaVersion = Literal["1.0", "1.1", "1.2"]
 
 GATE_IDS_BY_SCHEMA: dict[str, tuple[str, ...]] = {
     "1.0": GATE_IDS,
     "1.1": GATE_IDS_V1_1,
+    "1.2": GATE_IDS_V1_2,
 }
 
 #: 三个比值门禁共用的说明片段。`reason` 是给人读的字段，"失败任务提前终止反而更快"
@@ -169,6 +180,14 @@ def build_release_gates(
             candidate_metrics,
             evidence_complete=evidence_complete,
             policy=policy,
+        )
+    if schema_version == "1.2":
+        return _gates_v1_2(
+            baseline_metrics,
+            candidate_metrics,
+            evidence_complete=evidence_complete,
+            policy=policy,
+            paired_outcomes=paired_outcomes,
         )
     return _gates_v1_1(
         baseline_metrics,
@@ -301,6 +320,106 @@ def _gates_v1_1(
             ),
         ),
         _evidence_gate(evidence_complete, policy),
+    ]
+
+
+def _gates_v1_2(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    *,
+    evidence_complete: bool,
+    policy: ReleasePolicyConfig,
+    paired_outcomes: Sequence[tuple[bool, bool]] | None,
+) -> list[GateResult]:
+    """v1.2：在 v1.1 基础上追加 OOD 门禁。
+
+    v1.1 的全部门禁原样保留，只在末尾追加 `ood_task_success_min` 与
+    `ood_success_delta_min`。无 OOD 证据时 OOD 门禁判 FAIL。
+    """
+    v1_1_gates = _gates_v1_1(
+        baseline_metrics,
+        candidate_metrics,
+        evidence_complete=evidence_complete,
+        policy=policy,
+        paired_outcomes=paired_outcomes,
+    )
+    v1_1_gates.extend(_ood_gates(None, None, policy))
+    return v1_1_gates
+
+
+def _gates_v1_2_with_ood(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    *,
+    evidence_complete: bool,
+    policy: ReleasePolicyConfig,
+    paired_outcomes: Sequence[tuple[bool, bool]] | None,
+    baseline_ood_metrics: dict[str, Any] | None,
+    candidate_ood_metrics: dict[str, Any] | None,
+    schema_version: GateSchemaVersion = "1.2",
+) -> list[GateResult]:
+    """v1.2：v1.1 全部门禁 + OOD 门禁。"""
+    v1_1_gates = _gates_v1_1(
+        baseline_metrics,
+        candidate_metrics,
+        evidence_complete=evidence_complete,
+        policy=policy,
+        paired_outcomes=paired_outcomes,
+    )
+    v1_1_gates.extend(_ood_gates(baseline_ood_metrics, candidate_ood_metrics, policy))
+    return v1_1_gates
+
+
+def _ood_gates(
+    baseline_ood_metrics: dict[str, Any] | None,
+    candidate_ood_metrics: dict[str, Any] | None,
+    policy: ReleasePolicyConfig,
+) -> list[GateResult]:
+    """OOD 门禁：候选 OOD 成功率不低于基座，且绝对值不低于下限。
+
+    缺 OOD 证据时判 FAIL——缺证据不是通过的理由。
+    """
+    _OOD_SUCCESS_MIN = 0.70
+    _OOD_DELTA_MIN = 0.0
+
+    if baseline_ood_metrics is None or candidate_ood_metrics is None:
+        return [
+            GateResult(
+                gate_id="ood_task_success_min",
+                passed=False,
+                observed="missing_ood_evidence",
+                threshold=_OOD_SUCCESS_MIN,
+                reason="缺少 OOD 评测证据，无法判定候选分布外成功率。缺证据不是通过的理由。",
+            ),
+            GateResult(
+                gate_id="ood_success_delta_min",
+                passed=False,
+                observed="missing_ood_evidence",
+                threshold=_OOD_DELTA_MIN,
+                reason=(
+                    "缺少 OOD 评测证据，无法判定候选相对基座的分布外提升。缺证据不是通过的理由。"
+                ),
+            ),
+        ]
+
+    base_success = float(baseline_ood_metrics.get("task_success", 0.0))
+    cand_success = float(candidate_ood_metrics.get("task_success", 0.0))
+    ood_delta = cand_success - base_success
+    return [
+        GateResult(
+            gate_id="ood_task_success_min",
+            passed=cand_success >= _OOD_SUCCESS_MIN,
+            observed=cand_success,
+            threshold=_OOD_SUCCESS_MIN,
+            reason="候选 OOD 任务成功率绝对下限。",
+        ),
+        GateResult(
+            gate_id="ood_success_delta_min",
+            passed=ood_delta >= _OOD_DELTA_MIN,
+            observed=ood_delta,
+            threshold=_OOD_DELTA_MIN,
+            reason="候选 OOD 任务成功率相对同基座的提升不得为负。",
+        ),
     ]
 
 

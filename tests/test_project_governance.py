@@ -90,7 +90,7 @@ def test_the_declared_phase_matches_the_phase_status_source() -> None:
     phase = re.search(r"当前阶段：`([^`]+)`", agents)
     assert phase is not None, "AGENTS.md 没有声明当前阶段"
     plan = _read("docs/EXECUTION_PLAN.md")
-    phase_rows = [line for line in plan.splitlines() if line.startswith(f"| {phase.group(1)} ")]
+    phase_rows = [line for line in plan.splitlines() if line.startswith(f"| {phase.group(1)}")]
     assert phase_rows, f"EXECUTION_PLAN.md 的阶段表里没有 {phase.group(1)}"
     assert all("已完成" in row for row in phase_rows), (
         f"AGENTS.md 声称 {phase.group(1)} 已完成，但阶段状态源里不是：{phase_rows}"
