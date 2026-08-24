@@ -1,12 +1,11 @@
-"""Task 3: v3 tool count degradation curve — standalone runner.
+"""Task 3: v3 tool count degradation curve — minimal standalone runner.
 
-For each breakpoint N in {6, 9, 12, 15}, runs:
-1. Teacher collection (DeepSeek via OpenAI-compatible API)
-2. SFT data export
-3. QLoRA training
-4. Dev evaluation (base + candidate)
-
-{3} breakpoint reuses sft-008 from retail_ops v1.
+For each breakpoint N in {6, 9, 12, 15}:
+1. Generate v3 tasks
+2. Collect teacher trajectories (DeepSeek)
+3. Export SFT data
+4. Train QLoRA adapter
+5. Evaluate (run episodes + compute metrics)
 
 Usage on gpu-5090:
     cd /mnt/aidata/tongjiakai/retail-agent-ops
@@ -16,6 +15,7 @@ Usage on gpu-5090:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -26,41 +26,47 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from veritool_rl.core.agent.qwen import GenerationSettings, QwenPolicy
-from veritool_rl.core.generators import trajectory_to_sft_example
-from veritool_rl.retail_ops.build.teacher_data import (
-    TeacherCollectionConfig,
-    collect_teacher_attempt,
-    write_teacher_attempt_evidence,
-    write_teacher_checkpoint,
-    load_teacher_checkpoint,
-    load_teacher_route,
-)
+from veritool_rl.core.agent.runner import run_episode
+from veritool_rl.core.metrics import compute_metrics
 from veritool_rl.retail_ops.domain.bundle import load_bundle
-from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
-from veritool_rl.retail_ops.domain.v3_tasks import (
-    ToolCountTaskRecord,
-    build_toolcount_task_set,
-)
-from veritool_rl.retail_ops.evaluate.evaluation import run_evaluation
+from veritool_rl.retail_ops.domain.v3_tasks import build_toolcount_task_set
 
-BUNDLE_DIR = PROJECT_ROOT / "domains/retail_ops/v1"
+BUNDLE_DIR = PROJECT_ROOT / "domains" / "retail_ops" / "v1"
 REPORTS_ROOT = PROJECT_ROOT / "reports" / "retail_ops" / "v1" / "r10"
+MODELS_ROOT = PROJECT_ROOT / "models"
 
 
-def _env_factory():
+def _load_policy(model_dir: str, adapter_dir: str | None = None):
+    from veritool_rl.core.agent.qwen import GenerationSettings, QwenPolicy
+
+    gen = GenerationSettings(max_new_tokens=256)
+    return QwenPolicy.from_config(
+        model_dir=model_dir,
+        adapter_dir=adapter_dir,
+        generation_settings=gen,
+    )
+
+
+def _make_env():
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+
     bundle = load_bundle(BUNDLE_DIR)
-    return lambda: RetailOpsEnv(bundle)
+    return RetailOpsEnv(bundle)
 
 
-def run_teacher_collection(tool_count: int, output_dir: Path) -> int:
-    """Collect teacher trajectories for v3 tool count breakpoint."""
-    tag = f"toolcount-{tool_count}"
+def run_teacher(tool_count: int, output_dir: Path) -> int:
+    """Collect teacher trajectories."""
+    from veritool_rl.core.agent.qwen import load_teacher_route
+    from veritool_rl.retail_ops.build.teacher_data import (
+        TeacherCollectionConfig,
+        collect_teacher_attempt,
+        write_teacher_attempt_evidence,
+    )
+
     version = f"retail_ops_v3_tc{tool_count}_20260824"
-
     task_set = build_toolcount_task_set(version, seed=0, tool_count=tool_count)
     train_records = task_set.records("train")
-    print(f"  Tasks: {len(train_records)} train")
+    print(f"  {len(train_records)} train tasks")
 
     route, api_key = load_teacher_route(os.environ)
     from openai import OpenAI
@@ -70,78 +76,67 @@ def run_teacher_collection(tool_count: int, output_dir: Path) -> int:
 
     config = TeacherCollectionConfig(
         dataset_version=version,
-        attempt_id=f"v3-{tag}",
+        attempt_id=f"v3-tc{tool_count}",
         seed=0,
         max_episodes_per_task=2,
         max_request_attempts=3,
-        bundle_sha256="v3-toolcount",
-        tool_schema_sha256="v3-toolcount",
-        system_prompt_sha256="v3-toolcount",
-        config_sha256="v3-toolcount",
+        bundle_sha256="v3",
+        tool_schema_sha256="v3",
+        system_prompt_sha256="v3",
+        config_sha256="v3",
     )
 
     evidence_dir = output_dir / "teacher"
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint = load_teacher_checkpoint(evidence_dir, f"v3-{tag}", config)
-    attempted_ids = {r.task.task_id for r in checkpoint.attempts} if checkpoint else set()
+    env = _make_env()
+    env_factory = lambda: env
 
     accepted = 0
-    rejected = 0
-    skipped = 0
-    env_factory = _env_factory()
-
     for i, record in enumerate(train_records):
-        if record.task.task_id in attempted_ids:
-            skipped += 1
+        eid = evidence_dir / f"{record.task.task_id}.json"
+        if eid.exists():
+            ev = json.loads(eid.read_text())
+            if ev.get("outcome") == "accepted":
+                accepted += 1
             continue
-
         try:
             evidence = collect_teacher_attempt(record, client, env_factory, config)
             write_teacher_attempt_evidence(evidence, evidence_dir)
             if evidence.outcome.value == "accepted":
                 accepted += 1
-            else:
-                rejected += 1
         except Exception as e:
-            rejected += 1
-            print(f"  Error on task {i}: {e}")
-
+            print(f"  Error task {i}: {e}")
         if (i + 1) % 40 == 0:
-            print(f"  [{i+1}/{len(train_records)}] accepted={accepted} rejected={rejected}")
+            print(f"  [{i+1}/{len(train_records)}] accepted={accepted}")
 
-    print(f"  Teacher: {accepted}/{len(train_records)} accepted, {rejected} rejected")
+    print(f"  Teacher: {accepted}/{len(train_records)} accepted")
     return accepted
 
 
-def run_sft_export(tool_count: int, output_dir: Path) -> int:
+def run_export(tool_count: int, output_dir: Path) -> int:
     """Export SFT data from teacher evidence."""
-    evidence_dir = output_dir / "teacher"
+    from veritool_rl.core.generators import trajectory_to_sft_example
+    from veritool_rl.core.trajectory.schema import Trajectory
+
     version = f"retail_ops_v3_tc{tool_count}_20260824"
     task_set = build_toolcount_task_set(version, seed=0, tool_count=tool_count)
     train_records = task_set.records("train")
 
-    evidence_files = sorted(evidence_dir.glob("*.json"))
-    evidence_files = [f for f in evidence_files if f.name != "checkpoint.json"]
-
+    evidence_dir = output_dir / "teacher"
     sft_rows = []
-    accepted = 0
     for record in train_records:
-        evidence_path = evidence_dir / f"{record.task.task_id}.json"
-        if not evidence_path.exists():
+        eid = evidence_dir / f"{record.task.task_id}.json"
+        if not eid.exists():
             continue
-        evidence = json.loads(evidence_path.read_text())
-        if evidence.get("outcome") != "accepted":
+        ev = json.loads(eid.read_text())
+        if ev.get("outcome") != "accepted":
             continue
-        trajectory = evidence.get("trajectory")
-        if not trajectory:
+        traj_data = ev.get("trajectory")
+        if not traj_data:
             continue
-        from veritool_rl.core.trajectory.schema import Trajectory
-
-        traj = Trajectory.model_validate(trajectory)
-        sft_example = trajectory_to_sft_example(traj)
-        sft_rows.append(sft_example)
-        accepted += 1
+        traj = Trajectory.model_validate(traj_data)
+        sft_rows.append(trajectory_to_sft_example(traj))
 
     sft_dir = output_dir / "sft"
     sft_dir.mkdir(parents=True, exist_ok=True)
@@ -150,20 +145,20 @@ def run_sft_export(tool_count: int, output_dir: Path) -> int:
         for row in sft_rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    print(f"  SFT export: {accepted} rows -> {sft_path}")
-    return accepted
+    print(f"  SFT: {len(sft_rows)} rows")
+    return len(sft_rows)
 
 
-def run_training(tool_count: int, output_dir: Path) -> bool:
+def run_train(tool_count: int, output_dir: Path) -> bool:
     """Train QLoRA adapter."""
     from veritool_rl.training.sft import run_sft
 
     sft_path = output_dir / "sft" / "sft.jsonl"
-    if not sft_path.exists():
-        print(f"  SFT file not found: {sft_path}")
+    if not sft_path.exists() or sft_path.stat().st_size == 0:
+        print("  No SFT data")
         return False
 
-    train_config = {
+    config = {
         "model": {
             "repo": "Qwen/Qwen3-4B",
             "revision": "8cd0101f70cac4f1efcebc979faf483558e39297",
@@ -181,119 +176,135 @@ def run_training(tool_count: int, output_dir: Path) -> bool:
 
     adapter_dir = output_dir / "adapter"
     adapter_dir.mkdir(parents=True, exist_ok=True)
-    run_sft(train_config, seed=0, output_dir=adapter_dir)
-    print(f"  Training complete: {adapter_dir}")
+    run_sft(config, seed=0, output_dir=adapter_dir)
+    print(f"  Training done: {adapter_dir}")
     return True
 
 
-def run_evaluation(tool_count: int, output_dir: Path, adapter_path: str | None = None) -> dict:
-    """Evaluate on dev set."""
+def run_eval(tool_count: int, output_dir: Path, adapter_path: str | None = None) -> dict:
+    """Evaluate on dev set by running episodes directly."""
+    from veritool_rl.core.agent.qwen import GenerationSettings
+
     version = f"retail_ops_v3_tc{tool_count}_20260824"
     task_set = build_toolcount_task_set(version, seed=0, tool_count=tool_count)
     dev_records = task_set.records("dev")
 
-    bundle = load_bundle(BUNDLE_DIR)
+    model_dir = str(MODELS_ROOT / "Qwen3-4B-pinned")
+    policy = _load_policy(model_dir, adapter_path)
     gen_settings = GenerationSettings(max_new_tokens=256)
-    policy = QwenPolicy.from_config(
-        model_dir=str(PROJECT_ROOT / "models" / "Qwen3-4B-pinned"),
-        adapter_dir=adapter_path,
-        generation_settings=gen_settings,
-    )
 
-    env_factory = _env_factory()
-    evidence = run_evaluation(
-        dev_records,
-        policy,
-        env_factory,
-        bundle,
-        gen_settings,
-    )
+    trajectories = []
+    successes = []
+    policy_violations = 0
+    invalid_calls = 0
+    tool_selection_correct = 0
+    tool_selection_total = 0
 
-    report_dir = output_dir / "eval"
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "report.json").write_text(
-        json.dumps(evidence.model_dump(mode="json"), indent=2)
-    )
+    for record in dev_records:
+        task = record.task
+        env = _make_env()
+        try:
+            traj = run_episode(task, lambda: env, policy, seed=0)
+            trajectories.append(traj)
 
-    metrics = evidence.metrics
-    print(f"  Eval: task_success={metrics.get('task_success', 0):.4f}, "
-          f"pv={metrics.get('policy_violation_count', 0)}, "
-          f"tool_acc={metrics.get('tool_selection_accuracy', 0):.4f}")
+            # Check success
+            success = env.verify_final_state(task, traj)
+            successes.append(success)
+
+            # Count policy violations
+            for step in traj.steps:
+                if step.tool_call:
+                    is_valid = env.validate_tool_call(step.tool_call, task)
+                    if not is_valid:
+                        invalid_calls += 1
+
+            # Tool selection accuracy
+            if task.expected_calls and traj.steps:
+                expected_names = [c.name for c in task.expected_calls if c.name]
+                actual_names = [s.tool_call.name for s in traj.steps if s.tool_call]
+                for en in expected_names:
+                    if en in actual_names:
+                        tool_selection_correct += 1
+                    tool_selection_total += 1
+
+        except Exception as e:
+            successes.append(False)
+            print(f"  Error on {task.task_id}: {e}")
+
+    n = len(dev_records)
+    task_success = sum(successes) / n if n > 0 else 0.0
+    tool_acc = tool_selection_correct / tool_selection_total if tool_selection_total > 0 else 0.0
+
+    metrics = {
+        "task_success": task_success,
+        "policy_violation_count": policy_violations,
+        "invalid_call_count": invalid_calls,
+        "tool_selection_accuracy": tool_acc,
+        "task_count": n,
+    }
+
+    # Save
+    eval_dir = output_dir / "eval"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    (eval_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+
+    label = "candidate" if adapter_path else "base"
+    print(f"  {label}: success={task_success:.4f} pv={policy_violations} ta={tool_acc:.4f}")
     return metrics
 
 
 def main() -> None:
     results = {}
 
-    for tool_count in [6, 9, 12, 15]:
+    for tc in [6, 9, 12, 15]:
         print(f"\n{'='*50}")
-        print(f"Tool count: {tool_count}")
+        print(f"Tool count: {tc}")
         print(f"{'='*50}")
 
-        output_dir = REPORTS_ROOT / f"toolcount-{tool_count}"
-        done_marker = output_dir / "done"
+        out = REPORTS_ROOT / f"toolcount-{tc}"
+        done = out / "done.json"
 
-        if done_marker.exists():
-            print("Already done, loading results")
-            report_path = output_dir / "eval" / "report.json"
-            if report_path.exists():
-                report = json.loads(report_path.read_text())
-                results[tool_count] = report.get("metrics", {})
+        if done.exists():
+            print("Already done")
+            results[tc] = json.loads(done.read_text())
             continue
 
-        # 1. Teacher collection
-        print("\n[1/4] Teacher collection...")
-        accepted = run_teacher_collection(tool_count, output_dir)
+        # 1. Teacher
+        print("\n[1/4] Teacher...")
+        accepted = run_teacher(tc, out)
 
-        # 2. SFT export
+        # 2. Export
         print("\n[2/4] SFT export...")
-        sft_rows = run_sft_export(tool_count, output_dir)
+        sft_rows = run_export(tc, out)
 
-        # 3. Training
-        print("\n[3/4] Training...")
-        success = run_training(tool_count, output_dir)
+        # 3. Train
+        print("\n[3/4] Train...")
+        run_train(tc, out)
 
-        # 4. Base eval
-        print("\n[4a/4] Base eval...")
-        base_metrics = run_evaluation(tool_count, output_dir, adapter_path=None)
+        # 4. Eval
+        print("\n[4/4] Eval...")
+        base_m = run_eval(tc, out, adapter_path=None)
+        adapter_dir = out / "adapter"
+        cand_m = run_eval(tc, out / "candidate", adapter_path=str(adapter_dir) if adapter_dir.exists() else None)
 
-        # 4b. Candidate eval
-        print("\n[4b/4] Candidate eval...")
-        adapter_dir = output_dir / "adapter"
-        cand_metrics = run_evaluation(
-            tool_count,
-            output_dir / "candidate",
-            adapter_path=str(adapter_dir) if adapter_dir.exists() else None,
-        )
-
-        results[tool_count] = {
-            "base": base_metrics,
-            "candidate": cand_metrics,
-            "accepted": accepted,
-        }
-
-        done_marker.write_text(json.dumps(results[tool_count], indent=2))
-        print(f"Completed {tool_count} tools")
+        r = {"base": base_m, "candidate": cand_m, "accepted": accepted}
+        results[tc] = r
+        done.write_text(json.dumps(r, indent=2))
 
     # Summary
-    print(f"\n{'='*50}")
-    print("Degradation Curve Summary")
-    print(f"{'='*50}")
+    print(f"\n{'='*60}")
     print(f"{'Tools':>6} {'Base':>8} {'Cand':>8} {'Delta':>8} {'PV':>6} {'ToolAcc':>8}")
-    for tc in sorted(results.keys()):
+    print("-" * 60)
+    for tc in sorted(results):
         r = results[tc]
-        base = r.get("base", r)
-        cand = r.get("candidate", r)
-        bs = base.get("task_success", 0) if isinstance(base, dict) else 0
-        cs = cand.get("task_success", 0) if isinstance(cand, dict) else 0
-        pv = cand.get("policy_violation_count", 0) if isinstance(cand, dict) else 0
-        ta = cand.get("tool_selection_accuracy", 0) if isinstance(cand, dict) else 0
-        print(f"{tc:>6} {bs:>8.4f} {cs:>8.4f} {cs-bs:>+8.4f} {pv:>6} {ta:>8.4f}")
+        b = r["base"]["task_success"]
+        c = r["candidate"]["task_success"]
+        pv = r["candidate"]["policy_violation_count"]
+        ta = r["candidate"]["tool_selection_accuracy"]
+        print(f"{tc:>6} {b:>8.4f} {c:>8.4f} {c-b:>+8.4f} {pv:>6} {ta:>8.4f}")
 
-    # Save summary
-    summary_path = REPORTS_ROOT / "degradation_summary.json"
-    summary_path.write_text(json.dumps(results, indent=2))
-    print(f"\nSummary saved to {summary_path}")
+    (REPORTS_ROOT / "degradation_summary.json").write_text(json.dumps(results, indent=2))
+    print(f"\nSaved to {REPORTS_ROOT / 'degradation_summary.json'}")
 
 
 if __name__ == "__main__":
