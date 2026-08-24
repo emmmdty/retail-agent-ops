@@ -21,6 +21,8 @@
 | `src/veritool_rl/` | 活动 | 全部实现代码（导入名保留，见第 5 节） |
 | `domains/retail_ops/v1/` | 活动（**冻结**） | 领域 bundle v1：工具 schema、业务政策、发布策略。四份文件都在 `bundle_sha256` 的分量里，而它同时在 dev 与 sealed 的配对字段内——**一个字节都不能改**，有测试锁定 |
 | `domains/retail_ops/v2/` | 活动 | 领域 bundle v2：政策规则**可执行**、`refund_order` 增必填 `idempotency_key`。见 [`DOMAIN_BUNDLE_V2.md`](./DOMAIN_BUNDLE_V2.md)。正式数据集轨道仍只接受 v1 |
+| `domains/retail_ops/v3/` | 活动 | 领域 bundle v3（15 工具，`evaluator_id: retail_ops_v3`）；R8 C2 引入，6 类任务同 v1 |
+| `domains/retail_ops/v4/` | 活动 | 领域 bundle v4（跨工具评测，`evaluator_id: retail_ops_v4`）；R9 Phase B 的跨工具 teacher 采集与评测轨道 |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
 | `tests/` | 活动 | 治理契约测试与领域契约测试；条数以 `README.md` 的工程基线一行为准，本表不复述 |
@@ -49,10 +51,11 @@ src/veritool_rl/
 │   ├── agent/              #   执行层（policy, parser, runner, guardrail, user_simulator, qwen backend）
 │   ├── envs/               #   工具环境抽象与 MiniRetail 本地回归环境
 │   ├── rewards/            #   verifier
+│   ├── build/              #   跨域 teacher 基础设施（teacher_client, teacher_route；R8 从 retail_ops 提升至 core，供多领域共用）
 │   ├── artifacts.py        #   canonical JSON、内容哈希、不可覆盖输出目录
 │   ├── paths.py            #   项目相对路径校验（防路径逃逸）
 │   ├── metrics.py          #   由可重放轨迹计算的确定性指标
-│   ├── generators.py       #   Oracle 成功轨迹生成与 SFT 数据转换
+│   ├── generators.py        #   Oracle 成功轨迹生成与 SFT 数据转换
 │   └── reporting.py        #   报告渲染
 ├── retail_ops/             # RetailOps 领域，按四接口分层
 │   ├── domain/             #   领域事实来源：bundle, tasks, ood_tasks, policies, policy_rules, policy_card, environment, formal_tasks
@@ -60,12 +63,18 @@ src/veritool_rl/
 │   ├── evaluate/           #   评测侧：evaluation, base_/candidate_/sealed_/ood_evaluation
 │   ├── release/            #   决策侧：release(R1), formal_release(holdout), governance, formal_governance
 │   └── serve/              #   服务侧：service（R1 规则策略 + formal 真实模型两条通道）
+├── flight_ops/             # 第二个领域（R8 C1），镜像 retail_ops 的 domain/build/evaluate/release 四接口结构，证明领域可替换性
+│   ├── domain/             #   bundle, tasks, environment, policy_rules
+│   ├── build/              #   manifests, teacher_data, dev_sft_export
+│   ├── evaluate/           #   evaluation
+│   └── release/            #   release
 ├── training/sft.py         # 单卡 QLoRA-SFT
 └── legacy/                 # 旧 VeriTool-RL 路线（bfcl 数据与评测、MVP evaluator、grpo/preference）
 ```
 
-**依赖方向**：`product_cli → retail_ops.* → core.*`。`core` 不反向依赖 `retail_ops`，
-`legacy` 不被主线依赖。这条约束让"领域可替换"这一产品主张在代码结构上可验证。
+**依赖方向**：`product_cli → {retail_ops, flight_ops}.* → core.*`。`core` 不反向依赖
+任何领域包，`legacy` 不被主线依赖。`flight_ops` 的存在让"领域可替换"这一产品主张
+在代码结构上可验证——第二个领域复用同一份 `core`。
 
 ## 4. `configs/` 分层
 

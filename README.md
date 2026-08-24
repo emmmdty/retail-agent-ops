@@ -216,12 +216,13 @@ holdout 真值。BFCL 只保留为独立外部回归，现有 BFCL 成绩不是 
 ```
 src/veritool_rl/
 ├── product_cli.py    四接口命令面
-├── core/             跨领域基础设施（轨迹契约、环境抽象、agent 执行、指标、产物哈希）
+├── core/             跨领域基础设施（轨迹契约、环境抽象、agent 执行、指标、产物哈希、跨域 teacher）
 ├── retail_ops/       RetailOps 领域：domain / build / evaluate / release / serve
+├── flight_ops/       第二个领域（R8），镜像 retail_ops 四接口，证明领域可替换
 ├── training/         单卡 QLoRA-SFT
 └── legacy/           原 VeriTool-RL 路线（BFCL 外部回归仍在用）
 configs/retail_ops/{build,evaluate,release,serve}/   与命令一一对应的运行配置
-domains/retail_ops/{v1,v2}/                          工具 schema、业务政策、发布策略
+domains/retail_ops/{v1,v2,v3,v4}/                    工具 schema、业务政策、发布策略（v1 冻结；v2 可执行规则；v3 15 工具；v4 跨工具）
 ```
 
 分发名与 CLI 是 `retail-agent-ops`，Python 导入名仍是 `veritool_rl`（历史原因，
