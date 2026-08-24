@@ -1075,3 +1075,12 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-22 | bank-v4 生成 | 599 条，sha256 `aa6ccee3…` |
 | 2026-08-22 | SFT ×3（sft-001/002/003） | eval_loss 0.292 / 0.114 / 0.107 |
 | 2026-08-22 | 三候选 × 三评测面 | 见上表 |
+
+## 2026-08-24 — R10 推到 8.5+（OOD 门禁 + 跨域 + 退化曲线）
+
+- R10 三项核心任务全部完成。
+- **v1.2 OOD gate**：新增 `OodEvaluationReport` schema，dry-run 验证与 sealed v1.1 契约兼容。
+- **flight_ops 跨域**：teacher 采集 233/240（97.1%），SFT Qwen3-4B QLoRA，dev 评测 candidate 1.0000、base 0.4833，release gate GO。证据链与零售域同构。
+- **工具数退化曲线**：retail_ops v3（15 工具），{3,6,9,12,15} 五个断点，tool selection 准确率 0.65 附近平坦，确认工具数不是基座模型性能瓶颈。
+- `docs/EXECUTION_PLAN.md` 已更新 R10 阶段状态为「已完成」。
+- 探索性结论，不用于发布判定；发布候选仍是 sft-008。

@@ -75,13 +75,13 @@ def main() -> None:
     )
 
     # 5. 输出结果
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"v1.2 Release Decision: {report.decision.value}")
     print(f"Deployment: {report.deployment}")
     print(f"Schema: {report.schema_version}")
     print(f"OOD task_success: {report.ood_task_success}")
     print(f"Base OOD task_success: {report.base_ood_task_success}")
-    print(f"\nGate results:")
+    print("\nGate results:")
     for gate in report.gates:
         status = "PASS" if gate.passed else "FAIL"
         print(f"  [{status}] {gate.gate_id}: observed={gate.observed}, threshold={gate.threshold}")

@@ -1276,11 +1276,12 @@ def test_the_overturned_judgement_count_matches_the_table() -> None:
     """
     text = _read("docs/RESUME_EVIDENCE.md")
 
-    heading = re.search(r"### 1\.4 被自己实验推翻的 \*\*(\d+)\*\* 个判断", text)
-    assert heading is not None, "§1.4 的标题没有写出可核对的条数"
+    heading = re.search(r"### 1\.\d+ 被自己实验推翻的 \*\*(\d+)\*\* 个判断", text)
+    assert heading is not None, "被自己实验推翻的标题没有写出可核对的条数"
     declared = int(heading.group(1))
 
-    section = text.split("### 1.4 ")[1].split("\n### ")[0]
+    section_start = text.find(heading.group(0))
+    section = text[section_start:].split("\n### ")[0]
     rows = [
         line
         for line in section.splitlines()

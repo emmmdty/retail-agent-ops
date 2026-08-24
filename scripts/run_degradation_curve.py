@@ -1,7 +1,6 @@
 """Task 3: Run degradation curve for tool counts {6, 9, 12, 15} on flight_ops."""
 
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path("/mnt/aidata/tongjiakai/retail-agent-ops")
@@ -22,7 +21,10 @@ for tool_count in [6, 9, 12, 15]:
     print(f"Teacher collection for {tool_count} tools...", flush=True)
     r = subprocess.run(
         [PYTHON, RUNNER, "--mode", "teacher_collect", "--dataset-version", version, "--seed", "0"],
-        cwd=ROOT, capture_output=True, text=True, timeout=3600,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=3600,
     )
     if r.returncode != 0:
         print(f"Teacher failed: {r.stderr[-300:]}", flush=True)
@@ -33,7 +35,10 @@ for tool_count in [6, 9, 12, 15]:
     print("SFT export...", flush=True)
     r = subprocess.run(
         [PYTHON, RUNNER, "--mode", "sft_export", "--dataset-version", version],
-        cwd=ROOT, capture_output=True, text=True, timeout=300,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     print(r.stdout[-100:] if r.stdout else "no stdout", flush=True)
 
@@ -41,7 +46,10 @@ for tool_count in [6, 9, 12, 15]:
     print("Training...", flush=True)
     r = subprocess.run(
         [PYTHON, RUNNER, "--mode", "train", "--dataset-version", version, "--seed", "0"],
-        cwd=ROOT, capture_output=True, text=True, timeout=600,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     if r.returncode != 0:
         print(f"Train failed: {r.stderr[-300:]}", flush=True)
@@ -51,19 +59,46 @@ for tool_count in [6, 9, 12, 15]:
     # Base eval
     print("Base eval...", flush=True)
     r = subprocess.run(
-        [PYTHON, RUNNER, "--mode", "eval", "--dataset-version", version,
-         "--split", "dev", "--model-path", "models/Qwen3-4B-pinned"],
-        cwd=ROOT, capture_output=True, text=True, timeout=600,
+        [
+            PYTHON,
+            RUNNER,
+            "--mode",
+            "eval",
+            "--dataset-version",
+            version,
+            "--split",
+            "dev",
+            "--model-path",
+            "models/Qwen3-4B-pinned",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     print(r.stdout[-200:] if r.stdout else "no stdout", flush=True)
 
     # Candidate eval
     print("Candidate eval...", flush=True)
     r = subprocess.run(
-        [PYTHON, RUNNER, "--mode", "eval", "--dataset-version", version,
-         "--split", "dev", "--model-path", "models/Qwen3-4B-pinned",
-         "--adapter-path", f"reports/flight_ops/v1/r10/{tag}/train/adapter"],
-        cwd=ROOT, capture_output=True, text=True, timeout=600,
+        [
+            PYTHON,
+            RUNNER,
+            "--mode",
+            "eval",
+            "--dataset-version",
+            version,
+            "--split",
+            "dev",
+            "--model-path",
+            "models/Qwen3-4B-pinned",
+            "--adapter-path",
+            f"reports/flight_ops/v1/r10/{tag}/train/adapter",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     print(r.stdout[-200:] if r.stdout else "no stdout", flush=True)
 

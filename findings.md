@@ -1518,3 +1518,12 @@ task_success 从 0.800 提升到 0.983，只新增 1 次 policy_violation。
   「检查/执行」（cancel_denied_recent 8%→100%）；reasoning_content 按 output
   计费且无法通过 extra_body 关闭（直连 API 亦然）；缓存命中约 78%，
   单轮全量采集 ~¥1.3。
+
+## R10 工具数退化曲线结论（2026-08-24）
+
+- **工具数不是基座模型性能瓶颈**：retail_ops v3（15 工具），五个断点 {3,6,9,12,15}
+  的 tool selection 准确率在 **0.65 附近平坦**，无退化趋势。{3} 复用 sft-008
+  （v1 的 3 工具训练），{6,9,12,15} 各新训 Qwen3-4B QLoRA 候选。
+- **诚实边界**：仅在一个 teacher/provider（MiMo-V2.5）、一个模型（Qwen3-4B）、
+  一个任务集（retail_ops v3 六类）上测量。不同模型规模、不同工具语义重叠度、
+  不同任务复杂度下结论可能不同。

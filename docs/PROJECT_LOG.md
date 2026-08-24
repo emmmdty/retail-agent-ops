@@ -4367,3 +4367,34 @@ cancel 类场景配比或对 RTC 构造中间辅助任务），而不是继续�
 ——0.8667 ≥ 0.80 但 expression/跨工具组合目标部分达成；「任意评测集下降」
 未发生（相对 sft-002 全部持平或改善）。结果写入 findings/progress 后，
 由用户决定：接受 sft-003 为探索性结论收口，还是开第四轮修 rtc。
+
+### LOG-20260824-01：R10 三项核心任务完成——v1.2 OOD gate、flight_ops 跨域、工具数退化曲线
+
+- 日期：2026-08-24
+- 阶段/任务：R10 / 推到 8.5+（OOD 门禁 + 跨域 + 退化曲线）
+- 状态：完成
+- 关联：R8/R9 阶段产出
+
+**背景与难点**：R8 定位 OOD 泛化差主因为数据多样性不足，R9 Phase B 扩展到 5 工具 / 12 场景验证了「多样性有帮助」的主张。R10 将这些探索性结论收口为可复用的工程基础设施。
+
+**证据**：
+
+1. **v1.2 OOD gate schema + dry-run 验证**：新增 `OodEvaluationReport` schema（`ood_evaluation.py`），
+   版本化到 v1.2，干运行验证与 sealed v1.1 契约兼容，不改变已有 release 路径行为。
+
+2. **flight_ops 跨域验证**：flight_ops v1（航班改签，英文域）完成全链路：
+   - teacher 采集 233/240（97.1%），DeepSeek API
+   - SFT 训练 Qwen3-4B QLoRA（~5min）
+   - dev 评测：base 0.4833 → candidate **1.0000**，release gate **GO**
+   - 证据链与零售域同构（`report_id` 自哈希 + 逐产物 SHA-256 + 配对可比性）
+
+3. **工具数退化曲线**：retail_ops v3（15 工具），五个断点 {3,6,9,12,15}：
+   - {3} 复用 sft-008，{6,9,12,15} 各新训 Qwen3-4B QLoRA
+   - tool selection 准确率在 **0.65 附近平坦**，无退化趋势
+   - 结论：工具数不是基座模型性能瓶颈
+
+**决定与方案**：三项任务均按 R8 D2 计划执行，未扩大范围。flight_ops 验证了四接口领域可替换性；退化曲线确认工具面扩容不会恶化 tool selection。
+
+**备选方案与未选择理由**：未做 flight_ops 的 OOD 评测（本轮是跨域可移植性实证，不是发布判定）；未在退化曲线上做封存 holdout（本轮是工具数效应测量）。
+
+**后果与下一步**：R10 阶段完成，`docs/EXECUTION_PLAN.md` 已更新。探索性结论不用于发布判定，发布候选仍是 sft-008。由用户决定后续方向。

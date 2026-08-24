@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -458,3 +459,236 @@ def test_v12_dry_run_with_sft003_ood_v2_reading() -> None:
     # OOD 元数据字段
     assert v12_report.ood_task_success == pytest.approx(0.8667)
     assert v12_report.base_ood_task_success == pytest.approx(0.7333)
+
+
+# ---------------------------------------------------------------------------
+# CLI 集成：_load_ood_evidence
+# ---------------------------------------------------------------------------
+
+
+def test_load_ood_evidence_from_config(tmp_path: Path) -> None:
+    """_load_ood_evidence 从配置路径加载两份 JSON 指标文件。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    base_metrics = {"task_success": 0.7333}
+    cand_metrics = {"task_success": 0.9833}
+    base_path = tmp_path / "base_ood.json"
+    cand_path = tmp_path / "cand_ood.json"
+    base_path.write_text(json.dumps(base_metrics), encoding="utf-8")
+    cand_path.write_text(json.dumps(cand_metrics), encoding="utf-8")
+
+    config = {
+        "ood_evidence": {
+            "base_metrics_path": str(base_path),
+            "candidate_metrics_path": str(cand_path),
+        }
+    }
+
+    result = _load_ood_evidence(config, "1.2")
+    assert result is not None
+    base_ood, cand_ood = result
+    assert base_ood["task_success"] == pytest.approx(0.7333)
+    assert cand_ood["task_success"] == pytest.approx(0.9833)
+
+
+def test_load_ood_evidence_returns_none_when_absent() -> None:
+    """无 ood_evidence 配置时返回 None。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    assert _load_ood_evidence({}, "1.2") is None
+    assert _load_ood_evidence({}, "1.0") is None
+
+
+def test_load_ood_evidence_rejects_non_v12() -> None:
+    """非 v1.2 版本传入 ood_evidence 是配置错误。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    config = {
+        "ood_evidence": {
+            "base_metrics_path": "a.json",
+            "candidate_metrics_path": "b.json",
+        }
+    }
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2 下有效"):
+        _load_ood_evidence(config, "1.0")
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2 下有效"):
+        _load_ood_evidence(config, "1.1")
+
+
+def test_load_ood_evidence_rejects_missing_keys() -> None:
+    """ood_evidence 缺少必填键时拒绝。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    with pytest.raises(ValueError, match="缺少必填键"):
+        _load_ood_evidence({"ood_evidence": {}}, "1.2")
+    with pytest.raises(ValueError, match="缺少必填键"):
+        _load_ood_evidence({"ood_evidence": {"base_metrics_path": "a.json"}}, "1.2")
+
+
+def test_load_ood_evidence_rejects_non_dict_metrics(tmp_path: Path) -> None:
+    """OOD 指标文件内容不是 JSON object 时拒绝。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    base_path = tmp_path / "base_ood.json"
+    cand_path = tmp_path / "cand_ood.json"
+    base_path.write_text("[1, 2, 3]", encoding="utf-8")
+    cand_path.write_text('{"task_success": 0.9}', encoding="utf-8")
+
+    config = {
+        "ood_evidence": {
+            "base_metrics_path": str(base_path),
+            "candidate_metrics_path": str(cand_path),
+        }
+    }
+    with pytest.raises(ValueError, match="基座 OOD 指标必须是 JSON object"):
+        _load_ood_evidence(config, "1.2")
+
+
+def test_run_formal_release_passes_ood_evidence_through(
+    tmp_path: Path,
+) -> None:
+    """_run_formal_release 在 v1.2 时加载 OOD 指标并传递给 decide_formal_release。"""
+    from argparse import Namespace
+    from unittest.mock import patch
+
+    from tests.helpers_sealed import build_sealed_report
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import DeploymentForm
+
+    base_ood = {"task_success": 0.7333}
+    cand_ood = {"task_success": 0.9833}
+    base_ood_path = tmp_path / "base_ood.json"
+    cand_ood_path = tmp_path / "cand_ood.json"
+    base_ood_path.write_text(json.dumps(base_ood), encoding="utf-8")
+    cand_ood_path.write_text(json.dumps(cand_ood), encoding="utf-8")
+
+    config = {
+        "pipeline": "formal_release",
+        "bundle_dir": "domains/retail_ops/v1",
+        "gate_schema_version": "1.2",
+        "ood_evidence": {
+            "base_metrics_path": str(base_ood_path),
+            "candidate_metrics_path": str(cand_ood_path),
+        },
+    }
+
+    sealed_base = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.BASE,
+        adapter=None,
+        metrics=_metrics(task_success=0.80),
+    )
+    sealed_candidate = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.MERGED,
+        merged=True,
+        adapter=None,
+        metrics=_metrics(task_success=1.00),
+    )
+
+    captured_ood = {}
+
+    def fake_decide(base, candidate, policy, **kwargs):
+        captured_ood["ood_evidence"] = kwargs.get("ood_evidence")
+        captured_ood["gate_schema_version"] = kwargs.get("gate_schema_version")
+        from veritool_rl.retail_ops.release.formal_release import decide_formal_release
+
+        return decide_formal_release(
+            base,
+            candidate,
+            policy,
+            gate_schema_version=kwargs["gate_schema_version"],
+            paired_outcomes=kwargs.get("paired_outcomes"),
+            ood_evidence=kwargs.get("ood_evidence"),
+        )
+
+    with (
+        patch("veritool_rl.product_cli.load_sealed_evaluation_report") as mock_load,
+        patch("veritool_rl.product_cli.load_bundle") as mock_bundle,
+        patch("veritool_rl.product_cli.decide_formal_release", side_effect=fake_decide),
+        patch("veritool_rl.product_cli.write_formal_release_report"),
+        patch("veritool_rl.product_cli._current_code_commit", return_value="a" * 40),
+        patch("veritool_rl.product_cli._paired_outcomes", return_value=None),
+    ):
+        mock_load.side_effect = [sealed_base, sealed_candidate]
+        bundle_mock = mock_bundle.return_value
+        bundle_mock.bundle_sha256 = "c" * 64
+        bundle_mock.release = _policy()
+
+        args = Namespace(
+            baseline_dir=tmp_path / "base",
+            candidate_dir=tmp_path / "cand",
+            output_dir=tmp_path / "out",
+            baseline_trajectories=None,
+            candidate_trajectories=None,
+        )
+
+        from veritool_rl.product_cli import _run_formal_release
+
+        _run_formal_release(args, config)
+
+    assert captured_ood["gate_schema_version"] == "1.2"
+    assert captured_ood["ood_evidence"] is not None
+    loaded_base, loaded_cand = captured_ood["ood_evidence"]
+    assert loaded_base["task_success"] == pytest.approx(0.7333)
+    assert loaded_cand["task_success"] == pytest.approx(0.9833)
+
+
+def test_run_formal_release_no_ood_evidence_when_absent(tmp_path: Path) -> None:
+    """非 v1.2 或无 ood_evidence 时，ood_evidence 参数为 None。"""
+    from argparse import Namespace
+    from unittest.mock import MagicMock, patch
+
+    from tests.helpers_sealed import build_sealed_report
+
+    config = {
+        "pipeline": "formal_release",
+        "bundle_dir": "domains/retail_ops/v1",
+        "gate_schema_version": "1.0",
+    }
+
+    sealed_base = build_sealed_report(
+        schema_version="1.0",
+        deployment_form=None,
+        adapter=None,
+        metrics=_metrics(task_success=0.80),
+    )
+    sealed_candidate = build_sealed_report(
+        schema_version="1.0",
+        deployment_form=None,
+        adapter=None,
+        metrics=_metrics(task_success=1.00),
+    )
+
+    captured_ood = {}
+
+    def fake_decide(base, candidate, policy, **kwargs):
+        captured_ood["ood_evidence"] = kwargs.get("ood_evidence")
+        captured_ood["gate_schema_version"] = kwargs.get("gate_schema_version")
+        return MagicMock()
+
+    with (
+        patch("veritool_rl.product_cli.load_sealed_evaluation_report") as mock_load,
+        patch("veritool_rl.product_cli.load_bundle") as mock_bundle,
+        patch("veritool_rl.product_cli.decide_formal_release", side_effect=fake_decide),
+        patch("veritool_rl.product_cli.write_formal_release_report"),
+        patch("veritool_rl.product_cli._current_code_commit", return_value="a" * 40),
+        patch("veritool_rl.product_cli._paired_outcomes", return_value=None),
+    ):
+        mock_load.side_effect = [sealed_base, sealed_candidate]
+        bundle_mock = mock_bundle.return_value
+        bundle_mock.bundle_sha256 = "c" * 64
+        bundle_mock.release = _policy()
+
+        args = Namespace(
+            baseline_dir=tmp_path / "base",
+            candidate_dir=tmp_path / "cand",
+            output_dir=tmp_path / "out",
+            baseline_trajectories=None,
+            candidate_trajectories=None,
+        )
+
+        from veritool_rl.product_cli import _run_formal_release
+
+        _run_formal_release(args, config)
+
+    assert captured_ood["ood_evidence"] is None

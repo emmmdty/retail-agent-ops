@@ -19,17 +19,15 @@ import hashlib
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from veritool_rl.core.agent.runner import run_episode
-from veritool_rl.core.metrics import compute_metrics
-from veritool_rl.retail_ops.domain.bundle import load_bundle
-from veritool_rl.retail_ops.domain.v3_tasks import build_toolcount_task_set
+from veritool_rl.core.agent.runner import run_episode  # noqa: E402
+from veritool_rl.retail_ops.domain.bundle import load_bundle  # noqa: E402
+from veritool_rl.retail_ops.domain.v3_tasks import build_toolcount_task_set  # noqa: E402
 
 BUNDLE_DIR = PROJECT_ROOT / "domains" / "retail_ops" / "v1"
 REPORTS_ROOT = PROJECT_ROOT / "reports" / "retail_ops" / "v1" / "r10"
@@ -56,8 +54,8 @@ def _make_env(task):
 
 def run_teacher(tool_count: int, output_dir: Path) -> int:
     """Collect teacher trajectories."""
-    from veritool_rl.core.build.teacher_route import load_teacher_route
     from veritool_rl.core.build.teacher_client import OpenAICompatibleTeacherClient
+    from veritool_rl.core.build.teacher_route import load_teacher_route
     from veritool_rl.retail_ops.build.teacher_data import (
         TeacherCollectionConfig,
         collect_teacher_attempt,
@@ -88,7 +86,8 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
     evidence_dir = output_dir / "teacher"
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
-    env_factory = lambda t: _make_env(t)
+    def env_factory(t):
+        return _make_env(t)
 
     accepted = 0
     for i, record in enumerate(train_records):
@@ -106,7 +105,7 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
         except Exception as e:
             print(f"  Error task {i}: {e}")
         if (i + 1) % 40 == 0:
-            print(f"  [{i+1}/{len(train_records)}] accepted={accepted}")
+            print(f"  [{i + 1}/{len(train_records)}] accepted={accepted}")
 
     print(f"  Teacher: {accepted}/{len(train_records)} accepted")
     return accepted
@@ -189,7 +188,7 @@ def run_eval(tool_count: int, output_dir: Path, adapter_path: str | None = None)
 
     model_dir = str(MODELS_ROOT / "Qwen3-4B-pinned")
     policy = _load_policy(model_dir, adapter_path)
-    gen_settings = GenerationSettings(max_new_tokens=256)
+    GenerationSettings(max_new_tokens=256)
 
     trajectories = []
     successes = []
@@ -255,9 +254,9 @@ def main() -> None:
     results = {}
 
     for tc in [6, 9, 12, 15]:
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"Tool count: {tc}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
 
         out = REPORTS_ROOT / f"toolcount-{tc}"
         done = out / "done.json"
@@ -273,7 +272,7 @@ def main() -> None:
 
         # 2. Export
         print("\n[2/4] SFT export...")
-        sft_rows = run_export(tc, out)
+        run_export(tc, out)
 
         # 3. Train
         print("\n[3/4] Train...")
@@ -283,14 +282,16 @@ def main() -> None:
         print("\n[4/4] Eval...")
         base_m = run_eval(tc, out, adapter_path=None)
         adapter_dir = out / "adapter"
-        cand_m = run_eval(tc, out / "candidate", adapter_path=str(adapter_dir) if adapter_dir.exists() else None)
+        cand_m = run_eval(
+            tc, out / "candidate", adapter_path=str(adapter_dir) if adapter_dir.exists() else None
+        )
 
         r = {"base": base_m, "candidate": cand_m, "accepted": accepted}
         results[tc] = r
         done.write_text(json.dumps(r, indent=2))
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"{'Tools':>6} {'Base':>8} {'Cand':>8} {'Delta':>8} {'PV':>6} {'ToolAcc':>8}")
     print("-" * 60)
     for tc in sorted(results):
@@ -299,7 +300,7 @@ def main() -> None:
         c = r["candidate"]["task_success"]
         pv = r["candidate"]["policy_violation_count"]
         ta = r["candidate"]["tool_selection_accuracy"]
-        print(f"{tc:>6} {b:>8.4f} {c:>8.4f} {c-b:>+8.4f} {pv:>6} {ta:>8.4f}")
+        print(f"{tc:>6} {b:>8.4f} {c:>8.4f} {c - b:>+8.4f} {pv:>6} {ta:>8.4f}")
 
     (REPORTS_ROOT / "degradation_summary.json").write_text(json.dumps(results, indent=2))
     print(f"\nSaved to {REPORTS_ROOT / 'degradation_summary.json'}")

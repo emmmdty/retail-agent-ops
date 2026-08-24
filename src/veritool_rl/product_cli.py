@@ -473,6 +473,7 @@ def _default_app_runner(app: FastAPI, host: str, port: int) -> None:
 # ---------------------------------------------------------------------------
 
 _FORMAL_RELEASE_KEYS = {"pipeline", "bundle_dir", "gate_schema_version"}
+_FORMAL_RELEASE_OPTIONAL_KEYS = {"ood_evidence"}
 
 
 def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -484,8 +485,23 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
 
     `gate_schema_version` 没有默认值，必须在配置里写出来：判定用的是哪一套门禁
     语义，是这份证据最重要的元数据之一，不能靠"没写就是旧的"。
+
+    v1.2 新增可选 `ood_evidence` 配置项：包含 `base_metrics_path` 和
+    `candidate_metrics_path`，指向两份 OOD 评测指标 JSON 文件。传入时
+    OOD 门禁参与判定；不传时 OOD 门禁判 FAIL（缺证据不是通过的理由）。
     """
-    _require_config_keys(config, _FORMAL_RELEASE_KEYS)
+    actual_keys = set(config)
+    unknown = actual_keys - _FORMAL_RELEASE_KEYS - _FORMAL_RELEASE_OPTIONAL_KEYS
+    if unknown:
+        raise ValueError(
+            f"配置字段不符合命令契约: 未知键 {sorted(unknown)}，"
+            f"允许 {sorted(_FORMAL_RELEASE_KEYS | _FORMAL_RELEASE_OPTIONAL_KEYS)}"
+        )
+    missing = _FORMAL_RELEASE_KEYS - actual_keys
+    if missing:
+        raise ValueError(
+            f"配置字段不符合命令契约: 缺少 {sorted(missing)}，必须 {sorted(_FORMAL_RELEASE_KEYS)}"
+        )
     gate_schema_version = _gate_schema_version(config)
     bundle = load_bundle(_bundle_dir(config))
     base = load_sealed_evaluation_report(
@@ -498,6 +514,8 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
         if report.bundle_sha256 != bundle.bundle_sha256:
             raise ValueError(f"{label} sealed 证据与 release bundle SHA-256 不匹配")
 
+    ood_evidence = _load_ood_evidence(config, gate_schema_version)
+
     write_formal_release_report(
         decide_formal_release(
             base,
@@ -505,6 +523,7 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
             bundle.release,
             gate_schema_version=gate_schema_version,
             paired_outcomes=_paired_outcomes(args, gate_schema_version),
+            ood_evidence=ood_evidence,
         ),
         args.output_dir,
     )
@@ -550,6 +569,39 @@ def _paired_outcomes(
     if set(baseline) != set(candidate):
         raise ValueError("两侧逐任务证据的 task_id 集合不一致，无法配对")
     return [(baseline[task_id], candidate[task_id]) for task_id in sorted(baseline)]
+
+
+def _load_ood_evidence(
+    config: dict[str, Any], gate_schema_version: GateSchemaVersion
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None] | None:
+    """从配置加载 OOD 评测指标，仅 v1.2 支持。
+
+    v1.2 配置中可选 `ood_evidence` 字段，包含 `base_metrics_path` 和
+    `candidate_metrics_path`（JSON 文件路径）。两者必须成对提供。
+
+    非 v1.2 版本传入 ood_evidence 配置是配置错误——该字段只在 v1.2 下有意义。
+    """
+    ood_config = config.get("ood_evidence")
+    if ood_config is None:
+        return None
+    if gate_schema_version != "1.2":
+        raise ValueError(
+            f"ood_evidence 配置仅在 gate_schema_version=1.2 下有效，收到 {gate_schema_version!r}"
+        )
+    if not isinstance(ood_config, dict):
+        raise ValueError("ood_evidence 必须是 mapping")
+    missing = {"base_metrics_path", "candidate_metrics_path"} - set(ood_config)
+    if missing:
+        raise ValueError(f"ood_evidence 缺少必填键: {sorted(missing)}")
+    base_path = Path(ood_config["base_metrics_path"])
+    cand_path = Path(ood_config["candidate_metrics_path"])
+    base_ood = json.loads(base_path.read_text(encoding="utf-8"))
+    cand_ood = json.loads(cand_path.read_text(encoding="utf-8"))
+    if not isinstance(base_ood, dict):
+        raise ValueError(f"基座 OOD 指标必须是 JSON object: {base_path}")
+    if not isinstance(cand_ood, dict):
+        raise ValueError(f"候选 OOD 指标必须是 JSON object: {cand_path}")
+    return base_ood, cand_ood
 
 
 def _success_by_task(path: Path) -> dict[str, bool]:
