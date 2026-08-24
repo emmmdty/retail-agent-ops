@@ -57,6 +57,7 @@ def _make_env():
 def run_teacher(tool_count: int, output_dir: Path) -> int:
     """Collect teacher trajectories."""
     from veritool_rl.core.build.teacher_route import load_teacher_route
+    from veritool_rl.core.build.teacher_client import OpenAICompatibleTeacherClient
     from veritool_rl.retail_ops.build.teacher_data import (
         TeacherCollectionConfig,
         collect_teacher_attempt,
@@ -72,7 +73,7 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
     from openai import OpenAI
 
     raw_client = OpenAI(api_key=api_key, base_url=route.base_url)
-    client = route.client_factory(raw_client, api_key)
+    client = OpenAICompatibleTeacherClient(route=route, client=raw_client)
 
     config = TeacherCollectionConfig(
         dataset_version=version,
