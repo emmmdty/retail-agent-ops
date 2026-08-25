@@ -24,8 +24,8 @@ class TestToolcountTaskSet:
         assert isinstance(ts, ToolCountTaskSet)
         assert ts.tool_count == tool_count
         ts.assert_quotas()
-        assert len(ts.train) == 40 * 6  # 240
-        assert len(ts.dev) == 10 * 6  # 60
+        assert len(ts.train) == 40 * 12  # 480
+        assert len(ts.dev) == 10 * 12  # 120
 
     @pytest.mark.parametrize("tool_count", [3, 6, 9, 12, 15])
     def test_deterministic(self, tool_count: int) -> None:
@@ -76,6 +76,12 @@ class TestToolcountTaskSet:
             "refund_denied_ownership",
             "refund_denied_duplicate",
             "refund_recovery",
+            "check_refund_status",
+            "cancel_eligible",
+            "cancel_denied_recent",
+            "cancel_denied_in_use",
+            "refund_then_cancel",
+            "cancel_recovery",
         }
         for rec in ts.train + ts.dev:
             assert rec.task.scenario.value in valid

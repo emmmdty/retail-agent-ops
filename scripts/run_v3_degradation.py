@@ -29,20 +29,18 @@ from veritool_rl.core.agent.runner import run_episode  # noqa: E402
 from veritool_rl.retail_ops.domain.bundle import load_bundle  # noqa: E402
 from veritool_rl.retail_ops.domain.v3_tasks import build_toolcount_task_set  # noqa: E402
 
-BUNDLE_DIR = PROJECT_ROOT / "domains" / "retail_ops" / "v1"
+BUNDLE_DIR = PROJECT_ROOT / "domains" / "retail_ops" / "v3"
 REPORTS_ROOT = PROJECT_ROOT / "reports" / "retail_ops" / "v1" / "r10"
 MODELS_ROOT = PROJECT_ROOT / "models"
 
 
 def _load_policy(model_dir: str, adapter_dir: str | None = None):
-    from veritool_rl.core.agent.qwen import GenerationSettings, QwenPolicy
+    from veritool_rl.core.agent.qwen import QwenPolicy
 
-    gen = GenerationSettings(max_new_tokens=256)
-    return QwenPolicy.from_config(
-        model_dir=model_dir,
-        adapter_dir=adapter_dir,
-        generation_settings=gen,
-    )
+    config: dict = {"model_name": model_dir, "max_new_tokens": 256}
+    if adapter_dir is not None:
+        config["adapter_path"] = adapter_dir
+    return QwenPolicy.from_config(config)
 
 
 def _make_env(task):
@@ -83,7 +81,7 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
         max_request_attempts=3,
     )
 
-    evidence_dir = output_dir / "teacher"
+    evidence_dir = output_dir / "teacher-collection" / f"v3-tc{tool_count}"
     evidence_dir.mkdir(parents=True, exist_ok=True)
 
     def env_factory(t):
@@ -94,13 +92,13 @@ def run_teacher(tool_count: int, output_dir: Path) -> int:
         eid = evidence_dir / f"{record.task.task_id}.json"
         if eid.exists():
             ev = json.loads(eid.read_text())
-            if ev.get("outcome") == "accepted":
+            if ev.get("accepted"):
                 accepted += 1
             continue
         try:
             evidence = collect_teacher_attempt(record, client, env_factory, config)
-            write_teacher_attempt_evidence(evidence, evidence_dir)
-            if evidence.outcome.value == "accepted":
+            write_teacher_attempt_evidence(evidence, evidence_dir.parent, f"v3-tc{tool_count}")
+            if evidence.accepted:
                 accepted += 1
         except Exception as e:
             print(f"  Error task {i}: {e}")
@@ -120,14 +118,14 @@ def run_export(tool_count: int, output_dir: Path) -> int:
     task_set = build_toolcount_task_set(version, seed=0, tool_count=tool_count)
     train_records = task_set.records("train")
 
-    evidence_dir = output_dir / "teacher"
+    evidence_dir = output_dir / "teacher-collection" / f"v3-tc{tool_count}"
     sft_rows = []
     for record in train_records:
         eid = evidence_dir / f"{record.task.task_id}.json"
         if not eid.exists():
             continue
         ev = json.loads(eid.read_text())
-        if ev.get("outcome") != "accepted":
+        if not ev.get("accepted"):
             continue
         traj_data = ev.get("trajectory")
         if not traj_data:
@@ -148,6 +146,8 @@ def run_export(tool_count: int, output_dir: Path) -> int:
 
 def run_train(tool_count: int, output_dir: Path) -> bool:
     """Train QLoRA adapter."""
+    import hashlib as _hashlib
+
     from veritool_rl.training.sft import run_sft
 
     sft_path = output_dir / "sft" / "sft.jsonl"
@@ -155,19 +155,38 @@ def run_train(tool_count: int, output_dir: Path) -> bool:
         print("  No SFT data")
         return False
 
+    model_dir = MODELS_ROOT / "Qwen3-4B-pinned"
+    sha256_map: dict[str, str] = {}
+    for f in sorted(model_dir.iterdir()):
+        if f.is_file() and not f.name.startswith("."):
+            sha256_map[f.name] = _hashlib.sha256(f.read_bytes()).hexdigest()
+    revision = _hashlib.sha256(
+        json.dumps(sha256_map, sort_keys=True).encode(),
+    ).hexdigest()[:16]
+
+    rel_sft = str(sft_path.relative_to(PROJECT_ROOT))
     config = {
         "model": {
-            "repo": "Qwen/Qwen3-4B",
-            "revision": "8cd0101f70cac4f1efcebc979faf483558e39297",
-            "local_dir": "Qwen3-4B-pinned",
+            "name": str(model_dir.relative_to(PROJECT_ROOT)),
+            "load_in_4bit": True,
+            "revision": revision,
+            "file_sha256": sha256_map,
         },
-        "lora": {"r": 16, "alpha": 32, "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"]},
-        "data": {"train_relpath": str(sft_path.relative_to(PROJECT_ROOT))},
+        "lora": {
+            "r": 16,
+            "alpha": 32,
+            "dropout": 0.05,
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+        },
+        "data": {
+            "train_path": rel_sft,
+            "eval_path": rel_sft,
+        },
         "training": {
-            "num_train_epochs": 3,
-            "per_device_train_batch_size": 4,
-            "learning_rate": 2e-4,
-            "max_seq_length": 2048,
+            "epochs": 3,
+            "batch_size": 1,
+            "grad_accum": 1,
+            "lr": 2e-4,
         },
     }
 
@@ -180,15 +199,12 @@ def run_train(tool_count: int, output_dir: Path) -> bool:
 
 def run_eval(tool_count: int, output_dir: Path, adapter_path: str | None = None) -> dict:
     """Evaluate on dev set by running episodes directly."""
-    from veritool_rl.core.agent.qwen import GenerationSettings
-
     version = f"retail_ops_v3_tc{tool_count}_20260824"
     task_set = build_toolcount_task_set(version, seed=0, tool_count=tool_count)
     dev_records = task_set.records("dev")
 
     model_dir = str(MODELS_ROOT / "Qwen3-4B-pinned")
     policy = _load_policy(model_dir, adapter_path)
-    GenerationSettings(max_new_tokens=256)
 
     trajectories = []
     successes = []
@@ -203,19 +219,9 @@ def run_eval(tool_count: int, output_dir: Path, adapter_path: str | None = None)
             traj = run_episode(task, _make_env, policy, seed=0)
             trajectories.append(traj)
 
-            env = _make_env(task)
-            # Check success
-            success = env.verify_final_state(task, traj)
-            successes.append(success)
+            successes.append(traj.success)
+            policy_violations += len(traj.violations)
 
-            # Count policy violations
-            for step in traj.steps:
-                if step.tool_call:
-                    is_valid = env.validate_tool_call(step.tool_call, task)
-                    if not is_valid:
-                        invalid_calls += 1
-
-            # Tool selection accuracy
             if task.expected_calls and traj.steps:
                 expected_names = [c.name for c in task.expected_calls if c.name]
                 actual_names = [s.tool_call.name for s in traj.steps if s.tool_call]

@@ -29,6 +29,7 @@ _GENERATOR_ID = "retail_ops_v3_toolcount"
 _CURRENT_DAY = 20
 _MARGINS = (1, 2, 3, 5, 7, 10, 14)
 _REASONS = ("damaged", "wrong_item", "not_as_described", "changed_mind")
+_CANCEL_REASONS = ("changed_mind", "duplicate_order", "billing_error", "quality_concern")
 _SCENARIOS = (
     TaskScenario.LOOKUP_STATUS,
     TaskScenario.REFUND_ELIGIBLE,
@@ -36,6 +37,12 @@ _SCENARIOS = (
     TaskScenario.REFUND_DENIED_OWNERSHIP,
     TaskScenario.REFUND_DENIED_DUPLICATE,
     TaskScenario.REFUND_RECOVERY,
+    TaskScenario.CHECK_REFUND_STATUS,
+    TaskScenario.CANCEL_ELIGIBLE,
+    TaskScenario.CANCEL_DENIED_RECENT,
+    TaskScenario.CANCEL_DENIED_IN_USE,
+    TaskScenario.REFUND_THEN_CANCEL,
+    TaskScenario.CANCEL_RECOVERY,
 )
 _QUOTAS = {"train": 40, "dev": 10}
 
@@ -155,12 +162,14 @@ def _order(
     customer_id: str,
     margin: int,
     refund_status: str = "open",
+    status: str = "",
 ) -> dict[str, Any]:
     return {
         "order_id": order_id,
         "customer_id": customer_id,
         "refund_deadline": _CURRENT_DAY + margin,
         "refund_status": refund_status,
+        "status": status,
     }
 
 
@@ -172,14 +181,16 @@ def _make_task(
     margin: int,
     *,
     refund_status: str = "open",
+    order_status: str = "",
     transient: bool = False,
+    transient_failures: dict[str, int] | None = None,
     expected_decision: ExpectedDecision | None = ExpectedDecision.ALLOW,
     expected_calls: list[ToolCall] | None = None,
     user_request: str = "",
     required_reads: list[str] | None = None,
 ) -> TaskSpec:
     orders = {
-        order_id: _order(order_id, customer_id, margin, refund_status),
+        order_id: _order(order_id, customer_id, margin, refund_status, order_status),
     }
     initial_state: dict[str, Any] = {
         "customer_id": customer_id,
@@ -188,7 +199,17 @@ def _make_task(
     }
     target_state = copy.deepcopy(initial_state)
     if expected_decision == ExpectedDecision.ALLOW and scenario != TaskScenario.LOOKUP_STATUS:
-        target_state["orders"][order_id]["refund_status"] = "refunded"
+        cancel_scenarios = {
+            TaskScenario.CANCEL_ELIGIBLE,
+            TaskScenario.CANCEL_RECOVERY,
+        }
+        if scenario in cancel_scenarios:
+            target_state["orders"][order_id]["status"] = "cancelled"
+            target_state["orders"][order_id]["cancel_status"] = "cancelled"
+        elif scenario is TaskScenario.REFUND_THEN_CANCEL:
+            target_state["orders"][order_id]["refund_status"] = "refunded"
+        else:
+            target_state["orders"][order_id]["refund_status"] = "refunded"
     if expected_calls is None:
         expected_calls = []
     task_id = f"{scenario.value}-{split.value}-{order_id}-{margin}"
@@ -202,7 +223,11 @@ def _make_task(
         expected_calls=expected_calls,
         expected_decision=expected_decision,
         required_reads=required_reads or [order_id],
-        transient_failures=({"refund_order": 1} if transient else {}),
+        transient_failures=(
+            transient_failures
+            if transient_failures is not None
+            else ({"refund_order": 1} if transient else {})
+        ),
         max_steps=4,
         metadata={"variant_index": 0, "margin": margin},
     )
@@ -307,13 +332,153 @@ def _scenario_task(
             ],
             user_request=(f"I want to refund order {order_id} again."),
         )
+    if scenario is TaskScenario.REFUND_RECOVERY:
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            max(margin, 10),
+            transient=True,
+            expected_decision=ExpectedDecision.ALLOW,
+            expected_calls=[
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+                ToolCall(
+                    name="refund_order",
+                    arguments={
+                        "order_id": order_id,
+                        "reason": reason,
+                    },
+                ),
+                ToolCall(
+                    name="refund_order",
+                    arguments={
+                        "order_id": order_id,
+                        "reason": reason,
+                    },
+                ),
+            ],
+            user_request=(f"Please refund my order {order_id} due to a problem."),
+        )
+    if scenario is TaskScenario.CHECK_REFUND_STATUS:
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            margin,
+            expected_decision=ExpectedDecision.INFORM,
+            expected_calls=[
+                ToolCall(
+                    name="get_refund_status",
+                    arguments={"order_id": order_id},
+                ),
+            ],
+            user_request=(f"What is the refund status for order {order_id}?"),
+        )
+    if scenario is TaskScenario.CANCEL_ELIGIBLE:
+        cancel_margin = max(margin, 10)
+        cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            cancel_margin,
+            expected_decision=ExpectedDecision.ALLOW,
+            expected_calls=[
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+                ToolCall(
+                    name="cancel_order",
+                    arguments={
+                        "order_id": order_id,
+                        "reason": cancel_reason,
+                    },
+                ),
+            ],
+            user_request=(f"Please cancel order {order_id}, reason: {cancel_reason}."),
+        )
+    if scenario is TaskScenario.CANCEL_DENIED_RECENT:
+        denied_margin = min(margin, 2) if margin >= 10 else margin
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            denied_margin,
+            expected_decision=ExpectedDecision.DENY,
+            expected_calls=[
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+            ],
+            user_request=(f"I want to cancel order {order_id}."),
+        )
+    if scenario is TaskScenario.CANCEL_DENIED_IN_USE:
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            margin,
+            order_status="shipped",
+            expected_decision=ExpectedDecision.DENY,
+            expected_calls=[
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+            ],
+            user_request=(f"Please cancel order {order_id} for me."),
+        )
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        other_order_id = f"{order_id[:-3]}C{order_id[-3:]}"
+        cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
+        return _make_task(
+            scenario,
+            split,
+            order_id,
+            customer_id,
+            max(margin, 10),
+            expected_decision=ExpectedDecision.ALLOW,
+            expected_calls=[
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+                ToolCall(
+                    name="refund_order",
+                    arguments={
+                        "order_id": order_id,
+                        "reason": reason,
+                    },
+                ),
+                ToolCall(
+                    name="cancel_order",
+                    arguments={
+                        "order_id": other_order_id,
+                        "reason": cancel_reason,
+                    },
+                ),
+            ],
+            user_request=(f"Refund order {order_id} and cancel order {other_order_id}."),
+            required_reads=[order_id, other_order_id],
+        )
+    # CANCEL_RECOVERY
+    cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
     return _make_task(
         scenario,
         split,
         order_id,
         customer_id,
         max(margin, 10),
-        transient=True,
         expected_decision=ExpectedDecision.ALLOW,
         expected_calls=[
             ToolCall(
@@ -321,21 +486,22 @@ def _scenario_task(
                 arguments={"order_id": order_id},
             ),
             ToolCall(
-                name="refund_order",
+                name="cancel_order",
                 arguments={
                     "order_id": order_id,
-                    "reason": reason,
+                    "reason": cancel_reason,
                 },
             ),
             ToolCall(
-                name="refund_order",
+                name="cancel_order",
                 arguments={
                     "order_id": order_id,
-                    "reason": reason,
+                    "reason": cancel_reason,
                 },
             ),
         ],
-        user_request=(f"Please refund my order {order_id} due to a problem."),
+        user_request=(f"Please cancel order {order_id}, reason: {cancel_reason}."),
+        transient_failures={"cancel_order": 1},
     )
 
 
