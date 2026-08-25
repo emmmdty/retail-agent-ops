@@ -511,4 +511,5 @@ R5 收口后仍然打开的口子。**这一节存在的意义是：任何一条
 > **这一节曾经落后于简历本身**：上面两条在 R6 就做完了，却一直标着「未做」，
 > 而 §3 的定稿 bullet 已经在讲它们。2026-08-17 外部审阅第七轮指出——
 > **本节存在的全部意义就是约束 §3，它落后就等于这个机制失效。**
-> 现在由 `test_the_open_gaps_list_never_contradicts_the_resume_bullets` 绑住。
+> 现在由 `test_the_resume_bullets_never_quote_a_reading_without_its_companion` 和
+> `test_the_resume_bullets_never_use_a_phrasing_the_project_forbids` 绑住。
