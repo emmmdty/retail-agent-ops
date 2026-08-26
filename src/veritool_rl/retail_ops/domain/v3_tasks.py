@@ -213,6 +213,10 @@ def _make_task(
     if expected_calls is None:
         expected_calls = []
     task_id = f"{scenario.value}-{split.value}-{order_id}-{margin}"
+    metadata: dict[str, Any] = {"variant_index": 0, "margin": margin}
+    # v3 单步 cancel 任务跳过 reads-gate（不需要先 get_order）
+    if expected_calls and len(expected_calls) == 1 and expected_calls[0].name == "cancel_order":
+        metadata["skip_reads_gate"] = True
     return TaskSpec(
         task_id=task_id,
         split=split.value,
@@ -229,7 +233,7 @@ def _make_task(
             else ({"refund_order": 1} if transient else {})
         ),
         max_steps=4,
-        metadata={"variant_index": 0, "margin": margin},
+        metadata=metadata,
     )
 
 

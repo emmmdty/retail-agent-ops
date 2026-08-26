@@ -278,7 +278,8 @@ class RetailOpsEnv(ToolEnv):
         order = self._orders().get(order_id)
 
         # 取消前必须先查询（与 refund_order 相同的守卫逻辑）
-        if order_id not in self._reads:
+        # skip_reads_gate：v3 单步 cancel 任务跳过此检查
+        if not self._task.metadata.get("skip_reads_gate") and order_id not in self._reads:
             return self._deny(
                 "cancel_requires_lookup",
                 "取消订单前必须先查询订单状态",
