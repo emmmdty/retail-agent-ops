@@ -439,7 +439,6 @@ def _scenario_task(
             user_request=(f"Please cancel order {order_id} for me."),
         )
     if scenario is TaskScenario.REFUND_THEN_CANCEL:
-        other_order_id = f"{order_id[:-3]}C{order_id[-3:]}"
         cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
         return _make_task(
             scenario,
