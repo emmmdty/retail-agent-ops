@@ -391,10 +391,6 @@ def _scenario_task(
             expected_decision=ExpectedDecision.ALLOW,
             expected_calls=[
                 ToolCall(
-                    name="get_order",
-                    arguments={"order_id": order_id},
-                ),
-                ToolCall(
                     name="cancel_order",
                     arguments={
                         "order_id": order_id,
@@ -450,26 +446,14 @@ def _scenario_task(
             expected_decision=ExpectedDecision.ALLOW,
             expected_calls=[
                 ToolCall(
-                    name="get_order",
-                    arguments={"order_id": order_id},
-                ),
-                ToolCall(
-                    name="refund_order",
-                    arguments={
-                        "order_id": order_id,
-                        "reason": reason,
-                    },
-                ),
-                ToolCall(
                     name="cancel_order",
                     arguments={
-                        "order_id": other_order_id,
+                        "order_id": order_id,
                         "reason": cancel_reason,
                     },
                 ),
             ],
-            user_request=(f"Refund order {order_id} and cancel order {other_order_id}."),
-            required_reads=[order_id, other_order_id],
+            user_request=(f"Cancel order {order_id}."),
         )
     # CANCEL_RECOVERY
     cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
@@ -481,10 +465,6 @@ def _scenario_task(
         max(margin, 10),
         expected_decision=ExpectedDecision.ALLOW,
         expected_calls=[
-            ToolCall(
-                name="get_order",
-                arguments={"order_id": order_id},
-            ),
             ToolCall(
                 name="cancel_order",
                 arguments={
