@@ -73,6 +73,7 @@ python_version = "3.11"
 files = [
   "src/veritool_rl",
   "scripts/ci/verify_qualification_chain.py",
+  "scripts/run_v3_degradation.py",
   "scripts/ci/audit_public_release.py",
   "scripts/ops/merge_lora_adapter.py",
   "scripts/ops/generate_phrasing_bank.py",
