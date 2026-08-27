@@ -1,12 +1,15 @@
-"""RetailOps v3 task generator -- parameterized by tool_count for degradation curve.
+"""RetailOps v3 任务生成器——按 tool_count 参数化，用于工具数退化曲线。
 
-For each breakpoint N in {3,6,9,12,15}, generates tasks using only the first N
-tools from the v3 bundle. The model sees N tools during both training and eval;
-as N increases, tool selection accuracy should degrade because there are more
-distractors to confuse the model.
+断点 N ∈ {3,6,9,12,15} 决定**呈现给模型的工具子集**（v3 bundle 的前 N 个），
+采集与评测都必须用 `ToolCountTaskSet.tool_names` 构造环境
+（`RetailOpsEnv(..., allowed_tools=...)`）。直接用整份 v3 bundle 会让 5 个断点
+看到同样的 15 个工具，自变量根本没变，曲线平坦就是恒真而不是读数——
+2026-08-24 那轮 R10 曲线正是这样产生的（LOG-20260827-01）。
 
-The {3} breakpoint's tasks are structurally identical to v1's tasks (same first
-3 tools), so sft-008 trained on v1 can serve as the {3} baseline without retraining.
+任务集也随断点变化：所需工具没被呈现的场景在该断点上无解，因此被排除
+（`scenarios_for`）。代价是**总体 task_success 不可跨断点比较**，曲线只能读
+`common_scenarios()`——它恰好是 v1 的 6 类，因此 {3} 断点仍可复用 v1 上训练的
+`sft-008` 作左端点。
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
@@ -45,6 +49,26 @@ _SCENARIOS = (
     TaskScenario.CANCEL_RECOVERY,
 )
 _QUOTAS = {"train": 40, "dev": 10}
+
+#: 每个场景真正需要呈现给模型的工具。断点若没呈现这些工具，该场景在那个断点上
+#: 无解——把它留在任务集里只会让读数掺进「工具根本不在」造成的失败。
+#: `cancel_denied_*` 的 gold 序列只有 `get_order`，但拒绝的对象是取消动作，
+#: 不呈现 `cancel_order` 时这个判断没有意义，因此一并要求。
+_SCENARIO_TOOLS: dict[TaskScenario, tuple[str, ...]] = {
+    TaskScenario.LOOKUP_STATUS: ("get_order",),
+    TaskScenario.REFUND_ELIGIBLE: ("get_order", "refund_order"),
+    TaskScenario.REFUND_DENIED_WINDOW: ("get_order", "refund_order"),
+    TaskScenario.REFUND_DENIED_OWNERSHIP: ("get_order", "refund_order"),
+    TaskScenario.REFUND_DENIED_DUPLICATE: ("get_order", "refund_order"),
+    TaskScenario.REFUND_RECOVERY: ("get_order", "refund_order"),
+    TaskScenario.CHECK_REFUND_STATUS: ("get_refund_status",),
+    TaskScenario.CANCEL_ELIGIBLE: ("get_order", "cancel_order"),
+    TaskScenario.CANCEL_DENIED_RECENT: ("get_order", "cancel_order"),
+    TaskScenario.CANCEL_DENIED_IN_USE: ("get_order", "cancel_order"),
+    TaskScenario.REFUND_THEN_CANCEL: ("get_order", "refund_order", "cancel_order"),
+    TaskScenario.CANCEL_RECOVERY: ("get_order", "cancel_order"),
+}
+
 
 #: Tool subsets for each breakpoint. First 3 = v1 tools.
 _TOOL_SUBSETS = {
@@ -102,6 +126,25 @@ _TOOL_SUBSETS = {
 }
 
 
+def scenarios_for(tool_count: int) -> tuple[TaskScenario, ...]:
+    """该断点上可解的场景。
+
+    断点之间任务集不同，因此**总体 task_success 不可跨断点比较**；退化曲线
+    只能读所有断点共有的那几个场景（`common_scenarios()`），此时自变量就是
+    干扰工具的数量。
+    """
+    available = set(_TOOL_SUBSETS[tool_count])
+    return tuple(s for s in _SCENARIOS if set(_SCENARIO_TOOLS[s]) <= available)
+
+
+def common_scenarios() -> tuple[TaskScenario, ...]:
+    """在全部断点上都可解的场景——退化曲线唯一可比的读数面。"""
+    shared = set(_SCENARIOS)
+    for tool_count in _TOOL_SUBSETS:
+        shared &= set(scenarios_for(tool_count))
+    return tuple(s for s in _SCENARIOS if s in shared)
+
+
 class ToolCountSplit(StrEnum):
     TRAIN = "train"
     DEV = "dev"
@@ -136,6 +179,15 @@ class ToolCountTaskSet(StrictModel):
     train: tuple[ToolCountTaskRecord, ...]
     dev: tuple[ToolCountTaskRecord, ...]
 
+    @property
+    def tool_names(self) -> tuple[str, ...]:
+        """该断点呈现给模型的工具，评测与采集都必须按它构造环境。"""
+        return _TOOL_SUBSETS[self.tool_count]
+
+    @property
+    def scenarios(self) -> tuple[TaskScenario, ...]:
+        return scenarios_for(self.tool_count)
+
     def records(
         self,
         split: ToolCountSplit | str,
@@ -147,8 +199,93 @@ class ToolCountTaskSet(StrictModel):
     def assert_quotas(self) -> None:
         for split, expected in _QUOTAS.items():
             records = self.records(split)
-            if len(records) != expected * len(_SCENARIOS):
-                raise ValueError(f"{split} 任务总数不符合冻结配额")
+            if len(records) != expected * len(self.scenarios):
+                raise ValueError(f"{split} 任务总数不符合该断点配额")
+
+
+def stratified_sample(
+    records: Sequence[ToolCountTaskRecord],
+    per_scenario: int,
+) -> tuple[ToolCountTaskRecord, ...]:
+    """按「场景 × 难度」分层抽样，供小样本冒烟使用。
+
+    两条性质由测试保证：
+
+    1. **类型分布严格一致**——每个场景抽同样条数，而全量本身也是每场景等量，
+       因此场景占比逐字相等；
+    2. **难度按 `metadata["margin"]` 轴等距抽样**——生成器把 margin 按
+       `_MARGINS` 循环铺开，等距下标取样因此覆盖 margin 全域（含最小与最大值）。
+       场景内部把 margin 变换成实际期限的规则（如 `max(margin, 10)`）是
+       `(scenario, margin)` 的确定性函数，所以保住这两维就保住了实际难度。
+
+    小样本**无法**复现精确的 margin 直方图（`refund_denied_window` 的 10 条是
+    1×2 / 2×4 / 3×2 / 5×1 / 7×1，抽 2 条时任何方案都做不到成比例）。这里保证的是
+    **跨度**而不是比例：`per_scenario ≥ 2` 时最易与最难两档一定在样本里，
+    中间档按不同取值等距铺开；某档取空了就按 margin 距离就近回填。
+    抽样结果的实际直方图由 `sample_distribution` 给出，写进运行 manifest 备查
+    ——不假装它等于全量。
+    """
+    if per_scenario < 1:
+        msg = "per_scenario 必须 ≥ 1"
+        raise ValueError(msg)
+    by_scenario: dict[TaskScenario, list[ToolCountTaskRecord]] = {}
+    for record in records:
+        by_scenario.setdefault(record.task.scenario, []).append(record)
+    sampled: list[ToolCountTaskRecord] = []
+    for scenario, group in by_scenario.items():
+        if per_scenario > len(group):
+            msg = f"{scenario.value} 只有 {len(group)} 条，取不出 {per_scenario} 条"
+            raise ValueError(msg)
+        sampled.extend(_sample_one_scenario(group, per_scenario))
+    return tuple(sampled)
+
+
+def _margin_of(record: ToolCountTaskRecord) -> int:
+    return int(record.task.metadata["margin"])
+
+
+def _sample_one_scenario(
+    group: Sequence[ToolCountTaskRecord],
+    per_scenario: int,
+) -> list[ToolCountTaskRecord]:
+    by_margin: dict[int, list[ToolCountTaskRecord]] = {}
+    for record in group:
+        by_margin.setdefault(_margin_of(record), []).append(record)
+    values = sorted(by_margin)
+    if per_scenario == 1:
+        wanted = [values[0]]
+    else:
+        span = len(values) - 1
+        wanted = [values[round(index * span / (per_scenario - 1))] for index in range(per_scenario)]
+
+    taken: list[ToolCountTaskRecord] = []
+    used: set[str] = set()
+    for margin in wanted:
+        pool = [r for r in by_margin[margin] if r.task.task_id not in used]
+        if not pool:
+            # 该档取空——按 margin 距离就近回填，保持确定性
+            remaining = [r for r in group if r.task.task_id not in used]
+            pool = sorted(remaining, key=lambda r: (abs(_margin_of(r) - margin), r.task.task_id))
+        chosen = pool[0]
+        used.add(chosen.task.task_id)
+        taken.append(chosen)
+    return taken
+
+
+def sample_distribution(
+    records: Sequence[ToolCountTaskRecord],
+) -> dict[str, dict[str, int]]:
+    """场景 → margin 直方图。写进运行 manifest，让抽样是否有偏可被事后核对。"""
+    distribution: dict[str, dict[str, int]] = {}
+    for record in records:
+        scenario = record.task.scenario.value
+        margin = str(record.task.metadata.get("margin"))
+        distribution.setdefault(scenario, {})
+        distribution[scenario][margin] = distribution[scenario].get(margin, 0) + 1
+    return {
+        name: dict(sorted(hist.items(), key=lambda kv: int(kv[0])))
+        for name, hist in distribution.items()
+    }
 
 
 def _sha256(payload: dict[str, Any]) -> str:
@@ -188,10 +325,15 @@ def _make_task(
     expected_calls: list[ToolCall] | None = None,
     user_request: str = "",
     required_reads: list[str] | None = None,
+    other_order_id: str = "",
 ) -> TaskSpec:
     orders = {
         order_id: _order(order_id, customer_id, margin, refund_status, order_status),
     }
+    # REFUND_THEN_CANCEL 是双订单复合动作：退 A、取消 B。B 必须真的存在于
+    # 环境里，否则这个场景永远不可解，而读数会被误读成"模型学不会复合动作"。
+    if other_order_id:
+        orders[other_order_id] = _order(other_order_id, customer_id, max(margin, 10), "none")
     initial_state: dict[str, Any] = {
         "customer_id": customer_id,
         "current_day": _CURRENT_DAY,
@@ -208,15 +350,19 @@ def _make_task(
             target_state["orders"][order_id]["cancel_status"] = "cancelled"
         elif scenario is TaskScenario.REFUND_THEN_CANCEL:
             target_state["orders"][order_id]["refund_status"] = "refunded"
+            target_state["orders"][other_order_id]["status"] = "cancelled"
+            target_state["orders"][other_order_id]["cancel_status"] = "cancelled"
         else:
             target_state["orders"][order_id]["refund_status"] = "refunded"
     if expected_calls is None:
         expected_calls = []
     task_id = f"{scenario.value}-{split.value}-{order_id}-{margin}"
-    metadata: dict[str, Any] = {"variant_index": 0, "margin": margin}
-    # v3 单步 cancel 任务跳过 reads-gate（不需要先 get_order）
-    if expected_calls and len(expected_calls) == 1 and expected_calls[0].name == "cancel_order":
-        metadata["skip_reads_gate"] = True
+    # 多次调用的场景要留一步给收尾答复，否则 gold 序列正好用光步数。
+    multi_call_scenarios = {
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+        TaskScenario.CANCEL_RECOVERY,
+    }
     return TaskSpec(
         task_id=task_id,
         split=split.value,
@@ -232,8 +378,8 @@ def _make_task(
             if transient_failures is not None
             else ({"refund_order": 1} if transient else {})
         ),
-        max_steps=4,
-        metadata=metadata,
+        max_steps=5 if scenario in multi_call_scenarios else 4,
+        metadata={"variant_index": 0, "margin": margin},
     )
 
 
@@ -395,6 +541,10 @@ def _scenario_task(
             expected_decision=ExpectedDecision.ALLOW,
             expected_calls=[
                 ToolCall(
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+                ToolCall(
                     name="cancel_order",
                     arguments={
                         "order_id": order_id,
@@ -440,6 +590,7 @@ def _scenario_task(
         )
     if scenario is TaskScenario.REFUND_THEN_CANCEL:
         cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
+        other_order_id = f"{order_id}-B"
         return _make_task(
             scenario,
             split,
@@ -449,14 +600,31 @@ def _scenario_task(
             expected_decision=ExpectedDecision.ALLOW,
             expected_calls=[
                 ToolCall(
-                    name="cancel_order",
+                    name="get_order",
+                    arguments={"order_id": order_id},
+                ),
+                ToolCall(
+                    name="refund_order",
                     arguments={
                         "order_id": order_id,
+                        "reason": reason,
+                    },
+                ),
+                ToolCall(
+                    name="get_order",
+                    arguments={"order_id": other_order_id},
+                ),
+                ToolCall(
+                    name="cancel_order",
+                    arguments={
+                        "order_id": other_order_id,
                         "reason": cancel_reason,
                     },
                 ),
             ],
-            user_request=(f"Cancel order {order_id}."),
+            user_request=(f"Refund order {order_id} and cancel order {other_order_id}."),
+            required_reads=[order_id, other_order_id],
+            other_order_id=other_order_id,
         )
     # CANCEL_RECOVERY
     cancel_reason = _CANCEL_REASONS[index % len(_CANCEL_REASONS)]
@@ -468,6 +636,10 @@ def _scenario_task(
         max(margin, 10),
         expected_decision=ExpectedDecision.ALLOW,
         expected_calls=[
+            ToolCall(
+                name="get_order",
+                arguments={"order_id": order_id},
+            ),
             ToolCall(
                 name="cancel_order",
                 arguments={
@@ -501,7 +673,7 @@ def build_toolcount_task_set(
         raise ValueError("dataset_version 不能为空")
     train: list[ToolCountTaskRecord] = []
     dev: list[ToolCountTaskRecord] = []
-    for scenario in _SCENARIOS:
+    for scenario in scenarios_for(tool_count):
         for index in range(_QUOTAS["train"]):
             margin = _MARGINS[index % len(_MARGINS)]
             order_id = f"{scenario.value[:4].upper()}T{index:03d}"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from veritool_rl.core.envs.base import ToolEnv, ToolSchema
@@ -16,12 +16,27 @@ from veritool_rl.retail_ops.domain.policy_rules import RefundFacts, evaluate_ref
 class RetailOpsEnv(ToolEnv):
     """以冻结 bundle 执行单条 RetailOps 任务。"""
 
-    def __init__(self, task: TaskSpec, bundle: LoadedRetailOpsBundle) -> None:
+    def __init__(
+        self,
+        task: TaskSpec,
+        bundle: LoadedRetailOpsBundle,
+        *,
+        allowed_tools: Sequence[str] | None = None,
+    ) -> None:
+        """`allowed_tools` 只呈现 bundle 工具的一个子集，`None` 表示全部。
+
+        默认值 `None` 让 v1/v2 的全部已产出证据逐字节不变。工具数退化曲线需要
+        「模型看到几个工具」真的随断点变化——否则自变量根本没变，曲线平坦是
+        恒真而不是读数。未呈现的工具被调用时按 `unknown_tool` 处理，与模型
+        编造一个不存在的工具同一条路径。
+        """
         self._task = task.model_copy(deep=True)
         self._bundle = bundle
         self._state = copy.deepcopy(task.initial_state)
-        self._schemas = [tool.model_copy(deep=True) for tool in bundle.tools]
-        self._aliases = {tool.name: tool.name for tool in bundle.tools}
+        self._allowed_tools = self._resolve_allowed_tools(bundle, allowed_tools)
+        tools = [tool for tool in bundle.tools if tool.name in self._allowed_tools]
+        self._schemas = [tool.model_copy(deep=True) for tool in tools]
+        self._aliases = {tool.name: tool.name for tool in tools}
         self._violations: list[str] = []
         self._reads: set[str] = set()
         self._matched_calls = 0
@@ -37,6 +52,24 @@ class RetailOpsEnv(ToolEnv):
         self._cancel_applied = False
         self._refund_results: dict[str, dict[str, Any]] = {}
         self._refund_parameters = self._required_parameters(bundle, "refund_order")
+
+    @staticmethod
+    def _resolve_allowed_tools(
+        bundle: LoadedRetailOpsBundle,
+        allowed_tools: Sequence[str] | None,
+    ) -> frozenset[str]:
+        available = {tool.name for tool in bundle.tools}
+        if allowed_tools is None:
+            return frozenset(available)
+        requested = frozenset(allowed_tools)
+        unknown = sorted(requested - available)
+        if unknown:
+            msg = f"allowed_tools 含 bundle 之外的工具: {unknown}"
+            raise ValueError(msg)
+        if not requested:
+            msg = "allowed_tools 不能为空"
+            raise ValueError(msg)
+        return requested
 
     @property
     def task(self) -> TaskSpec:
@@ -102,6 +135,8 @@ class RetailOpsEnv(ToolEnv):
             "cancel_order": "核验后取消尚未发货的订单。",
         }
         for schema in self._bundle.tools:
+            if schema.name not in self._allowed_tools:
+                continue
             alias = f"{schema.name}_{rng.randrange(1000, 10000)}"
             parameters = copy.deepcopy(schema.parameters)
             properties = list(parameters["properties"].items())
@@ -277,9 +312,10 @@ class RetailOpsEnv(ToolEnv):
         reason = arguments["reason"]
         order = self._orders().get(order_id)
 
-        # 取消前必须先查询（与 refund_order 相同的守卫逻辑）
-        # skip_reads_gate：v3 单步 cancel 任务跳过此检查
-        if not self._task.metadata.get("skip_reads_gate") and order_id not in self._reads:
+        # 取消前必须先查询（与 refund_order 相同的守卫逻辑）。
+        # 这道门**只由代码强制**：任何由任务 metadata 控制的开关都会让政策
+        # 变成数据，评测集就能把自己判成合规（`97ff796` 曾经如此）。
+        if order_id not in self._reads:
             return self._deny(
                 "cancel_requires_lookup",
                 "取消订单前必须先查询订单状态",
