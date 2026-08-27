@@ -236,7 +236,36 @@ PY
   且若引入了第二个 Python 深度学习环境，必须先隔离其 `TRITON_CACHE_DIR`
   （否则会覆盖项目自己的 triton 缓存，报错信息完全不指向真正原因，LOG-20260816-02）。
 
-### 5.5 报「必须在仓库根运行」或「policy.model_name 必须是项目相对路径」
+### 5.5 报「QLoRA-SFT 必须看到且只看到一张 CUDA GPU」
+
+`training/sft.py:369` 的守卫是 `not torch.cuda.is_available() or device_count() != 1`。
+先分清是**真的多卡/没卡**，还是**驱动卡死**——两者的处理完全不同：
+
+```bash
+timeout 20 nvidia-smi -L; echo "exit=$?"      # 超时(124)或无输出 = 驱动卡死
+ps -eo state,user,pid,etime,comm | awk '$1=="D"'   # D 状态堆积 = 同一结论
+uptime                                         # load average 高但 %CPU 都接近 0
+```
+
+**驱动卡死的判据**（2026-08-27 在 gpu-5090 上实际遇到）：`nvidia-smi` 本身进入
+D 状态永不返回、`import torch; torch.cuda.is_available()` 超过 300 秒不返回、
+`ps` 里 D 状态进程堆积、load average 10+ 而所有进程 %CPU 都接近 0
+（D 状态计入 load average 但不消耗 CPU）。此时 `nvidia-smi --query-gpu` 可能仍
+报告显存被占用，但 `--query-compute-apps` 返回 `[N/A]`——占用它的上下文已经不可归属。
+
+**处理**：
+
+- **不要**继续发起 GPU 任务。每试一次就多一个杀不掉的 D 状态进程
+  （D 状态忽略信号，`kill -9` 也无效），只会让情况更糟。
+- **不要**去杀别人的进程。gpu-5090 是多人共用；`/mnt/aidata/tongjiakai` 下还有
+  该用户自己的其他长跑作业。
+- 恢复需要 `nvidia-smi --gpu-reset`（要求无进程占用，通常需 root）或重启整机，
+  **两者都影响其他用户，必须由用户决定**。
+- 等待期间**没有任何东西会丢**：采集证据、SFT 导出、manifest 都已落盘且被
+  `.gitignore` 覆盖但保留在磁盘上；重跑时 teacher 阶段整体跳过（不再计费），
+  从训练阶段续上。
+
+### 5.6 报「必须在仓库根运行」或「policy.model_name 必须是项目相对路径」
 
 `QwenPolicy.from_config` 对 `model_name` 与 `adapter_path` 都跑
 `validate_project_relative_path`，**绝对路径会被直接拒绝**；而相对路径按进程 cwd 解析。
@@ -247,7 +276,7 @@ PY
 远端把 `str(MODELS_ROOT / ...)` 改成了 `"models/Qwen3-4B-pinned"`，正是撞了这道校验。
 新 runner 已经统一用相对路径，不需要再手工改。
 
-### 5.6 读数看起来"太平坦"
+### 5.7 读数看起来"太平坦"
 
 **这正是上一轮的形态，务必按下面顺序排除装置问题再下结论**：
 
@@ -260,7 +289,7 @@ PY
    不要只报一个总分；
 4. 只有 1、2 都确认过之后，"平坦"才可以写进结论。
 
-### 5.7 想确认小样本没抽偏
+### 5.8 想确认小样本没抽偏
 
 ```bash
 .venv/bin/python -c "

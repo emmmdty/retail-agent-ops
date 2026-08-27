@@ -1128,3 +1128,23 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-27 | `run_v3_degradation.py --profile full --stage preflight` | 5 断点全过，train 240/440/480/480/480，dev 60/110/120/120/120 |
 | 2026-08-27 | 全量门禁 | 1349 passed；ruff / format / mypy(111) / lock / diff / qualification / audit 全绿 |
 | 2026-08-27 | 干净 clone 实跑 | **1303 passed / 46 skipped / 0 failed** |
+
+## 2026-08-27 — 退化曲线重跑：小样本采集完成，GPU 阶段被驱动故障中断
+
+- **采集阶段全部通过**（13:19–15:00，159 条任务，约 ¥0.5）：五个断点 teacher
+  接受率 0.8333 / 0.9091 / 0.8333 / 0.8889 / 0.9167，全部 ≥0.80 门禁，异常 0 条；
+  导出 15 / 30 / 30 / 32 / 33 行，与各自 `teacher.json` 的 accepted 逐一对账通过。
+  **这一步上一轮全程为 0 行。**
+- **GPU 阶段**：tc=3 训练成功、base 评测产出首条真读数
+  （`success=0.5000 pv=0 tool_acc=0.7273 distractor=0.2000 infra_err=0`）；
+  candidate 因 adapter 路径缺陷失败 → 修复后重启 → **撞上 gpu-5090 驱动卡死**。
+- 本轮共修 5 个缺陷，其中 3 个（教师证据路径、strict 轨迹回读、adapter 路径）
+  **只在真跑数据时才暴露**，静态检查与单元测试都发现不了。
+- 驱动卡死属环境故障，恢复需 `--gpu-reset` 或重启整机，影响其他用户，待用户决定。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-27 | `--profile smoke --stage data`（gpu-5090，无 GPU） | 5 断点全过教师门禁，导出 140 行 |
+| 2026-08-27 | `--profile smoke`（GPU 0，第一次） | tc=3 训练成功、base 读数产出；candidate adapter 路径失败 |
+| 2026-08-27 | `--profile smoke`（GPU 0，第二次） | 15:38 驱动卡死，`nvidia-smi` 进入 D 状态 |
+| 2026-08-27 | 全量门禁 | 1352 passed；ruff / format / mypy(111) 全绿 |

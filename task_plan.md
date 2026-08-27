@@ -38,7 +38,12 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 - [x] runner 重写为 `--profile smoke|full` × `--stage preflight|data|all`，可续跑
 - [x] 交接文档 `docs/handoffs/2026-08-27-r10-degradation-rerun.md`（含故障定位手册）
 - [x] CPU preflight 两个 profile 各 5 断点全过；全量门禁 1349 passed
-- [ ] **gpu-5090：小样本冒烟**（`--profile smoke`，约 30–45 min，API 约 ¥0.5）
+- [x] **gpu-5090：小样本采集阶段**（`--stage data`）——5 断点教师接受率
+      0.8333/0.9091/0.8333/0.8889/0.9167 全过门禁，导出 15/30/30/32/33 行
+- [~] **gpu-5090：小样本 GPU 阶段**——tc=3 训练成功、base 首条真读数产出
+      （`success=0.5000 tool_acc=0.7273 distractor=0.2000 infra_err=0`）；
+      **被 gpu-5090 驱动卡死中断**（环境故障，见 `findings.md` 同日小节与交接 §5.5）。
+      产物全部保留，恢复后从训练阶段续跑、teacher 不再计费。
 - [ ] **gpu-5090：大样本**（`--profile full`，约 4–6 h）——**冒烟门禁全绿才做**
 - [ ] 读数收口：findings / progress / PROJECT_LOG / EXECUTION_PLAN 更正记录 /
       简历与面试材料里目前写着"读数作废"的段落
