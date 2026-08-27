@@ -1084,3 +1084,47 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 - **工具数退化曲线**：retail_ops v3（15 工具），{3,6,9,12,15} 五个断点，tool selection 准确率 0.65 附近平坦，确认工具数不是基座模型性能瓶颈。
 - `docs/EXECUTION_PLAN.md` 已更新 R10 阶段状态为「已完成」。
 - 探索性结论，不用于发布判定；发布候选仍是 sft-008。
+
+## 2026-08-27 — v3 评测集自洽性修复 + R10 退化曲线读数作废（纯 CPU）
+
+- 起因：核查 08-25~08-27 三次未入台账的提交（`8e43317` / `97ff796` / `88ccabb`）。
+- **R10 退化曲线读数作废**（LOG-20260827-01）：`tool_count` 是空转参数，
+  5 个断点的任务逐条哈希相同、评测每次都加载整份 15 工具 bundle。
+  R8 C2 的四点读数（全部 0.45 / 0.70）是同一缺陷的指纹。
+- **v3 评测集自洽性**：Oracle 回放 110/120（`4b2044e`）→ 90/120（HEAD）→
+  修复后每断点 1.0000、零政策违规。
+- **撤掉 `skip_reads_gate`**：政策守卫不再可由任务 metadata 关闭，并补回归测试。
+- **`RetailOpsEnv` 新增可选 `allowed_tools`**（默认 `None`，v1/v2 证据逐字节不变）。
+- **`REFUND_THEN_CANCEL` 按 v4 形态重建**（双订单、gold 四步、`max_steps=5`）。
+- 对外材料同步降级：`RESUME_EVIDENCE.md` 那张五行相同的表、`INTERVIEW_PREP.md`
+  的口播段、`R8_DIAGNOSIS.md` 三处、`AGENTS.md`、`EXECUTION_PLAN.md` R10 更正记录。
+- 未消耗 GPU / 商业 API / 封存 holdout 观测。真实退化曲线需在修复后代码上重跑。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-27 | Oracle 回放 v3 dev（本地 CPU，`4b2044e` vs `88ccabb`） | 110/120 vs 90/120 |
+| 2026-08-27 | 5 个断点任务 `content_sha256` 逐条比对 | 全部相同——`tool_count` 空转 |
+| 2026-08-27 | Oracle 回放 v4 dev（对照） | 120/120，`refund_then_cancel` 10/10 |
+| 2026-08-27 | 修复后 Oracle 回放（N=3/6/9/12/15） | 60/60、110/110、120/120 ×3，零违规 |
+| 2026-08-27 | 干净 clone 实跑 @ `88ccabb` | **1238 passed / 46 skipped / 0 failed**（复核推算值） |
+| 2026-08-27 | 干净 clone 实跑 @ 修复后工作树 | **1262 passed / 46 skipped / 0 failed** |
+| 2026-08-27 | 作者环境全量门禁 | 1308 passed；ruff / format / mypy(109) / diff / qualification / audit(520) 全绿 |
+
+## 2026-08-27 — 退化曲线重跑的装置准备（纯 CPU，未启动 GPU/API）
+
+- 用户批准重跑，要求小样本先达标、且小/大样本难度与类型分布一致。
+- 新增 `src/veritool_rl/retail_ops/evaluate/toolcount_eval.py`：preflight 自检门、
+  逐位置 tool-selection 指标、干扰工具调用率、基础设施失败单列。
+- `v3_tasks.py` 新增 `stratified_sample` / `sample_distribution`：按不同 margin 取值
+  等距抽样，保证最易与最难两档必在样本内（先实测了难度直方图才定的算法）。
+- `scripts/run_v3_degradation.py` 重写为分阶段可续跑 CLI
+  （`--profile smoke|full`、`--stage preflight|data|all`），并纳入 mypy 覆盖。
+- 新增交接文档 `docs/handoffs/2026-08-27-r10-degradation-rerun.md`，含分阶段命令、
+  冒烟门禁判据、以及 6 类故障的定位手册（含可直接粘贴的逐条 Oracle 排查脚本）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-08-27 | `run_v3_degradation.py --profile smoke --stage preflight` | 5 断点全过，train 18/33/36/36/36，dev 12/22/24/24/24 |
+| 2026-08-27 | `run_v3_degradation.py --profile full --stage preflight` | 5 断点全过，train 240/440/480/480/480，dev 60/110/120/120/120 |
+| 2026-08-27 | 全量门禁 | 1349 passed；ruff / format / mypy(111) / lock / diff / qualification / audit 全绿 |
+| 2026-08-27 | 干净 clone 实跑 | **1303 passed / 46 skipped / 0 failed** |

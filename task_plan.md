@@ -8,12 +8,44 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 
 ## Current Phase
 
-**R10 推到 8.5+ 已完成**（2026-08-24）。三项核心任务：
+**R10 推到 8.5+ 已完成**（2026-08-24），但**第 3 项已于 2026-08-27 作废**。
+
 1. v1.2 OOD gate schema + dry-run 验证——新增 `OodEvaluationReport`，与 sealed v1.1 契约兼容；
 2. flight_ops 跨域验证——teacher 233/240，dev GO（candidate 1.0000 vs base 0.4833）；
-3. 工具数退化曲线——{3,6,9,12,15} 五个断点，tool selection 准确率 0.65 附近平坦无退化。
+3. ~~工具数退化曲线 0.65 平坦无退化~~ ——**读数作废**（LOG-20260827-01）：
+   `tool_count` 当时是空转参数，五个断点看到的是同一批任务和同样的 15 个工具。
 
 探索性结论，不用于发布判定；发布候选仍是 sft-008。
+
+### 2026-08-27 本轮（纯 CPU，已完成）
+
+- 补 Oracle 自洽性测试（gold 序列必须可解且零违规）与断点工具限制测试；
+- 撤掉 `skip_reads_gate`（政策守卫不得由任务数据关闭）；
+- `RetailOpsEnv` 新增可选 `allowed_tools`，断点真的限制 `env.list_tools()`；
+- `REFUND_THEN_CANCEL` 按 v4 已验证的双订单形态重建；
+- 干净 clone **实跑**（关掉下面进度表第 10 项）：`88ccabb` 上 1238/46/0
+  （与文档中的推算值一致），修复后工作树 1262/46/0，作者环境 1308 passed。
+
+### 2026-08-27 下半场：重跑的装置准备（用户已批准重跑）
+
+**输入**：修复后的 v3 任务集与环境。**输出**：可复现、可排障、小样本先行的重跑流程。
+**非目标**：不消耗封存 holdout；不改 v1/v2 冻结契约；不改 prompt/parser；
+不为了让数字好看而改任务或关守卫。
+
+- [x] `toolcount_eval.py`：preflight 自检门 + 逐位置 tool-selection 指标 +
+      干扰工具调用率 + 基础设施失败单列
+- [x] `stratified_sample`：按不同 margin 取值等距抽样，最易/最难两档必在样本内
+- [x] runner 重写为 `--profile smoke|full` × `--stage preflight|data|all`，可续跑
+- [x] 交接文档 `docs/handoffs/2026-08-27-r10-degradation-rerun.md`（含故障定位手册）
+- [x] CPU preflight 两个 profile 各 5 断点全过；全量门禁 1349 passed
+- [ ] **gpu-5090：小样本冒烟**（`--profile smoke`，约 30–45 min，API 约 ¥0.5）
+- [ ] **gpu-5090：大样本**（`--profile full`，约 4–6 h）——**冒烟门禁全绿才做**
+- [ ] 读数收口：findings / progress / PROJECT_LOG / EXECUTION_PLAN 更正记录 /
+      简历与面试材料里目前写着"读数作废"的段落
+
+**验收判据（冒烟）**：teacher 接受率 ≥0.80；`infrastructure_error_count` = 0；
+`tools_presented` 逐字等于断点声明；发出过合法工具调用的 episode ≥80%。
+**四条全部与模型好坏无关**——冒烟只证明装置能产出可归因的读数，不设 `task_success` 阈值。
 
 ---
 
@@ -206,7 +238,8 @@ GPU **是**、商业 API **是**、封存 holdout 观测**不限次数**（用�
 - [x] 7. 按曲线写修复方案与三分支判读并提交（`3cb5619`，早于全部修复运行）
 - [x] 8. 训练侧修复 + 复测 → **分支 2「修坏」，候选不变**（`docs/POLICY_BOUNDARY.md` §6）
 - [x] 9. 台账、阶段状态源、`PROJECT_LOG`（LOG-20260819-01）落地
-- [ ] 10. 任务 C：干净 clone 复跑，把文档里那个推算值换成实测值
+- [x] 10. 任务 C：干净 clone 复跑，把文档里那个推算值换成实测值（2026-08-27 完成：
+      `88ccabb` 上实测 1238/46/0，与推算值一致；修复后 1262/46/0）
 - [x] 11. 任务 D：独立验收并签字 → **被 R8 Task A1 取代**（一个面试官升级为三轮严苛独立审查）
 
 ### R8 D1 运行清单（seed2 方差刻画，推翻 R7 时判 D1 价值不足的判定）

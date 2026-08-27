@@ -38,7 +38,7 @@
 
 - 当前阶段：`R9 数据多样性扩展` 探索性结论收口（2026-08-22，待用户决定是否开第四轮）；R0–R8 全部已完成。阶段状态的唯一事实源是 `docs/EXECUTION_PLAN.md`，本节只做摘要。
 - **R7 的结论是一次判负**：政策边界探针把「该拒绝却执行」定位到单一状态格（`offset −14`，即 `refund_deadline` 比当天早 14 天）；针对性数据修复在同源措辞的评测面上改善、在**措辞分布外**的 `ood_dev` 上退化，按事先写定的规则判负，**发布候选仍是 `sft-008`**。见 `docs/POLICY_BOUNDARY.md` 与 LOG-20260819-01。
-- **R8 诊断与 R9 数据多样性扩展**：R8 定位 OOD 泛化差主因为数据多样性不足（12 模板 / 2 工具 / 240 条），引入 `flight_ops` 第二领域验证四接口领域可替换性、`domains/retail_ops/v3`（15 工具）与退化曲线；R9 Phase B 扩到 5 工具 / 12 场景，`sft-003` OOD v2 0.8667、跨工具 OOD v4 0.8917 达标，「多样性有帮助」部分成立，但留 `refund_then_cancel` 双订单复合动作 0/10 硬失败。**探索性结论，不用于发布判定**（发布候选仍是 `sft-008`）。见 `docs/R8_DIAGNOSIS.md` / `docs/R9_PHASE_B_RESULTS.md`。
+- **R8 诊断与 R9 数据多样性扩展**：R8 定位 OOD 泛化差主因为数据多样性不足（12 模板 / 2 工具 / 240 条），引入 `flight_ops` 第二领域验证四接口领域可替换性、`domains/retail_ops/v3`（15 工具）与退化曲线（**曲线读数已于 2026-08-27 作废，见 LOG-20260827-01**）；R9 Phase B 扩到 5 工具 / 12 场景，`sft-003` OOD v2 0.8667、跨工具 OOD v4 0.8917 达标，「多样性有帮助」部分成立，但留 `refund_then_cancel` 双订单复合动作 0/10 硬失败。**探索性结论，不用于发布判定**（发布候选仍是 `sft-008`）。见 `docs/R8_DIAGNOSIS.md` / `docs/R9_PHASE_B_RESULTS.md`。
 - **由此得到的纪律**：任何数据侧修复的验收**必须同时给出一个措辞分布外的读数**，且分布外退化优先于分布内改善。只看同源评测面会看到一个不存在于分布外的改进。
 - R2 已完成方案审批，批准的正式规格与计划位于 `docs/archive/superpowers/specs/2026-07-22-retailops-v1-r2-formal-data-and-base-design.md` 和 `docs/archive/superpowers/plans/2026-07-22-retailops-v1-r2-formal-data-and-base.md`。
 - 正式数据、API、模型下载、SSH 和每条 GPU 命令仍需分别确认；CPU 实现授权不跨越这些外部资源门。

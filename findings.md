@@ -1527,3 +1527,126 @@ task_success 从 0.800 提升到 0.983，只新增 1 次 policy_violation。
 - **诚实边界**：仅在一个 teacher/provider（MiMo-V2.5）、一个模型（Qwen3-4B）、
   一个任务集（retail_ops v3 六类）上测量。不同模型规模、不同工具语义重叠度、
   不同任务复杂度下结论可能不同。
+
+## v3 退化曲线的自变量从未生效，评测集三处不自洽（2026-08-27，纯 CPU）
+
+**触发**：核查 08-25 至 08-27 三次未入台账的提交（`8e43317` / `97ff796` / `88ccabb`）。
+
+### 用什么方法发现的
+
+用 Oracle（gold `expected_calls`）在 v3 dev 上回放一遍。这个检查此前不存在——
+`tests/test_retail_ops_v3_tasks.py` 只断言配额、确定性、ID 唯一、场景名合法，
+**没有一条断言"正确答案在环境里真的走得通"**。三次提交因此全绿通过。
+
+| 版本 | Oracle dev task_success | 失败场景 |
+|---|---|---|
+| `4b2044e`（08-25） | 110/120 | `refund_then_cancel` 0/10 |
+| `88ccabb`（HEAD 改前） | **90/120** | 上面 + `cancel_eligible` 0/10 + `cancel_recovery` 0/10 |
+| 修复后 | **120/120（N≥9）、110/110（N=6）、60/60（N=3）**，零违规 | — |
+
+### 三个缺陷
+
+1. **`tool_count` 是空转参数**。`build_toolcount_task_set` 在 5 个断点上产出的
+   train/dev 任务**逐条 `content_sha256` 相同**（已实测比对），
+   `scripts/run_v3_degradation.py::_make_env` 又对每个断点加载整份 15 工具 bundle。
+   R10 那条"0.65 附近平坦"与 R8 C2 那四个逐位相同的点，**测的都不是工具数**。
+   五个断点读数完全一样这件事本身就是指纹——当时没人把它当成信号。
+
+2. **`skip_reads_gate` 把政策守卫变成了任务数据**（`97ff796`）。
+   `metadata["skip_reads_gate"]` 能关掉 `cancel_requires_lookup`。
+   触发条件写成 `len(expected_calls) == 1`，而 `CANCEL_RECOVERY` 有两次调用，
+   于是它的 gold 序列自己触发 10 次政策违规——开关既危险又没接对。
+
+3. **`REFUND_THEN_CANCEL` 被改成了另一个任务**（`8e43317`）。
+   gold 从「退 A + 取消 B」变成「取消 A」，`user_request` 改成 "Cancel order X."，
+   但场景名和 `target_state`（仍要求 `refund_status=refunded`）没跟着改，
+   该场景变成永远不可达。**根因在更早**：`_make_task` 从来只建一个订单，
+   第二个订单在环境里不存在，所以这个场景自诞生起就不可解。
+
+### R9 的「双订单硬失败」结论不受影响
+
+那条结论跑在 **v4** 任务集上（`formal_tasks.py::build_v4_task_set`），
+v4 的 `_make_task` 真的建了第二个订单。实测 v4 dev 的 Oracle 回放 **120/120**，
+`refund_then_cancel` 10/10。所以 R9 Phase B 记录的 0/10 是模型的失败，不是任务的缺陷。
+
+### 修法与代价
+
+- 政策守卫只由代码强制：撤掉 `skip_reads_gate`，补回归测试断言任务 metadata 关不掉它。
+- `RetailOpsEnv` 新增可选 `allowed_tools`（默认 `None` = 全部，v1/v2 证据逐字节不变），
+  断点按 `ToolCountTaskSet.tool_names` 构造环境；未呈现的工具走 `unknown_tool`。
+- 所需工具没被呈现的场景在该断点上无解，因此排除（`scenarios_for`）。
+  **代价：总体 task_success 不可跨断点比较**，曲线只能读 `common_scenarios()`
+  ——恰好是 v1 的 6 类，`sft-008` 作 {3} 左端点仍成立。断点场景数 6 / 11 / 12 / 12 / 12。
+- `REFUND_THEN_CANCEL` 按 v4 已验证的形态重建：双订单、gold 四步、`max_steps=5`。
+
+### 一个方法论教训
+
+这三处全部躲过了 1284 条测试。共同点是：**测试断言的是结构（配额、哈希稳定、ID 唯一），
+不是语义（这个任务解得开吗）**。结构断言对"改坏了内容"完全没有分辨力。
+新增的两类测试——Oracle 必须解出每条 dev 任务、断点必须真的限制 `env.list_tools()`
+——是对同一类缺陷的直接守卫。
+
+### 干净 clone 实测（关掉 `task_plan.md` 第 10 项）
+
+文档里 1238/46 一直标着"由 1284 − 46 推算"。本轮在 `88ccabb` 上实跑：
+**1238 passed / 46 skipped / 0 failed**，与推算值一致。修复后的工作树上
+实跑 **1262 passed / 46 skipped / 0 failed**（作者环境 1308 passed）。
+
+## 重跑前把实验装置做对（2026-08-27，纯 CPU）
+
+用户批准重跑退化曲线，要求「小样本先达标再上大样本，且两者难度/类型分布一致」。
+按此把装置逻辑从脚本挪进 `src/`（受 mypy 与测试覆盖），脚本只剩编排。
+
+### 小样本与大样本的分布关系（`stratified_sample`）
+
+难度轴不是均匀的，先量了一遍才敢设计抽样：
+
+| 场景类 | dev 的 margin 直方图 |
+|---|---|
+| ALLOW 类（`refund_eligible` / `*_recovery` / `cancel_eligible` / `refund_then_cancel`） | `{10: 9, 14: 1}`——**近乎退化** |
+| `refund_denied_window` / `cancel_denied_recent` | `{1:2, 2:4, 3:2, 5:1, 7:1}` |
+| 其余 | `{1:2, 2:2, 3:2, 5:1, 7:1, 10:1, 14:1}` |
+
+因此**按下标等距抽样是错的**：`refund_eligible` 取下标 [0,5] 会拿到两条 margin=10，
+最难的 14 被漏掉。改为**按不同 margin 取值等距、取空了按 margin 距离就近回填**：
+
+- 类型分布**严格一致**（每场景等量，而全量本身每场景等量）；
+- `per_scenario ≥ 2` 时**最易与最难两档必在样本内**（有测试逐场景断言）；
+- 小样本是大样本的真子集；抽满时逐条等于全量；
+- **不保证难度直方图成比例**——做不到，实际直方图写进 manifest 备查。
+
+smoke = 每场景 train 3 / dev 2，full = 40 / 10。两者只差这一个数。
+
+### 指标重新定义
+
+- `tool_selection_accuracy` 改为**逐位置命中 / max(len(gold), len(actual))**。
+  旧实现是成员判定（gold 名字出现在轨迹任意位置就算对），**把 15 个工具全调一遍能拿满分**，
+  已用测试固定这个反例。
+- 新增 `distractor_call_rate`（调用了呈现了但用不到的工具）——**这才是本实验想量的量**。
+  工具变多导致的混淆会直接体现在这个数上，而不是体现在总成功率上。
+- 新增 `unknown_tool_call_count`（调用了没呈现的工具）。
+- `infrastructure_error_count` 单列：旧实现把后端异常记成 `success=False`，
+  一次 CUDA OOM 读起来就像模型退化。
+
+### 冒烟门禁只管装置，不管模型
+
+`SMOKE_GATES` 四条全部与模型好坏无关：teacher 接受率 ≥0.80、基础设施失败 =0、
+`tools_presented` 逐字等于断点声明、发出过合法工具调用的 episode ≥80%。
+**故意不给 `task_success` 设阈值**——每场景 2 条，给它设阈值等于用噪声做判定。
+冒烟只回答「装置能不能产出可归因的读数」。
+
+### preflight 是这轮的核心防线
+
+`preflight_breakpoint` 在花掉第一分钟 GPU 之前验两件事：环境呈现的工具恰好是断点声明的
+子集、Oracle 能解开每条任务且零违规。CPU 上 5 个断点合计 0.2 秒。
+**上一轮失效的两个原因，这条都挡得住**，并且有测试模拟"忘了传 allowed_tools"来证明它真会红。
+
+### 实跑
+
+| 命令 | 结果 |
+|---|---|
+| `--profile smoke --stage preflight` | 5 断点全过；train 18/33/36/36/36，dev 12/22/24/24/24 |
+| `--profile full --stage preflight` | 5 断点全过；train 240/440/480/480/480，dev 60/110/120/120/120 |
+| 全量门禁 | 1349 passed；干净 clone **1303 passed / 46 skipped / 0 failed**（实跑） |
+
+GPU 与 teacher API 尚未启动，等在 gpu-5090 上按交接文档执行。
