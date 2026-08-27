@@ -259,8 +259,17 @@ D 状态永不返回、`import torch; torch.cuda.is_available()` 超过 300 秒�
   （D 状态忽略信号，`kill -9` 也无效），只会让情况更糟。
 - **不要**去杀别人的进程。gpu-5090 是多人共用；`/mnt/aidata/tongjiakai` 下还有
   该用户自己的其他长跑作业。
-- 恢复需要 `nvidia-smi --gpu-reset`（要求无进程占用，通常需 root）或重启整机，
-  **两者都影响其他用户，必须由用户决定**。
+- **`--gpu-reset` 与卸载模块都不可行**（2026-08-27 以 root 逐条验证过）：四个 nvidia
+  模块引用计数全非零（`nvidia` 223 / `nvidia_uvm` 8 / `nvidia_modeset` 13 / `nvidia_drm` 16），
+  而持有引用的 Xorg 和 modeset 内核线程处于 D 状态、**忽略 SIGKILL 永不退出**，
+  引用计数不可能降到 0；`--gpu-reset` 自己也会卡在同一把锁上。
+  `/sys/bus/pci/.../reset` 在驱动仍 bound 时写入是未定义行为，极可能 panic——不要碰。
+- **只能重启整机**，必须由用户决定。干净 `reboot` 可能卡在 D 状态任务上，
+  超过 2 分钟无反应时用 `sync; echo 1 > /proc/sys/kernel/sysrq; echo b > /proc/sysrq-trigger`。
+- **发现异常后第一件事是抓 Xid**：`dmesg -T > /tmp/xid-$(date +%s).txt`。
+  2026-08-27 那次的错误风暴约 500–1000 条/秒，先刷爆内核环形缓冲区，
+  再冲破 journald 默认 4 GB 上限、vacuum 掉整整一小时的历史——
+  **等到想起来查日志时，证据已经被故障自己烧光了**，归因因此永远无法坐实。
 - 等待期间**没有任何东西会丢**：采集证据、SFT 导出、manifest 都已落盘且被
   `.gitignore` 覆盖但保留在磁盘上；重跑时 teacher 阶段整体跳过（不再计费），
   从训练阶段续上。

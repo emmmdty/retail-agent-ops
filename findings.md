@@ -1806,3 +1806,55 @@ mutter 同时重启（显示栈倒掉）。
 **我们自己造成的可见影响**：4 个探测用 `nvidia-smi` 永久卡在 D 状态
 （D 状态忽略信号，`kill -9` 无效），会一直计入 load average 直到重启。
 发现这一点后已停止一切 `nvidia-smi` 探测。
+
+#### root 权限下的最终诊断（2026-08-27，用户提供管理员账户后）
+
+**GPU 状态**：设备仍在 PCIe 上枚举、config space 可读（vendor `0x10de` / device `0x2b85`
+= RTX 5090）、电源状态 **D0**（PMCSR `0x0008`，未休眠）、链路 x16 @ 5.0 GT/s（上限 32.0）。
+但 **MMIO 寄存器读全部返回 `0xbadf3200`**：
+
+```
+NVRM: gpuHandleSanityCheckRegReadError_GH100: Possible bad register read:
+      addr: 0xb830b0, regvalue: 0xbadf3200, error code: Unknown SYS_PRI_ERROR_CODE
+```
+
+`0xbadf____` 是 NVIDIA 驱动「寄存器读失败 / GPU 不在 PRI 上应答」的哨兵值。
+**config space 活着而 MMIO 死掉**，说明 GPU 核心已停止响应，但 PCIe 端点还在。
+驱动版本：NVIDIA **开源**内核模块 580.126.09（2026-01-07 构建）。
+
+**决定性证据已被故障本身销毁**：错误风暴约 **500–1000 条/秒**，先刷爆内核环形缓冲区
+（6355 行全是同一条），再冲破 journald 默认 4 GB 上限并 vacuum 掉 15:00–16:00 全部历史。
+`journalctl --list-boots` 现在只剩一个 boot，其首条记录随时间不断前移
+（16:27 → 16:30 → 16:32）。**任何 Xid 行都没有留下。**
+
+**归因（修正此前判断）**：
+
+- 指向**设备/驱动层**：持续症状是寄存器读失败，不是应用故障——应用非法访存会是
+  Xid 13/31 并带上进程名；卡住的包含 **modeset 内核线程和两个其他用户的 X server**，
+  纯计算作业不碰 modeset 路径；当前无任何进程消耗 CPU，printk 来自 IRQ/驱动上下文。
+- **仍不能排除我们**：15:27–15:38 窗口内我们是唯一活跃的 GPU 计算方；15:17 那次
+  在把 4-bit 模型载入显存后立即异常退出。
+- **结论：最符合设备/驱动层故障，但无法证实，也无法把我们完全排除。**
+
+**没有非破坏性恢复路径**（逐条验证过）：
+
+| 方案 | 为什么不行 |
+|---|---|
+| 卸载重载 `nvidia_uvm` | 引用计数 8，非零 |
+| 卸载 `nvidia` 主模块 | 引用计数 **223** |
+| 把引用计数降到 0 | 两个 Xorg + modeset 内核线程在 **D 状态**，忽略包括 SIGKILL 在内的一切信号，**永远不会退出** |
+| `nvidia-smi --gpu-reset` | 要求无客户端占用；且它自己会卡在同一把 `os_acquire_rwlock_write` 上 |
+| `/sys/.../0000:02:00.0/reset` | 接口存在，但驱动仍 bound 时写入是未定义行为，极可能 kernel panic——**破坏性，未执行** |
+| 调电源状态 | GPU 已在 D0，不是休眠问题 |
+
+**只能重启整机**。注意：干净 `reboot` 可能卡在等 D 状态任务上；若超过 2 分钟无反应，
+标准逃生是 `sync; echo 1 > /proc/sys/kernel/sysrq; echo b > /proc/sysrq-trigger`。
+
+**为下次留证据**（本次教训：故障把自己的证据烧了）：
+
+1. `/etc/systemd/journald.conf` 设 `RateLimitIntervalSec=30s` / `RateLimitBurst=2000`，
+   让风暴不能再冲掉历史；
+2. 一旦发现 GPU 异常，**第一件事**是 `dmesg -T > /tmp/xid-$(date +%s).txt`，
+   在风暴刷爆缓冲区之前抓下 Xid；
+3. 重启后若 `0xbadf` 在负载下复现，或链路在负载下达不到 32.0 GT/s，
+   应怀疑硬件（供电 / PCIe 信号完整性），而不是继续怀疑软件。
