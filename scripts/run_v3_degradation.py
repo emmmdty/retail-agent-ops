@@ -130,6 +130,27 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def attempt_id_for(tool_count: int) -> str:
+    return f"v3-tc{tool_count}"
+
+
+def teacher_evidence_dir(out: Path, tool_count: int) -> Path:
+    """采集证据的**唯一**路径来源。
+
+    `write_teacher_attempt_evidence(evidence, private_root, attempt_id)` 自己会在
+    `private_root` 下拼 `teacher-collection/<attempt_id>`，所以它收的是**私有根**，
+    不是已经带上 `teacher-collection` 的目录。旧 runner 多传了一层，于是写进
+    `…/teacher-collection/teacher-collection/<attempt>/`，而续跑检查和导出都从
+    `…/teacher-collection/<attempt>/` 读——两边永远对不上。
+
+    后果不是"慢一点"：2026-08-24 那轮 R10 因此导出 0 行、五个断点一个 adapter 都没训出来，
+    "candidate" 评测跑的其实是未训练的基座（远端 `reports/…/r10/` 里
+    `sft.jsonl` 0 行、无 `adapter/` 目录，`degradation_summary.json` 五点全 0.65）。
+    写和读现在都走这一个函数，`tests/test_retail_ops_toolcount_eval.py` 有断言钉死。
+    """
+    return out / "teacher-collection" / attempt_id_for(tool_count)
+
+
 # ---------------------------------------------------------------------------
 # 阶段 1：preflight（纯 CPU，不花任何预算）
 # ---------------------------------------------------------------------------
@@ -198,22 +219,23 @@ def stage_teacher(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
         max_episodes_per_task=2,
         max_request_attempts=3,
     )
-    attempt = f"v3-tc{tool_count}"
-    evidence_root = out / "teacher-collection"
-    (evidence_root / attempt).mkdir(parents=True, exist_ok=True)
+    attempt = attempt_id_for(tool_count)
+    evidence_dir = teacher_evidence_dir(out, tool_count)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
     factory = env_factory_for(tool_count)
 
     accepted = 0
     errors: list[str] = []
     for index, record in enumerate(records):
-        path = evidence_root / attempt / f"{record.task.task_id}.json"
+        path = evidence_dir / f"{record.task.task_id}.json"
         if path.exists():  # 续跑：已尝试过的不重复计费
             if json.loads(path.read_text(encoding="utf-8")).get("accepted"):
                 accepted += 1
             continue
         try:
             evidence = collect_teacher_attempt(record, client, factory, config)
-            write_teacher_attempt_evidence(evidence, evidence_root, attempt)
+            # 第二个参数是**私有根**，函数自己拼 teacher-collection/<attempt>
+            write_teacher_attempt_evidence(evidence, out, attempt)
             accepted += int(evidence.accepted)
         except Exception as error:  # 单条失败不该炸掉整轮采集
             errors.append(f"{record.task.task_id}: {type(error).__name__}: {error}")
@@ -243,7 +265,7 @@ def stage_export(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
     from veritool_rl.core.trajectory.schema import Trajectory
 
     records = sampled_records(tool_count, "train", profile)
-    evidence_dir = out / "teacher-collection" / f"v3-tc{tool_count}"
+    evidence_dir = teacher_evidence_dir(out, tool_count)
     rows: list[dict[str, Any]] = []
     accepted_ids: list[str] = []
     for record in records:

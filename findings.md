@@ -1666,3 +1666,27 @@ GPU 与 teacher API 尚未启动，等在 gpu-5090 上按交接文档执行。
    「采集说接受了 N 条、导出只落盘 M 条」，那要拿另一份产物来比——改成与
    `teacher.json` 的 `accepted` 对账。
    同一类问题在本项目反复出现（名字和 docstring 承诺的比实现做的多）。
+
+### 第三个缺陷：教师证据的写路径与读路径不一致（2026-08-27）
+
+`write_teacher_attempt_evidence(evidence, private_root, attempt_id)` **自己**会在
+`private_root` 下拼 `teacher-collection/<attempt_id>`——它收的是私有根，不是已经带上
+`teacher-collection` 的目录。新旧两版 runner 都多传了一层，于是：
+
+- 写入 `…/teacher-collection/teacher-collection/<attempt>/`
+- 续跑检查与导出从 `…/teacher-collection/<attempt>/` 读
+
+**远端 `reports/retail_ops/v1/r10/` 的实物证据**（2026-08-24 那轮）：
+教师证据 **1299 个文件**全在 `toolcount-N/teacher/teacher-collection/v3-tcN/`；
+`sft.jsonl` **0 行**；**五个断点一个 `adapter/` 目录都没有**；
+`degradation_summary.json` 是 `{"3":0.65,"6":0.65,"9":0.65,"12":0.65,"15":0.65}`，
+`task_count` 全是 60。
+
+**因此那轮的 "candidate" 评测跑的是未训练的基座**——`run_eval` 的
+`adapter_path=str(adapter_dir) if adapter_dir.exists() else None` 在没有 adapter 时
+静默传 `None`。加上此前查明的「自变量空转」，那条曲线是**同一个未训练模型、
+在同一批任务、同样 15 个工具上，被评了五次**。三重退化，而流程一声不吭地跑完并写出了曲线。
+
+修法：路径抽成 `teacher_evidence_dir()` 单一来源，写和读都走它；
+新增测试直接比对 `write_teacher_attempt_evidence` 的返回路径与该函数，
+**已做突变检验**（把它改回多一层，测试当场变红）。

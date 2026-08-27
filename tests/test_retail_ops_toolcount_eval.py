@@ -205,6 +205,62 @@ class TestToolSelectionScore:
         assert score.unknown_tool_calls == 1
 
 
+class TestEvidencePathIsSingleSourced:
+    """采集写入的位置必须就是续跑检查和导出读取的位置。
+
+    2026-08-24 那轮 R10 死在这：runner 给 `write_teacher_attempt_evidence` 多传了
+    一层 `teacher-collection`，证据写进 `…/teacher-collection/teacher-collection/<attempt>/`，
+    而导出从 `…/teacher-collection/<attempt>/` 读。结果是 `sft.jsonl` 0 行、
+    一个 adapter 都没训出来，"candidate" 评测跑的其实是未训练的基座——
+    而整个流程一声不吭地跑完并写出了曲线。
+    """
+
+    def test_write_lands_exactly_where_the_runner_reads(self, tmp_path: Path) -> None:
+        from veritool_rl.retail_ops.build.teacher_data import (
+            TeacherAttemptEvidence,
+            TeacherAttemptOutcome,
+            write_teacher_attempt_evidence,
+        )
+
+        runner = _load_runner()
+        tool_count = 6
+        task_id = "lookup_status-train-LOOKT000-1"
+        evidence = TeacherAttemptEvidence(
+            task_id=task_id,
+            task_fingerprint="0" * 64,
+            dataset_version="test-v3-toolcount",
+            seed=0,
+            bundle_sha256="0" * 64,
+            manifest_sha256="0" * 64,
+            route_sha256="0" * 64,
+            config_sha256="0" * 64,
+            outcome=TeacherAttemptOutcome.SUCCESS,
+            accepted=True,
+            episode_index=0,
+            request_attempts=1,
+            usage_prompt_tokens=1,
+            usage_completion_tokens=1,
+            trajectory=None,
+        )
+        written = write_teacher_attempt_evidence(
+            evidence, tmp_path, runner.attempt_id_for(tool_count)
+        )
+        assert written.parent == runner.teacher_evidence_dir(tmp_path, tool_count)
+        assert written.name == f"{task_id}.json"
+
+
+def _load_runner():
+    """按路径加载 runner 脚本（它不在包里）。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_v3_degradation.py"
+    spec = importlib.util.spec_from_file_location("run_v3_degradation", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class TestSummarise:
     def test_infrastructure_errors_do_not_become_model_failures(self) -> None:
         """OOM 摊进成功率会让环境故障看起来像模型退化。"""

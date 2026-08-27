@@ -284,4 +284,4 @@ for k in s['dev_distribution']:
 - `refund_then_cancel` 按 v4 已验证的双订单形态重建；
 - Oracle 在 5 个断点的 smoke 与 full 任务集上均全解、零违规；
 - 分层抽样、指标、自检门都在 `src/` 里，受 mypy 与 41 条测试覆盖；
-- 全量门禁基线：作者环境 1349 passed，干净 clone 1303 passed / 46 skipped / 0 failed。
+- 全量门禁基线：作者环境 1350 passed，干净 clone 1304 passed / 46 skipped / 0 failed。
