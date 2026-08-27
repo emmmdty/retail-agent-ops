@@ -79,6 +79,18 @@ def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
+def require_repo_cwd() -> None:
+    """模型与 adapter 路径都是项目相对的，因此 cwd 必须就是仓库根。
+
+    `QwenPolicy.from_config` 用 `validate_project_relative_path` 拒绝绝对路径，
+    而相对路径按 cwd 解析——从别的目录启动会变成"找不到模型"，
+    报错信息完全不指向真正原因。
+    """
+    if Path.cwd().resolve() != PROJECT_ROOT:
+        msg = f"必须在仓库根运行：cd {PROJECT_ROOT}（当前 {Path.cwd()}）"
+        raise SystemExit(msg)
+
+
 def reports_root(profile: str) -> Path:
     return PROJECT_ROOT / "reports" / "retail_ops" / "v1" / "r10-rerun" / profile
 
@@ -316,15 +328,21 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _policy_factory(adapter_path: str | None) -> Callable[[TaskSpec], Any]:
+def _policy_factory(adapter_path: Path | None) -> Callable[[TaskSpec], Any]:
+    """构造评测用 policy。
+
+    `QwenPolicy.from_config` 对 `model_name` 与 `adapter_path` 都跑
+    `validate_project_relative_path`——**绝对路径会被直接拒绝**。因此这里一律传
+    相对仓库根的路径，并且要求进程 cwd 就是仓库根（`require_repo_cwd` 已验过）。
+    """
     from veritool_rl.core.agent.qwen import QwenPolicy
 
     config: dict[str, Any] = {
-        "model_name": str(MODELS_ROOT / MODEL_NAME),
+        "model_name": str((MODELS_ROOT / MODEL_NAME).relative_to(PROJECT_ROOT)),
         "max_new_tokens": 256,
     }
     if adapter_path is not None:
-        config["adapter_path"] = adapter_path
+        config["adapter_path"] = str(adapter_path.relative_to(PROJECT_ROOT))
     policy = QwenPolicy.from_config(config)
     return lambda _task: policy
 
@@ -334,7 +352,7 @@ def stage_eval(
     profile: str,
     out: Path,
     label: str,
-    adapter_path: str | None,
+    adapter_path: Path | None,
 ) -> BreakpointMetrics:
     records = sampled_records(tool_count, "dev", profile)
     metrics, outcomes = evaluate_tasks(
@@ -434,9 +452,7 @@ def run_breakpoint(tool_count: int, profile: str, stage: str) -> dict[str, Any]:
     stage_train(tool_count, profile, out)
     result["eval_base"] = stage_eval(tool_count, profile, out, "base", None).to_json()
     adapter = out / "adapter"
-    result["eval_candidate"] = stage_eval(
-        tool_count, profile, out, "candidate", str(adapter)
-    ).to_json()
+    result["eval_candidate"] = stage_eval(tool_count, profile, out, "candidate", adapter).to_json()
     write_json(out / "done.json", result)
     return result
 
@@ -485,6 +501,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=list(BREAKPOINTS),
     )
     args = parser.parse_args(argv)
+    require_repo_cwd()
 
     root = reports_root(args.profile)
     results: dict[int, dict[str, Any]] = {}

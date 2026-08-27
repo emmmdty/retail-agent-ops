@@ -236,7 +236,18 @@ PY
   且若引入了第二个 Python 深度学习环境，必须先隔离其 `TRITON_CACHE_DIR`
   （否则会覆盖项目自己的 triton 缓存，报错信息完全不指向真正原因，LOG-20260816-02）。
 
-### 5.5 读数看起来"太平坦"
+### 5.5 报「必须在仓库根运行」或「policy.model_name 必须是项目相对路径」
+
+`QwenPolicy.from_config` 对 `model_name` 与 `adapter_path` 都跑
+`validate_project_relative_path`，**绝对路径会被直接拒绝**；而相对路径按进程 cwd 解析。
+因此 runner 在起步时就断言 `cwd == 仓库根`（`require_repo_cwd`）。
+`cd /mnt/aidata/tongjiakai/retail-agent-ops` 之后再跑即可。
+
+这一条是 2026-08-27 从 gpu-5090 上一次手工运行残留的未提交改动里捞回来的——
+远端把 `str(MODELS_ROOT / ...)` 改成了 `"models/Qwen3-4B-pinned"`，正是撞了这道校验。
+新 runner 已经统一用相对路径，不需要再手工改。
+
+### 5.6 读数看起来"太平坦"
 
 **这正是上一轮的形态，务必按下面顺序排除装置问题再下结论**：
 
@@ -249,7 +260,7 @@ PY
    不要只报一个总分；
 4. 只有 1、2 都确认过之后，"平坦"才可以写进结论。
 
-### 5.6 想确认小样本没抽偏
+### 5.7 想确认小样本没抽偏
 
 ```bash
 .venv/bin/python -c "
