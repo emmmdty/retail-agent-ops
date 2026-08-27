@@ -248,6 +248,38 @@ class TestEvidencePathIsSingleSourced:
         assert written.parent == runner.teacher_evidence_dir(tmp_path, tool_count)
         assert written.name == f"{task_id}.json"
 
+    def test_adapter_is_looked_up_where_run_sft_writes_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """评测加载 adapter 的路径必须等于 `run_sft` 实际写入的路径。
+
+        `run_sft(config, seed, output_dir)` 自己把权重写到 `output_dir/"adapter"`。
+        旧 runner 把 `out/"adapter"` 当运行目录传进去，权重落在 `out/adapter/adapter/`，
+        评测再去 `out/adapter/` 找就报 `Can't find 'adapter_config.json'`。
+        这里用 `resolve_sft_config` 直接问训练侧「你会写到哪」，不靠人记约定。
+        """
+        from veritool_rl.training.sft import resolve_sft_config
+
+        runner = _load_runner()
+        monkeypatch.chdir(tmp_path)
+        out = Path("toolcount-3")
+        sft_path = out / "sft" / "sft.jsonl"
+        sft_path.parent.mkdir(parents=True)
+        sft_path.write_text("{}\n", encoding="utf-8")
+        config = {
+            "model": {
+                "name": "models/x",
+                "load_in_4bit": True,
+                "revision": "0" * 40,
+                "file_sha256": {"config.json": "0" * 64},
+            },
+            "lora": {"r": 16, "alpha": 32, "dropout": 0.05, "target_modules": ["q_proj"]},
+            "data": {"train_path": str(sft_path), "eval_path": str(sft_path)},
+            "training": {"epochs": 3, "batch_size": 1, "grad_accum": 1, "lr": 2e-4},
+        }
+        resolved = resolve_sft_config(config, seed=0, output_dir=runner.train_run_dir(out))
+        assert resolved.adapter_dir == runner.adapter_dir_for(out)
+
     def test_persisted_evidence_round_trips(self, tmp_path: Path) -> None:
         """落盘的证据必须读得回来。
 

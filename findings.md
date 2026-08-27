@@ -1712,3 +1712,29 @@ task.scenario: Input should be an instance of TaskScenario, input_value='lookup_
 新增回环测试（写盘→读回→比对场景与终止原因），**已做突变检验**。
 拿远端真实采集的 18 条证据本地实跑 `stage_export`：**导出 15 行，与
 `teacher.json` 的 accepted=15 对账通过**。
+
+### 第五个缺陷：adapter 的写入路径与加载路径不一致（2026-08-27）
+
+GPU 阶段第一个断点：训练成功、base 评测出了真读数
+（`success=0.5000 pv=0 tool_acc=0.7273 distractor=0.2000 infra_err=0`），
+**candidate 评测硬失败**：`Can't find 'adapter_config.json' at .../toolcount-3/adapter`。
+
+`run_sft(config, seed, output_dir)` 自己把权重写到 `output_dir/"adapter"`
+（`training/sft.py::resolve_sft_config` 第 149 行）——调用方给的是**运行目录**。
+旧 runner 传 `out/"adapter"` 当运行目录，权重落在 `out/adapter/adapter/`，
+评测再去 `out/adapter/` 找。**与教师证据那处是同一类错误**：被调方自己会加一层，
+调用方又预先加了一层。
+
+**这也说明老脚本即使当初有训练数据，candidate 评测同样会挂在这一步**——
+`reports/…/r10/` 里没有 adapter 目录，有两个独立原因。
+
+修法：`train_run_dir()` / `adapter_dir_for()` 单一来源；训练后立即断言
+`adapter_config.json` 在场（不再等到评测阶段才发现）；测试用
+`resolve_sft_config` **直接问训练侧「你会写到哪」**，不靠人记约定，已做突变检验。
+
+### 小样本此刻已经证明的事
+
+base 评测那一行读数本身就是装置在工作的证据：
+`distractor=0.2000` 说明**新加的干扰工具调用率是活的**——模型确实碰了这条任务
+用不到的工具，而这正是「工具变多是否更容易伸错手」要量的东西。
+旧指标（成员判定）根本产不出这个量。

@@ -151,6 +151,26 @@ def teacher_evidence_dir(out: Path, tool_count: int) -> Path:
     return out / "teacher-collection" / attempt_id_for(tool_count)
 
 
+def train_run_dir(out: Path) -> Path:
+    """训练运行目录（config/metrics/checkpoints 都落这里）。"""
+    return out / "train"
+
+
+def adapter_dir_for(out: Path) -> Path:
+    """加载 adapter 的**唯一**路径来源。
+
+    `run_sft(config, seed, output_dir)` 自己把权重写到 `output_dir / "adapter"`
+    （`training/sft.py::resolve_sft_config`），所以调用方给的是**运行目录**，
+    不是 adapter 目录。旧 runner 传 `out/"adapter"` 当运行目录，权重于是落在
+    `out/adapter/adapter/`，评测再去 `out/adapter/` 找就报
+    `Can't find 'adapter_config.json'`——与教师证据那处是同一类错误：
+    被调方自己会加一层，调用方又预先加了一层。
+
+    `tests/test_retail_ops_toolcount_eval.py` 用 `resolve_sft_config` 钉死这个约定。
+    """
+    return train_run_dir(out) / "adapter"
+
+
 # ---------------------------------------------------------------------------
 # 阶段 1：preflight（纯 CPU，不花任何预算）
 # ---------------------------------------------------------------------------
@@ -362,12 +382,16 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
             "lr": 2e-4,
         },
     }
-    adapter_dir = out / "adapter"
-    adapter_dir.mkdir(parents=True, exist_ok=True)
-    run_sft(config, seed=0, output_dir=adapter_dir)
-    write_json(out / "train.json", {"adapter": str(adapter_dir), "model_revision": revision})
-    log(f"  train: adapter 落盘 {adapter_dir}")
-    return {"adapter": str(adapter_dir)}
+    run_dir = train_run_dir(out)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_sft(config, seed=0, output_dir=run_dir)
+    adapter = adapter_dir_for(out)
+    if not (adapter / "adapter_config.json").is_file():
+        msg = f"训练完成但 {adapter} 下没有 adapter_config.json，候选无法加载"
+        raise RuntimeError(msg)
+    write_json(out / "train.json", {"adapter": str(adapter), "model_revision": revision})
+    log(f"  train: adapter 落盘 {adapter}")
+    return {"adapter": str(adapter)}
 
 
 # ---------------------------------------------------------------------------
@@ -498,8 +522,9 @@ def run_breakpoint(tool_count: int, profile: str, stage: str) -> dict[str, Any]:
 
     stage_train(tool_count, profile, out)
     result["eval_base"] = stage_eval(tool_count, profile, out, "base", None).to_json()
-    adapter = out / "adapter"
-    result["eval_candidate"] = stage_eval(tool_count, profile, out, "candidate", adapter).to_json()
+    result["eval_candidate"] = stage_eval(
+        tool_count, profile, out, "candidate", adapter_dir_for(out)
+    ).to_json()
     write_json(out / "done.json", result)
     return result
 
