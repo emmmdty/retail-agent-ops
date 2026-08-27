@@ -248,6 +248,47 @@ class TestEvidencePathIsSingleSourced:
         assert written.parent == runner.teacher_evidence_dir(tmp_path, tool_count)
         assert written.name == f"{task_id}.json"
 
+    def test_persisted_evidence_round_trips(self, tmp_path: Path) -> None:
+        """落盘的证据必须读得回来。
+
+        `Trajectory` 是 strict 模型，落盘时枚举写成字符串，用
+        `model_validate(dict)` 读回来会硬失败——必须走 `model_validate_json`。
+        旧 runner 用的是前者，它从没暴露过只是因为证据路径写错、永远读到 0 个文件。
+        """
+        from veritool_rl.core.agent.runner import run_episode
+        from veritool_rl.retail_ops.build.teacher_data import (
+            TeacherAttemptEvidence,
+            TeacherAttemptOutcome,
+            write_teacher_attempt_evidence,
+        )
+
+        runner = _load_runner()
+        task = _dev_tasks(3, per_scenario=1)[0]
+        trajectory = run_episode(task, _factory(3), OraclePolicy(task), seed=0)
+        evidence = TeacherAttemptEvidence(
+            task_id=task.task_id,
+            task_fingerprint="0" * 64,
+            dataset_version="test-v3-toolcount",
+            seed=0,
+            bundle_sha256="0" * 64,
+            manifest_sha256="0" * 64,
+            route_sha256="0" * 64,
+            config_sha256="0" * 64,
+            outcome=TeacherAttemptOutcome.SUCCESS,
+            accepted=True,
+            episode_index=0,
+            request_attempts=1,
+            usage_prompt_tokens=1,
+            usage_completion_tokens=1,
+            trajectory=trajectory,
+        )
+        path = write_teacher_attempt_evidence(evidence, tmp_path, runner.attempt_id_for(3))
+        restored = runner.load_teacher_evidence(path)
+        assert restored.accepted is True
+        assert restored.trajectory is not None
+        assert restored.trajectory.task.scenario == task.scenario
+        assert restored.trajectory.termination == trajectory.termination
+
 
 def _load_runner():
     """按路径加载 runner 脚本（它不在包里）。"""

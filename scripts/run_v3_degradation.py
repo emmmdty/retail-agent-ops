@@ -260,9 +260,25 @@ def stage_teacher(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def load_teacher_evidence(path: Path) -> Any:
+    """回读一条采集证据。
+
+    必须走 `model_validate_json`：`Trajectory` 继承 `StrictModel`（`strict=True`），
+    落盘时枚举被 `model_dump(mode="json")` 写成字符串，再用
+    `model_validate(dict)` 读回来会因为「期望 TaskScenario 实例、拿到 str」硬失败。
+    JSON 模式下 pydantic 才会把字符串还原成枚举。这与 `product_cli` 回读
+    teacher 证据的做法一致。
+
+    旧 runner 用的是 `json.loads` + `Trajectory.model_validate(dict)`，
+    它从没暴露过**只是因为**证据路径写错、导出永远读到 0 个文件。
+    """
+    from veritool_rl.retail_ops.build.teacher_data import TeacherAttemptEvidence
+
+    return TeacherAttemptEvidence.model_validate_json(path.read_text(encoding="utf-8"))
+
+
 def stage_export(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
     from veritool_rl.core.generators import trajectory_to_sft_example
-    from veritool_rl.core.trajectory.schema import Trajectory
 
     records = sampled_records(tool_count, "train", profile)
     evidence_dir = teacher_evidence_dir(out, tool_count)
@@ -272,11 +288,11 @@ def stage_export(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
         path = evidence_dir / f"{record.task.task_id}.json"
         if not path.exists():
             continue
-        evidence = json.loads(path.read_text(encoding="utf-8"))
-        if not evidence.get("accepted") or not evidence.get("trajectory"):
+        evidence = load_teacher_evidence(path)
+        if not evidence.accepted or evidence.trajectory is None:
             continue
         accepted_ids.append(record.task.task_id)
-        rows.append(trajectory_to_sft_example(Trajectory.model_validate(evidence["trajectory"])))
+        rows.append(trajectory_to_sft_example(evidence.trajectory))
 
     sft_path = out / "sft" / "sft.jsonl"
     sft_path.parent.mkdir(parents=True, exist_ok=True)

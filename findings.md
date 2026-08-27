@@ -1690,3 +1690,25 @@ GPU 与 teacher API 尚未启动，等在 gpu-5090 上按交接文档执行。
 修法：路径抽成 `teacher_evidence_dir()` 单一来源，写和读都走它；
 新增测试直接比对 `write_teacher_attempt_evidence` 的返回路径与该函数，
 **已做突变检验**（把它改回多一层，测试当场变红）。
+
+### 第四个缺陷：strict 模型的轨迹回读（2026-08-27，小样本第一次跑就撞上）
+
+teacher 采集在 tc=3 拿到 15/18 = 0.8333（≥0.80 门禁），**导出阶段硬失败**：
+
+```
+ValidationError: 3 validation errors for Trajectory
+task.scenario: Input should be an instance of TaskScenario, input_value='lookup_status'
+```
+
+`Trajectory` 继承 `StrictModel`（`strict=True`），落盘时 `model_dump(mode="json")`
+把枚举写成字符串，再用 `model_validate(dict)` 读回来必然失败——只有
+`model_validate_json` 会在 JSON 模式下把字符串还原成枚举。这与
+`product_cli.py:1144` 回读 teacher 证据的做法一致，旧 runner 用的是前者。
+
+**为什么以前没暴露**：证据路径写错，导出永远读到 0 个文件，这行代码从没真正执行过。
+一个 bug 把另一个 bug 藏住了，而两个都藏在"流程跑完了"后面。
+
+修法：抽出 `load_teacher_evidence()` 走 `TeacherAttemptEvidence.model_validate_json`；
+新增回环测试（写盘→读回→比对场景与终止原因），**已做突变检验**。
+拿远端真实采集的 18 条证据本地实跑 `stage_export`：**导出 15 行，与
+`teacher.json` 的 accepted=15 对账通过**。
