@@ -1650,3 +1650,19 @@ smoke = 每场景 train 3 / dev 2，full = 40 / 10。两者只差这一个数。
 | 全量门禁 | 1349 passed；干净 clone **1303 passed / 46 skipped / 0 failed**（实跑） |
 
 GPU 与 teacher API 尚未启动，等在 gpu-5090 上按交接文档执行。
+
+### 远端同步时捡回的两个真 bug（2026-08-27）
+
+1. **评测侧模型路径必须项目相对**。`QwenPolicy.from_config` 对 `model_name` 与
+   `adapter_path` 都跑 `validate_project_relative_path`，绝对路径直接被拒。
+   新 runner 原本传 `str(MODELS_ROOT / MODEL_NAME)`，**GPU 评测阶段必然失败**。
+   这个坑是从 gpu-5090 上一次手工运行残留的未提交改动里捞回来的——远端把它改成了
+   `"models/Qwen3-4B-pinned"`，正是撞了这道校验。同步前先把远端 diff 存成 patch
+   备份再 stash，才没把这条信息连同 `skip_reads_gate` 一起丢掉。
+   相对路径按 cwd 解析，因此 runner 起步时断言 `cwd == 仓库根`。
+
+2. **`stage_export` 的对账是空壳**。原写法是 `len(rows) != len(accepted_ids)`，
+   而这两个列表在同一个循环里同步 append，**永远相等**。真正会漏的是
+   「采集说接受了 N 条、导出只落盘 M 条」，那要拿另一份产物来比——改成与
+   `teacher.json` 的 `accepted` 对账。
+   同一类问题在本项目反复出现（名字和 docstring 承诺的比实现做的多）。

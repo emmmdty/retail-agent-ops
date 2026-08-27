@@ -262,9 +262,18 @@ def stage_export(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    if len(rows) != len(accepted_ids):
-        msg = f"导出行数 {len(rows)} ≠ 已接受任务数 {len(accepted_ids)}，有静默丢弃"
-        raise RuntimeError(msg)
+    # 与采集阶段自己记的接受数对账。跟 accepted_ids 比是空壳——它和 rows 在同一个
+    # 循环里同步 append，永远相等。真正会漏的是「采集说接受了 N 条，导出只落盘了
+    # M 条」，那要拿另一份产物来比。
+    teacher_json = out / "teacher.json"
+    if teacher_json.exists():
+        expected = int(json.loads(teacher_json.read_text(encoding="utf-8"))["accepted"])
+        if len(rows) != expected:
+            msg = (
+                f"导出 {len(rows)} 行，但 teacher.json 记录接受了 {expected} 条——"
+                f"有证据文件缺失或 trajectory 字段为空，训练素材会有系统性缺口"
+            )
+            raise RuntimeError(msg)
     result = {"rows": len(rows), "accepted_task_ids": accepted_ids}
     write_json(out / "export.json", {"rows": len(rows)})
     log(f"  export: {len(rows)} 行")
