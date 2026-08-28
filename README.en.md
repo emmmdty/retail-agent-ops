@@ -373,10 +373,12 @@ src/veritool_rl/
 ├── product_cli.py    the four-interface command surface
 ├── core/             cross-domain infrastructure (trajectory contract, env abstraction, agent loop, metrics, artifact hashing)
 ├── retail_ops/       the RetailOps domain: domain / build / evaluate / release / serve
+├── flight_ops/       the FlightOps domain (second domain, cross-domain validation)
 ├── training/         single-GPU QLoRA-SFT
 └── legacy/           the original VeriTool-RL track (BFCL external regression still in use)
 configs/retail_ops/{build,evaluate,release,serve}/   run configs, one per command
-domains/retail_ops/{v1,v2}/                          tool schema, business policy, release policy
+domains/retail_ops/{v1,v2,v3,v4}/                    tool schema, business policy, release policy
+domains/flight_ops/v1/                                flight rebooking domain bundle
 ```
 
 The distribution name and CLI are `retail-agent-ops`; the Python import name is still

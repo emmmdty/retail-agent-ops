@@ -536,3 +536,13 @@ C2 GPU 运行 → 简历与面试材料补 C1/C2/B2 读数（Task D 后置）。
 **判读**：Phase A 结果写入 `findings.md` 和 `progress.md`，然后请求用户确认是否进入 Phase B。
 
 **当前状态**：A-0 完成（2000 条 oversampled 数据已生成），A-1~A-4 待执行。
+
+---
+
+## Agent 执行循环边界审查（纯代码审查，不产生读数）
+
+**输入**：`core/agent/{runner,parser,policy,guardrail,qwen,vllm_backend}.py`、
+`core/envs/{base,mini_retail}.py`、`retail_ops/domain/environment.py`、
+`retail_ops/serve/service.py`、`core/rewards/verifier.py`。
+**输出**：逐项问题清单，写入 findings.md。
+**非目标**：不评分、不给建议、不改代码、不跑测试。

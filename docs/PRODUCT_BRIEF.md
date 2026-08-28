@@ -37,6 +37,20 @@ RetailAgentOps 是面向零售订单、退款和客服操作的**单卡工具 Ag
 - LoRA adapter 或明确的 `NO-GO` 结论；
 - JSON / Markdown / HTML 发布报告和 FastAPI 演示服务。
 
+### CLI 关键参数
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `release` | `--base` | 基座评测目录（必填） |
+| `release` | `--candidate` | 候选评测目录（必填） |
+| `release` | `--output` | 输出 `release.json` 的路径 |
+| `serve` | `--config` | 服务配置文件路径 |
+| `serve` | `--host` / `--port` | 监听地址和端口 |
+| `serve` | `--api-key` | API 密钥（也可通过 `RETAIL_AGENT_OPS_API_KEY` 环境变量传入） |
+
+`release` 读取两份评测证据（base + candidate），逐字段配对校验后计算 delta 并判定
+GO/NO-GO。`serve` 在收到 GO 决策后加载合并后的权重，NO-GO 时回滚到冻结基座。
+
 ## 竞争边界
 
 RetailAgentOps 不与 veRL、Agent Lightning 等通用训练框架竞争。它的差异是一个具体零售工具 Agent 从领域定义到单卡发布的工程闭环。框架可以作为底层依赖，但不能替代业务政策、执行式数据质检、固定任务门禁和发布报告。
@@ -81,6 +95,13 @@ retail 域并考察政策遵从。差异在于它是**固定的公开 benchmark*
 - 发布门禁的 GO/NO-GO 结果。
 
 候选相对同基座的默认发布线是：内部冻结 holdout 绝对提升至少 5 个百分点、关键政策违规不增加、无非法工具调用、p95 延迟不超过基座 1.25 倍。具体门槛只能通过正式决策记录修改。
+
+## 已知限制
+
+- **v1 政策规则为 Python 硬编码**：`policies.yaml` 的 `rules:` 在 v1 形态下仅包含六个名字，语义硬编码在 `policy_rules.py` 的 `V1_BUILTIN_RULES` 中。修改退款窗口（如 14 天改为 7 天）需要改 Python 代码。v2 起规则内联在 YAML 里，改阈值不需要碰代码。（参见 `policy_rules.py` 文档字符串）
+- **幂等键（`idempotency_key`）仅在 v2+ 生效**：v1 的 `refund_order` schema 不含 `idempotency_key` 参数，环境的 `_replay_same_idempotency_key` 对 v1 走不到。v1 的重复退款去重依赖 `refund_status` 字段而非幂等键。
+- **Guardrail 默认不启用**：`run_episode` 的 `guardrail` 参数默认 `None`，正式评测路径当前不传入 guardrail。guardrail 层（注入消毒、作用域检查）需要显式构造并传入。
+- **哈希切分不考虑任务难度**：train/dev/holdout 按 `sha256(family)` 确定性切分（240/60/120），不按 margin 或场景难度分层。拒绝类场景的难度分布（margin 值）在 dev 和 holdout 之间可能不对称。
 
 ## 非目标
 
