@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import os
 import re
@@ -36,7 +37,11 @@ from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, 
 from veritool_rl.core.metrics import compute_metrics
 from veritool_rl.core.trajectory import Trajectory
 from veritool_rl.core.trajectory.replay import replay_trajectory
-from veritool_rl.core.trajectory.schema import StrictModel, validate_json_value
+from veritool_rl.core.trajectory.schema import (
+    StrictModel,
+    TerminationReason,
+    validate_json_value,
+)
 from veritool_rl.retail_ops.build.formal_manifests import (
     _FINGERPRINT_FIELDS,
     _ROW_FINGERPRINT_FIELDS,
@@ -119,6 +124,7 @@ class BaseEvaluationConfig(StrictModel):
     code_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     uv_lock_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bootstrap_samples: Literal[1000] = 1000
+    episode_timeout: float = Field(default=30.0, gt=0.0)
 
     @property
     def config_sha256(self) -> str:
@@ -399,7 +405,9 @@ def measure_dev_run(
     policy = QwenPolicy(backend, policy_id, config.generation.max_new_tokens)
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
-    trajectories, replayed = execute_formal_records(records, bundle, policy, config.seed)
+    trajectories, replayed = execute_formal_records(
+        records, bundle, policy, config.seed, episode_timeout=config.episode_timeout
+    )
     wall_time_seconds = time.perf_counter() - started
     measurement = hardware_provider.measure()
 
@@ -460,17 +468,48 @@ def execute_formal_records(
     bundle: LoadedRetailOpsBundle,
     policy: Policy,
     seed: int,
+    *,
+    episode_timeout: float = 30.0,
 ) -> tuple[list[Trajectory], int]:
     """在真实 RetailOpsEnv 上逐条运行并独立重放，返回轨迹与重放通过数。"""
 
     def env_factory(task: Any) -> RetailOpsEnv:
         return RetailOpsEnv(task, bundle)
 
-    trajectories = [run_episode(record.task, env_factory, policy, seed) for record in records]
+    trajectories = [
+        _run_episode_with_timeout(
+            record.task, env_factory, policy, seed, episode_timeout
+        )
+        for record in records
+    ]
     replayed = sum(
         replay_trajectory(trajectory, env_factory).matched for trajectory in trajectories
     )
     return trajectories, replayed
+
+
+def _run_episode_with_timeout(
+    task: Any,
+    env_factory: Callable[[Any], RetailOpsEnv],
+    policy: Policy,
+    seed: int,
+    timeout: float,
+) -> Trajectory:
+    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。"""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_episode, task, env_factory, policy, seed)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            return Trajectory(
+                task=task,
+                steps=[],
+                final_state={},
+                violations=[],
+                termination=TerminationReason.INTERNAL_ERROR,
+                success=False,
+                metadata={"infrastructure_error": "episode_timeout", "timeout_s": timeout},
+            )
 
 
 def publish_run_evidence(

@@ -149,7 +149,7 @@ class RetailOpsEnv(ToolEnv):
             schemas.append(
                 ToolSchema(
                     name=alias,
-                    description=descriptions[schema.name],
+                    description=descriptions.get(schema.name, schema.description),
                     parameters=parameters,
                 )
             )

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from collections import Counter
 from pathlib import Path
@@ -30,7 +31,11 @@ from veritool_rl.core.artifacts import write_json
 from veritool_rl.core.metrics import compute_metrics
 from veritool_rl.core.trajectory import TaskSpec, Trajectory
 from veritool_rl.core.trajectory.replay import replay_trajectory
-from veritool_rl.core.trajectory.schema import StrictModel, validate_json_value
+from veritool_rl.core.trajectory.schema import (
+    StrictModel,
+    TerminationReason,
+    validate_json_value,
+)
 from veritool_rl.retail_ops.build.ood_manifests import OodTaskManifest, load_ood_tasks
 from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
@@ -74,6 +79,7 @@ class OodEvaluationConfig(StrictModel):
     generation: GenerationSettings
     code_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     bootstrap_samples: Literal[1000] = 1000
+    episode_timeout: float = Field(default=30.0, gt=0.0)
 
     @property
     def config_sha256(self) -> str:
@@ -163,7 +169,13 @@ def evaluate_ood(
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
     trajectories = [
-        run_episode(task, lambda current: RetailOpsEnv(current, bundle), policy, manifest.seed)
+        _run_episode_with_timeout(
+            task,
+            lambda current: RetailOpsEnv(current, bundle),
+            policy,
+            manifest.seed,
+            config.episode_timeout,
+        )
         for task in tasks
     ]
     wall_time_seconds = time.perf_counter() - started
@@ -223,6 +235,30 @@ def evaluate_ood(
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "ood-report.json", evidence.model_dump(mode="json"))
     return evidence
+
+
+def _run_episode_with_timeout(
+    task: TaskSpec,
+    env_factory: Any,
+    policy: Any,
+    seed: int,
+    timeout: float,
+) -> Trajectory:
+    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。"""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_episode, task, env_factory, policy, seed)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            return Trajectory(
+                task=task,
+                steps=[],
+                final_state={},
+                violations=[],
+                termination=TerminationReason.INTERNAL_ERROR,
+                success=False,
+                metadata={"infrastructure_error": "episode_timeout", "timeout_s": timeout},
+            )
 
 
 def _policy_id(config: OodEvaluationConfig) -> str:
