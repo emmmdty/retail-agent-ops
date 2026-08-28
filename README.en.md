@@ -326,8 +326,8 @@ env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check
 ```
 
 The GitHub Actions workflow is at [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-**The repository currently has no remote, so that workflow has never actually run** — no
-document may claim it is green.
+**CI 首次真跑通过**（2026-08-20，commit `596eee8`，11 步全绿，2m12s）——证据见
+`docs/CI_EVIDENCE.md`。CI 跑的是 CPU 全链路与发布审计，不含 GPU / API 采集。
 
 The CPU-only image is [`Dockerfile`](./Dockerfile) (deliberately without torch). **It was
 built and verified for the first time on 2026-08-16**: 1.05 GB, and it completes the whole

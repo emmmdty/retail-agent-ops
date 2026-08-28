@@ -96,7 +96,11 @@ class RetailOpsEnv(ToolEnv):
         handler = dispatch.get(canonical_name)
         if handler is not None:
             return handler(arguments)
-        return self._get_store_hours(arguments)
+        return Observation(
+            ok=False,
+            error_code="unknown_tool",
+            error=f"未注册的工具处理器: {canonical_name}",
+        )
 
     def get_state(self) -> dict[str, Any]:
         return copy.deepcopy(self._state)

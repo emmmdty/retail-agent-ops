@@ -754,6 +754,7 @@ def _run_ood_evaluate(
         adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
         generation=GenerationSettings(**_config_mapping(config, "generation")),
         code_commit=(code_commit_factory or _current_code_commit)(),
+        dataset_version=manifest.dataset_version,
     )
     evaluate_ood(
         config=ood_config,

@@ -61,9 +61,13 @@ class OodEvaluationConfig(StrictModel):
     #: 也声称自己属于 `retail_ops_ood_v1_20260815`——两个不同数据集的读数
     #: （v1 的 0.8667 与 v2 的 1.0000）在同一张表里挂着同一个数据集版本号，
     #: 恰好违反项目自己的配对前提。外部审阅指出后改为两个版本并存的判别式。
-    dataset_version: Literal["retail_ops_ood_v1_20260815", "retail_ops_ood_v2_20260817"] = (
-        "retail_ops_ood_v1_20260815"
-    )
+    dataset_version: Literal[
+        "retail_ops_ood_v1_20260815",
+        "retail_ops_ood_v2_20260817",
+        "retail_ops_ood_v2_2_20260817",
+        "retail_ops_policy_boundary_v1_20260819",
+        "retail_ops_ood_v4_20260823",
+    ] = "retail_ops_ood_v1_20260815"
     seed: Literal[0] = 0
     model: ModelArtifact
     adapter: AdapterArtifact | None = None

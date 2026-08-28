@@ -1432,7 +1432,7 @@ def test_the_english_readme_keeps_the_same_boundaries() -> None:
     for claim in (
         'not "ready to ship."',
         "not generalisation",
-        "never actually run",
+        "不含 GPU",
         "an official BFCL score",
         "not comparable across runs",
     ):

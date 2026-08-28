@@ -32,10 +32,10 @@ RetailAgentOps 是面向零售订单、退款和客服操作的**单卡工具 Ag
 
 计划稳定接口为 `build`、`evaluate`、`release`、`serve`。每次运行必须输出：
 
-- 固定配置、代码 commit、数据/manifest 哈希、模型和 provider 标识；
-- 逐任务执行轨迹、最终状态、失败分类和资源记录；
+- 代码 commit、数据/manifest 哈希、模型和 provider 标识；
+- 评测阶段产出逐任务执行轨迹（`trajectories.jsonl`）、最终状态与失败分类；发布阶段产出聚合指标（`release.json`）和门禁判定；
 - LoRA adapter 或明确的 `NO-GO` 结论；
-- 模型/系统卡、HTML 发布报告和 FastAPI 演示服务。
+- JSON / Markdown / HTML 发布报告和 FastAPI 演示服务。
 
 ## 竞争边界
 
