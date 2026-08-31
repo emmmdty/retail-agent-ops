@@ -386,8 +386,8 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         train_limit=resolved.data.train_limit,
         eval_limit=resolved.data.eval_limit,
     )
-    train_ids = {row.get("task_id") for row in train_rows}
-    eval_ids = {row.get("task_id") for row in eval_rows}
+    train_ids = {row["task_id"] for row in train_rows}
+    eval_ids = {row["task_id"] for row in eval_rows}
     overlap = train_ids & eval_ids
     if overlap:
         raise ValueError(f"train/eval task_id 重叠: {sorted(overlap)}")

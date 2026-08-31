@@ -39,17 +39,20 @@ RetailAgentOps 是面向零售订单、退款和客服操作的**单卡工具 Ag
 
 ### CLI 关键参数
 
-| 命令 | 参数 | 说明 |
-|---|---|---|
-| `release` | `--base` | 基座评测目录（必填） |
-| `release` | `--candidate` | 候选评测目录（必填） |
-| `release` | `--output` | 输出 `release.json` 的路径 |
-| `serve` | `--config` | 服务配置文件路径 |
-| `serve` | `--host` / `--port` | 监听地址和端口 |
-| `serve` | `--api-key` | API 密钥（也可通过 `RETAIL_AGENT_OPS_API_KEY` 环境变量传入） |
+所有命令共用三个公共参数：`--config`（已提交的 YAML 配置，必填）、`--seed`（运行随机种子，默认 0）、`--output_dir`（新产物目录，必填）。
 
-`release` 读取两份评测证据（base + candidate），逐字段配对校验后计算 delta 并判定
-GO/NO-GO。`serve` 在收到 GO 决策后加载合并后的权重，NO-GO 时回滚到冻结基座。
+| 命令 | 独有参数 | 说明 |
+|---|---|---|
+| `release` | `--baseline_dir` | 基座 run evidence 目录（必填） |
+| `release` | `--candidate_dir` | 候选 run evidence 目录（必填） |
+| `release` | `--baseline_trajectories` | 可选：基座逐任务 trajectories.jsonl（v1.1 配对统计检验需要） |
+| `release` | `--candidate_trajectories` | 可选：候选逐任务 trajectories.jsonl，与上一项必须成对提供 |
+| `serve` | `--release_dir` | release report 目录（必填） |
+| `serve` | `--input_dir` | build 产物目录（必填） |
+
+`release` 读取两份评测证据（baseline + candidate），逐字段配对校验后计算 delta 并判定
+GO/NO-GO。`serve` 加载 release 结论和 build 产物，按发布决策启动服务（GO 加载候选、NO-GO 回滚到基座）。
+监听地址、端口和 API 密钥由配置文件和环境变量（`RETAIL_AGENT_OPS_API_KEY`）控制，不走 CLI 参数。
 
 ## 竞争边界
 

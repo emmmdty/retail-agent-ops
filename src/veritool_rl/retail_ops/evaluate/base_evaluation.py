@@ -477,9 +477,7 @@ def execute_formal_records(
         return RetailOpsEnv(task, bundle)
 
     trajectories = [
-        _run_episode_with_timeout(
-            record.task, env_factory, policy, seed, episode_timeout
-        )
+        _run_episode_with_timeout(record.task, env_factory, policy, seed, episode_timeout)
         for record in records
     ]
     replayed = sum(

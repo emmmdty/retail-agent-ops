@@ -816,7 +816,6 @@ _COUNT_EXEMPT_FILES = frozenset(
         "docs/PROJECT_LOG.md",
         "progress.md",
         "findings.md",
-        "PUSH_TO_8POINT5_PROMPT.md",
     }
 )
 _COUNT_EXEMPT_PREFIXES = ("docs/archive/", "docs/handoffs/")

@@ -17,7 +17,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 | 接口 | 职责 | 真实模型轨道产物 |
 |---|---|---|
 | `build` | 生成/导入轨迹，执行校验、去重、覆盖与划分审计 | 240/60/120 冻结数据集 + teacher 采集 + SFT 导出 + QLoRA 训练 |
-| `evaluate` | 在冻结任务上跑 base/candidate，输出可比证据 | dev 报告（1.7B/4B base、候选、合并版）、封存 holdout sealed 报告 ×7 |
+| `evaluate` | 在冻结任务上跑 base/candidate，输出可比证据 | dev 报告（1.7B/4B base、候选、合并版）、封存 holdout sealed 报告 ×13 |
 | `release` | 按版本化策略产出 GO/NO-GO | 前三次判定 **NO-GO / baseline**，此后转为 **GO / candidate**（合并部署形态）。逐次判定见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。门禁语义与 sealed 证据契约均已版本化 |
 | `serve` | 加载通过门禁的模型，暴露受控服务 | 按 NO-GO 回滚加载纯基座，三条演示流程 + 并发保护；2026-08-15 补齐自由请求端点、鉴权、结构化日志与 `/metrics` |
 
@@ -97,8 +97,10 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 （1.985×），这是它被 `p95_latency_ratio` 拒绝的直接原因。
 
 **观测 3 把这笔代价归因到了部署形态**：同一份权重合并回基座后，单次调用
-2946.5 → **1717.7 ms**、p95 比值 2.0250 → **1.2141**，而任务指标（120/120）与调用次数
-（1.5000）**一位没变**。但合并形态**拿不到发布判定**——契约要求 candidate = 同一基座
+2946.5 → **1717.7 ms**、p95 比值 2.0250 → **1.2141**，而任务指标（120/120，模板内）与
+调用次数（1.5000）**一位没变**。注意：引用该次 120/120 必须同时给出分布外读数
+（同一候选在模板外 60 条上 0.5833），详见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
+但合并形态**拿不到发布判定**——契约要求 candidate = 同一基座
 + adapter。逐次读数与四条限制见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 与
 [`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)。
 
@@ -125,8 +127,8 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
    延迟数不得表述为精确测量——base 侧 p95 在观测 2 与观测 3 之间有 9% 的波动，
    而合并形态的门禁余量只有 1–3%。
 2. **统计功效**：holdout n=120，CI 宽度约 ±7.5pp；dev n=60 更宽。系统无法分辨小幅差异。
-3. **单 seed**：训练与评测各一个 seed，未做重复性验证。
-4. **领域窄**：2 个业务工具、6 类任务、单一中文零售退款场景，无跨领域证据。
+3. **训练不可逐位复现**：同 seed 重跑产出不同 adapter，dev 60 上读数为 58–60/60（三次同配置运行）。重复性验证见 [`REBUILD_VERIFICATION.md`](./REBUILD_VERIFICATION.md)。
+4. **领域已扩展到双域**：主域为中文零售退款（v1/v2/v4 分别为 2/3/5 工具、6/12 场景）；R8/R10 已完成英文航空领域（`flight_ops`）的跨域验证，teacher 采集 233/240、dev 评测 GO。
    Agent 本体仍是单工具调用、无并行、无 thinking——能力面与仍缺的东西逐条见
    [`AGENT_LOOP.md`](./AGENT_LOOP.md)。
 5. **teacher 依赖**：训练数据来自单一商业 API teacher，其偏好（如详尽风格）会被继承。
@@ -147,7 +149,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
-.venv/bin/pytest -q          # 作者环境 1171 passed；干净 clone 1125 passed / 46 skipped
+.venv/bin/pytest -q          # 作者环境 1352 passed；干净 clone 1306 passed / 46 skipped
 # build → evaluate(base/oracle/fault) → release(GO/NO-GO) → serve
 # 六条命令见 README「本地 CPU 演示」
 ```
