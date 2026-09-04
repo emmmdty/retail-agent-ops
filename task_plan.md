@@ -53,7 +53,7 @@ teacher 接受率门禁 ≥ 0.80；DENY 类措辞沿用 R9「评估/判断」式
 | # | 运行 | 产物目录 |
 |---|---|---|
 | R4-0 | formal_freeze（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904` + `manifests/retail_ops/v1/retail_ops_v4_20260904` |
-| R4-1 | teacher_collect（mimo，~600 任务） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/teacher-collection/teacher-v4-004` |
+| R4-1 | teacher_collect（mimo，~600 任务） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/teacher-collection/teacher-v4-004`；CLI output_dir 占位 `reports/retail_ops/v1/r9/round4/teacher-run-004`（流水线不写入） |
 | R4-2 | train_export（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/train-export/train-export-v4-004` |
 | R4-3 | dev_sft_export（本地 CPU，Oracle） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/dev-sft/dev-sft-v4-004` |
 | R4-4 | 训练 sft-004（gpu-5090 GPU 0，~25 min） | `reports/retail_ops/v1/r9/round4/sft-004` |
