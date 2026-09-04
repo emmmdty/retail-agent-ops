@@ -1,5 +1,36 @@
 # Findings
 
+## 2026-09-04 — D1 rtc 第四轮数据面：方案甲 family 覆盖的三个实现发现
+
+- **机制选型（用户选项 A）**：`_v4_family_spec` family 覆盖需要新 dataset_version
+  （版本↔内容双射；`task_id`/`family_fingerprint` 都把 `dataset_version` 哈希进 identity，
+  旧 DeepSeek 证据的 task_id 对不上新版本 → 全部 600 条 train 任务用 mimo 重采集，
+  单 teacher 无混采）。per-scenario oversample（选项 C）零成本但偏离交接点名机制，
+  且 R9_RESULTS §5 的机制分析推荐 family 覆盖。
+- **derivation_fingerprint 跨 split 重叠（实现期真 bug，被既有守卫拦下）**：第一版
+  用「margin 按 7 取模循环」给扩展 state 7–9 复用旧难度档——`_derivation_payload`
+  归一化掉干扰订单后，(state 0, ctx c) 与 (state 7, ctx c+1) 的派生语义可完全相同，
+  `assert_exact_quotas_v4` 的跨 split 隔离检查当场拒绝。修复：margin 网格真正扩档
+  （`_V4_TASK_MARGINS = (*_MARGINS, 4, 6, 12)`），每态语义唯一。**教训：给 family 池
+  扩容时，新增 family 必须在派生语义（状态+决策+调用序列）层面唯一，否则 split 隔离
+  守卫是最后的网。**
+- **manifest 验证器有两处独立的配额锁**：`_FormalSplitEvidence.validate_public_evidence`
+  （逐 split manifest）与 `FormalDatasetReceipt.validate_dataset_evidence`（dataset
+  receipt）各自硬编码 40/10/20；任务集侧 `assert_exact_quotas_v4` 放行了 70/场景，
+  freeze 仍在 manifest 侧被拦。三处（任务集 + 两验证器）都改为版本键控
+  （`_expected_per_scenario`，仅 `_V4_EXTENDED_CANCEL_VERSIONS` 的 train split 对
+  CANCEL_* 收 70）。`retail_ops_v4_20260822` 重建路径逐位不变（版本键控 + margin
+  常量前 7 档不动）。
+- **Oracle 预检**：600/600 train 任务全解、零违规（0.2s）——teacher 采集的前置门。
+- **bank-v4 复用验证**：新私有根的措辞池 content hash = pin `aa6ccee3…`（599 条，
+  与 v4_20260822 同池同分片）；`bank_sha256` 是逐条 `phrasing_id|partition` 的内容
+  哈希，与文件 raw hash 不同是设计行为。
+- **mimo 采集早期读数（非最终）**：启动 ~13 min 后 46/600，接受率 1.000，
+  outcome 全 success，~2,275 tok/任务，~3.6 条/min（ETA ~2.8h）。风险后置点：
+  refund DENY 类（位置 80+）、cancel DENY 类（350+，mimo 对「请评估」式措辞的
+  服从率未知）、rtc（490+，教师「先查两单」vs Oracle 交错序的内部不一致史）。
+  监控脚本按场景分桶盯接受率，任一场景 <0.80 即停。
+
 ## 2026-09-04 — Phase C2：同 seed 双跑实测——仍不逐位复现，方差已量化（gpu-5090）
 
 - **设置**：sft-008 的训练配置（`retail_ops_v1_r6b_no_oversample_sft.yaml`，960 行 /
