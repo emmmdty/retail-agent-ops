@@ -26,6 +26,44 @@ v1.3 发布判定（bank-004 用 mimo 生成；判读规则先写定提交；预
 | 4 | DPO | D4 之后再说 |
 | 6 | 宽工具面迁移 | 不迁移（发布口径维持 v1/v2） |
 
+### D1 rtc 第四轮——方案甲实现机制（2026-09-04 用户选定：A family 覆盖）
+
+**输入**：round4 交接 `docs/handoffs/2026-08-23-r9-phase-b-round4-execution-prompt.md`
+（判读规则已预注册，一个字不改地用）+ 本阶段交接 §4 第 2 步 + 用户 2026-09-04 对
+实现机制的选项 A 裁定（family 覆盖，新 dataset_version，全量 mimo 重采集）。
+**输出**：新数据集 `retail_ops_v4_20260904`（CANCEL_* 4 场景 family 扩到 10 态 × 5 语境
+= 50，train 35 / dev 5 / holdout 10；其余 8 场景 20/5/10 不变）、teacher-v4-004
+（mimo，~600 train 任务）、`train-export-v4-004`（措辞 ×3，无 oversample）、候选
+`sft-004`、三面评测（v4 dev / OOD v2 / OOD v4）。
+**非目标**：方案乙不获确认不动工；不调 rtc oversample 权重；不改 parser /
+max_steps / verify_final_state；不改发布门禁阈值；不消耗封存 holdout 观测；
+v1/v2 冻结契约与 `assert_exact_quotas`（v1）不动；OOD v2 / OOD v4 任务集不动；
+发布候选仍是 sft-008。
+**影响文件**：`src/veritool_rl/retail_ops/domain/formal_tasks.py`（v4 family 扩展 +
+`assert_exact_quotas_v4`）、`src/veritool_rl/retail_ops/build/formal_manifests.py`
+（新版本 Literal）、`tests/test_retail_ops_v4_round4_tasks.py`（新）、5 份 build 配置、
+3 份 eval 配置、`docs/R9_PHASE_B_RESULTS.md`、findings/progress。
+**判读**：按 round4 交接第四步的预注册表执行（rtc dev ≥ 8/10 且 OOD v4 rtc ≥ 5/10
+且 pv 不升 → 修好；改善但未达线 → 甲→乙升级需用户确认；无改善或 pv 恶化 → 停）。
+teacher 接受率门禁 ≥ 0.80；DENY 类措辞沿用 R9「评估/判断」式先验。
+
+**运行清单（产物目录逐字声明）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| R4-0 | formal_freeze（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904` + `manifests/retail_ops/v1/retail_ops_v4_20260904` |
+| R4-1 | teacher_collect（mimo，~600 任务） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/teacher-collection/teacher-v4-004` |
+| R4-2 | train_export（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/train-export/train-export-v4-004` |
+| R4-3 | dev_sft_export（本地 CPU，Oracle） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260904/dev-sft/dev-sft-v4-004` |
+| R4-4 | 训练 sft-004（gpu-5090 GPU 0，~25 min） | `reports/retail_ops/v1/r9/phase-b/sft-004` |
+| R4-5 | v4 dev 评测（GPU 0） | `reports/retail_ops/v1/r9/phase-b/dev-candidate-004` |
+| R4-6 | OOD v2 评测（GPU 0） | `reports/retail_ops/v1/r9/phase-b/ood-v2-candidate-004` |
+| R4-7 | OOD v4 评测（GPU 0） | `reports/retail_ops/v1/r9/phase-b/ood-v4-candidate-004` |
+
+**已知坑（round4 交接第五步，逐条执行）**：远端工作树必须干净；训练前换入 SFT 格式
+`dev.jsonl`、评测前换回 TaskSpec 格式；adapter `file_sha256` 从远端 `sha256sum` 现算；
+输出目录不可覆盖。
+
 ## 上一任务：质量收口第二轮——v1.3 绝对门 + 方差治理 + 全面审计（2026-09-04，CPU 部分完成）
 
 **输入**：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`（用户已批准）。
