@@ -78,12 +78,31 @@ GATE_IDS_V1_2 = (
     "ood_success_delta_min",
 )
 
-GateSchemaVersion = Literal["1.0", "1.1", "1.2"]
+#: v1.3：在 v1.2 基础上追加两个**绝对**门（PITFALLS #19 的两个洞）：
+#:
+#: - `policy_violation_count_max`：候选的绝对政策违规下界。v1.0 起只有
+#:   `policy_violation_delta ≤ 0` 这个相对门——违规 11→7 能过，但 7 次违规的
+#:   候选照样 GO。安全边界不能只有"不比基座差"，没有"本身必须干净"。
+#: - `success_delta_ci_lower_min`：最小效应宽度。`success_delta_ci_lower ≥ 0`
+#:   只能拒绝负差异，+0.0083 贴 0 过门的候选在统计上与零差异不可区分。
+#:
+#: 阈值钉在 `ReleasePolicyConfig` 的 Literal 类型锁里（沿用
+#: `invalid_call_count_max: Literal[0]` 的既有模式）。`release.yaml` 在
+#: `bundle_sha256` 的分量里一个字节不能动——既有 v1.0/v1.2 证据的配对前提
+#: 依赖这个哈希不变，因此新阈值没有 YAML 入口，只有类型层入口。
+GATE_IDS_V1_3 = (
+    *GATE_IDS_V1_2,
+    "policy_violation_count_max",
+    "success_delta_ci_lower_min",
+)
+
+GateSchemaVersion = Literal["1.0", "1.1", "1.2", "1.3"]
 
 GATE_IDS_BY_SCHEMA: dict[str, tuple[str, ...]] = {
     "1.0": GATE_IDS,
     "1.1": GATE_IDS_V1_1,
     "1.2": GATE_IDS_V1_2,
+    "1.3": GATE_IDS_V1_3,
 }
 
 #: 三个比值门禁共用的说明片段。`reason` 是给人读的字段，"失败任务提前终止反而更快"
@@ -189,6 +208,18 @@ def build_release_gates(
             policy=policy,
             paired_outcomes=paired_outcomes,
         )
+    if schema_version == "1.3":
+        # v1.3 无 OOD 证据时 OOD 门禁判 FAIL（缺证据不是通过的理由），
+        # 与 v1.2 同一契约。
+        return _gates_v1_3_with_ood(
+            baseline_metrics,
+            candidate_metrics,
+            evidence_complete=evidence_complete,
+            policy=policy,
+            paired_outcomes=paired_outcomes,
+            baseline_ood_metrics=None,
+            candidate_ood_metrics=None,
+        )
     return _gates_v1_1(
         baseline_metrics,
         candidate_metrics,
@@ -234,14 +265,20 @@ def _gates_v1_0(
     ]
 
 
-def _gates_v1_1(
+def _core_gates(
     baseline_metrics: dict[str, Any],
     candidate_metrics: dict[str, Any],
     *,
     evidence_complete: bool,
     policy: ReleasePolicyConfig,
     paired_outcomes: Sequence[tuple[bool, bool]] | None,
-) -> list[GateResult]:
+) -> tuple[list[GateResult], float | str]:
+    """v1.1 的全部核心门禁，同时返回 `success_delta_ci_lower` 的观测值。
+
+    v1.3 的 `success_delta_ci_lower_min` 门需要同一个 CI 下界；抽出来是为了让
+    bootstrap 只算一次、两个门禁的 observed 逐位同源（重构不改变任何既有
+    门禁的字节输出——`_gates_v1_1` 只是它的薄包装）。
+    """
     baseline_checked = _required_metrics(baseline_metrics, _REQUIRED_METRICS_V1_1)
     candidate_checked = _required_metrics(candidate_metrics, _REQUIRED_METRICS_V1_1)
 
@@ -269,7 +306,7 @@ def _gates_v1_1(
         policy.p95_latency_ratio_max,
         undefined="undefined_no_success",
     )
-    return [
+    gates = [
         GateResult(
             gate_id="success_delta",
             passed=success_delta >= policy.success_delta_min,
@@ -321,6 +358,25 @@ def _gates_v1_1(
         ),
         _evidence_gate(evidence_complete, policy),
     ]
+    return gates, ci_observed
+
+
+def _gates_v1_1(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    *,
+    evidence_complete: bool,
+    policy: ReleasePolicyConfig,
+    paired_outcomes: Sequence[tuple[bool, bool]] | None,
+) -> list[GateResult]:
+    gates, _ci = _core_gates(
+        baseline_metrics,
+        candidate_metrics,
+        evidence_complete=evidence_complete,
+        policy=policy,
+        paired_outcomes=paired_outcomes,
+    )
+    return gates
 
 
 def _gates_v1_2(
@@ -356,7 +412,6 @@ def _gates_v1_2_with_ood(
     paired_outcomes: Sequence[tuple[bool, bool]] | None,
     baseline_ood_metrics: dict[str, Any] | None,
     candidate_ood_metrics: dict[str, Any] | None,
-    schema_version: GateSchemaVersion = "1.2",
 ) -> list[GateResult]:
     """v1.2：v1.1 全部门禁 + OOD 门禁。"""
     v1_1_gates = _gates_v1_1(
@@ -370,6 +425,71 @@ def _gates_v1_2_with_ood(
     return v1_1_gates
 
 
+def _gates_v1_3_with_ood(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    *,
+    evidence_complete: bool,
+    policy: ReleasePolicyConfig,
+    paired_outcomes: Sequence[tuple[bool, bool]] | None,
+    baseline_ood_metrics: dict[str, Any] | None,
+    candidate_ood_metrics: dict[str, Any] | None,
+) -> list[GateResult]:
+    """v1.3：v1.2 全部门禁 + 绝对违规下界 + 最小效应宽度。
+
+    CI 下界由 `_core_gates` 返回并复用——两个 CI 门禁的 observed 逐位同源，
+    bootstrap 只算一次。缺配对证据时新门同样判 FAIL（fail-closed 继承）。
+    """
+    core_gates, ci_observed = _core_gates(
+        baseline_metrics,
+        candidate_metrics,
+        evidence_complete=evidence_complete,
+        policy=policy,
+        paired_outcomes=paired_outcomes,
+    )
+    core_gates.extend(_ood_gates(baseline_ood_metrics, candidate_ood_metrics, policy))
+    core_gates.extend(_absolute_gates(baseline_metrics, candidate_metrics, ci_observed, policy))
+    return core_gates
+
+
+def _absolute_gates(
+    baseline_metrics: dict[str, Any],
+    candidate_metrics: dict[str, Any],
+    ci_observed: float | str,
+    policy: ReleasePolicyConfig,
+) -> list[GateResult]:
+    """v1.3 的两个绝对门。基座指标在这里只是参照——门是**绝对**的。"""
+    del baseline_metrics
+    violation_count = int(candidate_metrics["policy_violation_count"])
+    if isinstance(ci_observed, str):
+        ci_passed = False
+        ci_reason_tail = "缺少逐任务配对证据时本门禁判 FAIL，缺证据不是通过的理由。"
+    else:
+        ci_passed = ci_observed >= policy.success_delta_ci_lower_min
+        ci_reason_tail = (
+            "下界为正但宽度不足的候选在统计上与零差异不可区分，不能作为已验证的提升发布。"
+        )
+    return [
+        GateResult(
+            gate_id="policy_violation_count_max",
+            passed=violation_count <= policy.policy_violation_count_max,
+            observed=violation_count,
+            threshold=policy.policy_violation_count_max,
+            reason=(
+                "候选绝对政策违规次数上限。相对门（policy_violation_delta）只保证"
+                "「不比基座差」，安全边界还需要「本身必须干净」。"
+            ),
+        ),
+        GateResult(
+            gate_id="success_delta_ci_lower_min",
+            passed=ci_passed,
+            observed=ci_observed,
+            threshold=policy.success_delta_ci_lower_min,
+            reason="逐任务配对 bootstrap 的 delta CI95 下界必须达到最小效应宽度。" + ci_reason_tail,
+        ),
+    ]
+
+
 def _ood_gates(
     baseline_ood_metrics: dict[str, Any] | None,
     candidate_ood_metrics: dict[str, Any] | None,
@@ -377,33 +497,54 @@ def _ood_gates(
 ) -> list[GateResult]:
     """OOD 门禁：候选 OOD 成功率不低于基座，且绝对值不低于下限。
 
-    缺 OOD 证据时判 FAIL——缺证据不是通过的理由。
+    缺 OOD 证据时判 FAIL——缺证据不是通过的理由。证据存在但缺 `task_success`
+    或数值越界时**同样判 FAIL**（SRE 审查 C-2）：`.get(key, 0.0)` 会把残缺的
+    base 读数静默当 0，让 `ood_success_delta_min` 恒通过——那是 fail-open。
     """
     _OOD_SUCCESS_MIN = 0.70
     _OOD_DELTA_MIN = 0.0
 
-    if baseline_ood_metrics is None or candidate_ood_metrics is None:
+    def _validated_success(metrics: dict[str, Any] | None) -> float | None:
+        if metrics is None:
+            return None
+        value = metrics.get("task_success")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(float(value)) or not 0.0 <= float(value) <= 1.0:
+            return None
+        return float(value)
+
+    base_success = _validated_success(baseline_ood_metrics)
+    cand_success = _validated_success(candidate_ood_metrics)
+    if base_success is None or cand_success is None:
+        observed = (
+            "missing_ood_evidence"
+            if baseline_ood_metrics is None or candidate_ood_metrics is None
+            else "invalid_ood_evidence"
+        )
         return [
             GateResult(
                 gate_id="ood_task_success_min",
                 passed=False,
-                observed="missing_ood_evidence",
+                observed=observed,
                 threshold=_OOD_SUCCESS_MIN,
-                reason="缺少 OOD 评测证据，无法判定候选分布外成功率。缺证据不是通过的理由。",
+                reason=(
+                    "OOD 证据缺失或残缺非法（缺 task_success 或数值越界），无法判定"
+                    "候选分布外成功率。缺证据不是通过的理由。"
+                ),
             ),
             GateResult(
                 gate_id="ood_success_delta_min",
                 passed=False,
-                observed="missing_ood_evidence",
+                observed=observed,
                 threshold=_OOD_DELTA_MIN,
                 reason=(
-                    "缺少 OOD 评测证据，无法判定候选相对基座的分布外提升。缺证据不是通过的理由。"
+                    "OOD 证据缺失或残缺非法（缺 task_success 或数值越界），无法判定"
+                    "候选相对基座的分布外提升。缺证据不是通过的理由。"
                 ),
             ),
         ]
 
-    base_success = float(baseline_ood_metrics.get("task_success", 0.0))
-    cand_success = float(candidate_ood_metrics.get("task_success", 0.0))
     ood_delta = cand_success - base_success
     return [
         GateResult(

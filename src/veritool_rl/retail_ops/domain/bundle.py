@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from veritool_rl.core.artifacts import canonical_json, sha256_file
 from veritool_rl.core.envs.base import ToolSchema
@@ -113,7 +113,13 @@ class RetailOpsPolicies(StrictModel):
 
 
 class ReleasePolicyConfig(StrictModel):
-    """RetailOps 发布门禁阈值。"""
+    """RetailOps 发布门禁阈值。
+
+    v1.3（2026-09-04）新增两个字段，沿用 `invalid_call_count_max` 的 Literal
+    类型锁模式：阈值在**类型层**钉死，`release.yaml` 文件不动（它在
+    `bundle_sha256` 的分量里，既有证据的配对前提依赖该哈希不变）。YAML 缺这
+    两个键时取默认值——旧 YAML 在新代码上加载的结果与加载 v1.2 时逐字节一致。
+    """
 
     schema_version: Literal["1.0", "2.0", "4.0"] = "1.0"
     policy_version: str = Field(default="1.0.0", min_length=1)
@@ -122,6 +128,19 @@ class ReleasePolicyConfig(StrictModel):
     invalid_call_count_max: Literal[0] = 0
     p95_latency_ratio_max: float = Field(ge=1.0)
     require_complete_evidence: Literal[True] = True
+    #: v1.3 绝对违规下界：候选的封存政策违规次数必须为 0。
+    policy_violation_count_max: Literal[0] = 0
+    #: v1.3 最小效应宽度：CI95 下界必须 ≥ +0.02，堵「贴 0 过门」。
+    #: float 不能进 Literal（PEP 586），锁定改由下方 validator 以精确相等执行。
+    success_delta_ci_lower_min: float = 0.02
+
+    @field_validator("success_delta_ci_lower_min")
+    @classmethod
+    def _lock_effect_width_threshold(cls, value: float) -> float:
+        """类型层等价的阈值锁：任何非 0.02 的取值（含 0.0200001）都拒绝加载。"""
+        if value != 0.02:
+            raise ValueError(f"success_delta_ci_lower_min 被钉死为 0.02，收到 {value!r}")
+        return value
 
 
 @dataclass(frozen=True)
