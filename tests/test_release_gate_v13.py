@@ -412,10 +412,9 @@ def test_every_sealed_evidence_report_id_survives_v13_code() -> None:
         load_sealed_evaluation_report,
     )
 
-    if not (ROOT / "reports").is_dir():
-        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
-
     paths = sorted((ROOT / "reports").rglob("sealed-report.json"))
+    if not paths:
+        pytest.skip("封存证据是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
     assert len(paths) >= 13
     for path in paths:
         report = load_sealed_evaluation_report(path, verify_artifacts=False)
