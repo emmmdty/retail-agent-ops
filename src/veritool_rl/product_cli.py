@@ -77,6 +77,9 @@ from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot, loa
 from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
 from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.domain.policy_boundary_phrasing_tasks import (
+    POLICY_BOUNDARY_PHRASING_DATASET_VERSION,
+)
 from veritool_rl.retail_ops.evaluate.base_evaluation import (
     BaseEvaluationConfig,
     ModelArtifact,
@@ -515,6 +518,7 @@ def _run_formal_release(args: argparse.Namespace, config: dict[str, Any]) -> Non
             raise ValueError(f"{label} sealed 证据与 release bundle SHA-256 不匹配")
 
     ood_evidence = _load_ood_evidence(config, gate_schema_version)
+    _verify_trajectories_anchor(args, base, candidate)
 
     write_formal_release_report(
         decide_formal_release(
@@ -544,10 +548,13 @@ def _paired_outcomes(
     两个路径必须成对提供：只给一侧是配置错误，不是"降级到无配对证据"——后者会把
     一次误用悄悄变成一个 FAIL 的门禁，看起来像模型问题。
 
-    **两侧都不给 + v1.1 同样是配置错误**，理由完全相同。库层的
+    **两侧都不给 + 任何含 `success_delta_ci_lower` 的口径（v1.1 起）同样是配置
+    错误**，理由完全相同。所需版本从 `GATE_IDS_BY_SCHEMA` 结构化推导而不是
+    硬编码清单：未来再加需要配对证据的门禁口径会自动被覆盖（SRE 审查 I-2——
+    硬编码 "1.1" 恰好放过了同样需要配对证据的 v1.2）。库层的
     `_paired_ci_gate` 保持 fail-closed（缺证据不是通过的理由），
     但那是给"拿一份只有聚合量的公开报告复算门禁"用的；这里是命令行，
-    操作者明确配了 v1.1，就必须给出它需要的证据。
+    操作者明确配了该口径，就必须给出它需要的证据。
     2026-08-17 的第五次封存 holdout 观测正是漏了这两个参数，产出了一份
     `NO-GO / success_delta_ci_lower` 的报告——读起来像模型没通过统计检验，
     实际是命令少了两个参数（LOG-20260817-03）。
@@ -555,11 +562,13 @@ def _paired_outcomes(
     baseline_path = getattr(args, "baseline_trajectories", None)
     candidate_path = getattr(args, "candidate_trajectories", None)
     if baseline_path is None and candidate_path is None:
-        if gate_schema_version == "1.1":
+        requires_pairing = "success_delta_ci_lower" in GATE_IDS_BY_SCHEMA[gate_schema_version]
+        if requires_pairing:
             raise ValueError(
-                "gate_schema_version 1.1 需要逐任务配对证据来计算 success_delta_ci_lower，"
-                "请补上 --baseline_trajectories 与 --candidate_trajectories。"
-                "缺证据是配置问题，不能产出一份看起来像模型失败的 NO-GO。"
+                f"gate_schema_version {gate_schema_version} 需要逐任务配对证据来计算"
+                " success_delta_ci_lower，请补上 --baseline_trajectories 与"
+                " --candidate_trajectories。缺证据是配置问题，不能产出一份看起来像"
+                "模型失败的 NO-GO。"
             )
         return None
     if baseline_path is None or candidate_path is None:
@@ -584,9 +593,10 @@ def _load_ood_evidence(
     ood_config = config.get("ood_evidence")
     if ood_config is None:
         return None
-    if gate_schema_version != "1.2":
+    if gate_schema_version not in ("1.2", "1.3"):
         raise ValueError(
-            f"ood_evidence 配置仅在 gate_schema_version=1.2 下有效，收到 {gate_schema_version!r}"
+            "ood_evidence 配置仅在 gate_schema_version=1.2/1.3 下有效，"
+            f"收到 {gate_schema_version!r}"
         )
     if not isinstance(ood_config, dict):
         raise ValueError("ood_evidence 必须是 mapping")
@@ -601,7 +611,51 @@ def _load_ood_evidence(
         raise ValueError(f"基座 OOD 指标必须是 JSON object: {base_path}")
     if not isinstance(cand_ood, dict):
         raise ValueError(f"候选 OOD 指标必须是 JSON object: {cand_path}")
+    # SRE 审查 C-2：门禁算术是最后一道防线，不能是唯一一道——加载期就拒绝
+    # 缺 task_success 或数值越界的指标文件，别等它把 delta 门禁洗成通过。
+    for label, metrics, path in (
+        ("基座", base_ood, base_path),
+        ("候选", cand_ood, cand_path),
+    ):
+        value = metrics.get("task_success")
+        invalid = (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0.0 <= float(value) <= 1.0
+        )
+        if invalid:
+            raise ValueError(f"{label} OOD 指标缺少合法的 task_success（必须在 [0, 1] 内）: {path}")
     return base_ood, cand_ood
+
+
+def _verify_trajectories_anchor(
+    args: argparse.Namespace,
+    base: Any,
+    candidate: Any,
+) -> None:
+    """对抗审查 C-3：逐任务配对证据必须锚定到 sealed 报告记录的产物哈希。
+
+    sealed 报告的 `private_artifact_sha256["trajectories.jsonl"]` 就是真文件的
+    SHA-256；不核对的话，攻击者可以摆一份**边际一致、联合分布被操纵**的
+    逐任务证据把 `success_delta_ci_lower` 洗正（边际守恒即可通过现有校验）。
+    旧报告没有该锚时跳过（渐进式修复，与 report_id 的 legacy 放行同一逻辑）。
+    """
+    pairs = (
+        ("基座", getattr(args, "baseline_trajectories", None), base),
+        ("候选", getattr(args, "candidate_trajectories", None), candidate),
+    )
+    for label, path, report in pairs:
+        if path is None:
+            continue
+        expected = report.private_artifact_sha256.get("trajectories.jsonl")
+        if expected is None:
+            continue
+        actual = sha256_file(Path(path))
+        if actual != expected:
+            raise ValueError(
+                f"{label}逐任务轨迹文件与 sealed 证据锚定的 SHA-256 不一致："
+                f"锚定 {expected}，实际 {actual}。配对证据可能被调包或篡改。"
+            )
 
 
 def _success_by_task(path: Path) -> dict[str, bool]:
@@ -647,7 +701,15 @@ def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
     if not isinstance(boundary, bool):
         raise ValueError("boundary 必须是 bool（探针集写 true，其余写 false）")
     phrasing = _ood_phrasing_spec(config, args.input_dir)
-    if boundary:
+    # 二维迭代面（Phase C3）：探针网格 × 措辞池分片是 boundary 与 phrasing 的
+    # **唯一合法组合**——它读私有措辞池（因此需要 --input_dir），且 dataset_version
+    # 必须登记为交叉面专用版本，写别的版本号仍按互斥拒绝。
+    crossed = (
+        boundary
+        and phrasing is not None
+        and phrasing.dataset_version == POLICY_BOUNDARY_PHRASING_DATASET_VERSION
+    )
+    if boundary and not crossed:
         if phrasing is not None:
             raise ValueError("boundary 与 phrasing 互斥：一次只能构建一种任务集")
         if args.input_dir is not None:
@@ -745,6 +807,12 @@ def _run_ood_evaluate(
     engine = _engine_from(args)
     pipeline = config.get("pipeline")
     is_candidate = pipeline == "ood_candidate"
+    if "dataset_version" in config:
+        # findings #11：数据集版本由 manifest 决定，配置里写它只会被
+        # `_require_config_keys` 的精确匹配拒绝，报错却不指路。直接告诉操作者。
+        raise ValueError(
+            "ood_evaluate 的 dataset_version 取自评测目录的 manifest.json，不在配置文件里声明"
+        )
     _require_config_keys(config, _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS)
     bundle = load_bundle(_bundle_dir(config))
     models_root = _project_relative_path(config, "models_root")

@@ -94,7 +94,7 @@ def test_v10_gate_set_is_untouched() -> None:
     )
     assert GATE_IDS_BY_SCHEMA["1.0"] == GATE_IDS
     assert GATE_IDS_BY_SCHEMA["1.1"] == GATE_IDS_V1_1
-    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2"}
+    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3"}
 
 
 def test_v11_splits_the_latency_gate_and_adds_a_paired_test() -> None:
@@ -498,3 +498,19 @@ def test_a_release_report_rejects_a_hand_edited_decision_or_deployment() -> None
     ]
     with pytest.raises(ValueError, match="不一致"):
         report(gates=failing, failed_gate_ids=[GATE_IDS[0]])
+
+
+# ---------------------------------------------------------------------------
+# SRE 审查 I-2：CLI 配对守卫必须覆盖一切含 success_delta_ci_lower 的口径
+# ---------------------------------------------------------------------------
+
+
+def test_the_cli_pairing_guard_covers_v12_not_just_v11() -> None:
+    """v1.2 门禁集包含 success_delta_ci_lower，缺配对证据必须是配置错误。"""
+    from argparse import Namespace
+
+    from veritool_rl.product_cli import _paired_outcomes
+
+    for version in ("1.1", "1.2"):
+        with pytest.raises(ValueError, match="baseline_trajectories"):
+            _paired_outcomes(Namespace(), version)

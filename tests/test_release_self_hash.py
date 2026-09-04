@@ -220,3 +220,97 @@ def test_legacy_report_without_report_id_still_loads(tmp_path: Any) -> None:
     )
     loaded = load_release_report(report_path)
     assert loaded.decision is ReleaseDecision.GO
+
+
+# ---------------------------------------------------------------------------
+# SRE 审查 C-1：FormalReleaseReport（真正产出 GO/NO-GO 的通道）同样必须有自哈希
+# ---------------------------------------------------------------------------
+
+
+_RELEASE_METRICS = {
+    "task_success": 0.95,
+    "policy_violation_count": 2,
+    "invalid_call_count": 0,
+    "p95_latency_ms": 3100.0,
+    "average_latency_ms": 3000.0,
+    "average_tool_calls": 2.0,
+}
+
+
+def _minimal_formal_report() -> Any:
+    """构造一份字段自洽的 FormalReleaseReport（NO-GO 判定）。"""
+    from pathlib import Path
+
+    from tests.helpers_sealed import build_sealed_report
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import DeploymentForm
+    from veritool_rl.retail_ops.release.formal_release import decide_formal_release
+
+    base = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.BASE,
+        adapter=None,
+        metrics=_RELEASE_METRICS,
+    )
+    candidate = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.MERGED,
+        merged=True,
+        adapter=None,
+        metrics=_RELEASE_METRICS,
+    )
+    policy = load_bundle(Path("domains/retail_ops/v1")).release
+    return decide_formal_release(base, candidate, policy), base, candidate
+
+
+def test_formal_release_report_carries_a_self_hash() -> None:
+    """decide_formal_release 产出的报告必须带 report_id 自哈希。"""
+    from veritool_rl.retail_ops.release.formal_release import formal_release_content_id
+
+    report, _, _ = _minimal_formal_report()
+
+    assert report.report_id is not None
+    assert report.report_id == formal_release_content_id(report)
+
+
+def test_load_formal_release_report_rejects_tampering(tmp_path: Any) -> None:
+    """把 NO-GO 手工翻成 GO 再加载，必须被 report_id 复算拒绝。"""
+    import json
+
+    from veritool_rl.retail_ops.release.formal_release import load_formal_release_report
+
+    report, _, _ = _minimal_formal_report()
+    path = tmp_path / "release.json"
+    path.write_text(report.model_dump_json(), encoding="utf-8")
+
+    assert load_formal_release_report(path).decision == report.decision
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for gate in payload["gates"]:
+        gate["passed"] = True
+    payload["failed_gate_ids"] = []
+    payload["decision"] = "GO"
+    payload["deployment"] = "candidate"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="report_id"):
+        load_formal_release_report(path)
+
+
+def test_load_formal_release_report_accepts_legacy_reports_without_report_id(
+    tmp_path: Any,
+) -> None:
+    """旧报告（无 report_id 字段）加载后取 None，不报错——渐进式修复。"""
+    import json
+
+    from veritool_rl.retail_ops.release.formal_release import load_formal_release_report
+
+    report, _, _ = _minimal_formal_report()
+    payload = report.model_dump(mode="json")
+    payload.pop("report_id")
+    path = tmp_path / "legacy-release.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_formal_release_report(path)
+    assert loaded.report_id is None
+    assert loaded.decision == report.decision

@@ -73,7 +73,7 @@ ABSOLUTE_PATH_PATTERNS = (
 )
 
 #: 结构化数据文件的后缀。取值扫描只在这些文件上进行。
-STRUCTURED_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
+STRUCTURED_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".jsonl"})
 
 #: `reports/legacy/` 下的 manifest 是**历史运行的溯源记录**：它们如实记下当年那次
 #: 运行的模型路径在哪台机器上。改写它们等于伪造运行记录，因此豁免而不是"修好"。
@@ -82,7 +82,13 @@ HISTORICAL_ARTIFACT_PREFIXES = ("reports/legacy/",)
 #: 封存 holdout 的真值形态。公开的 manifest 只含任务 ID 与哈希；
 #: 一旦这些键出现在**结构化数据文件**里，说明答案本身被提交了。
 #: 同样只查数据文件——源码里定义或引用同名字段是流水线本来就要做的事。
+#: 对抗审查 I-3（2026-09-04）：前四个键名在 TaskSpec schema 里**根本不存在**；
+#: 真值的真实字段名是 `initial_state` / `target_state` / `expected_calls`，
+#: 缺了它们，`git add -f` 一份 holdout.jsonl 时六项审计全绿。
 HOLDOUT_TRUTH_KEYS = (
+    "initial_state",
+    "target_state",
+    "expected_calls",
     "expected_final_state",
     "reference_trajectory",
     "gold_tool_calls",
@@ -199,7 +205,7 @@ def _structured_documents(paths: list[Path]) -> list[tuple[str, object]]:
         if text is None:
             continue
         try:
-            if path.suffix.lower() == ".json":
+            if path.suffix.lower() in {".json", ".jsonl"}:
                 documents.append((relpath, _load_json_or_jsonl(text)))
             else:
                 documents.append((relpath, yaml.safe_load(text)))
@@ -235,6 +241,10 @@ def audit_no_holdout_truth(paths: list[Path]) -> None:
     offenders: list[str] = []
     for relpath, document in _structured_documents(paths):
         if relpath in PATTERN_FIXTURE_ALLOWLIST:
+            continue
+        if relpath.startswith(HISTORICAL_ARTIFACT_PREFIXES):
+            # reports/legacy/ 是已公开的 MVP 产物（含任务真值），
+            # 豁免口径与 audit_no_absolute_dev_paths 一致。
             continue
         hits = sorted({key for key, _ in _walk(document) if key in HOLDOUT_TRUTH_KEYS})
         if hits:

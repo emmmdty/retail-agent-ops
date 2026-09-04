@@ -98,6 +98,42 @@ def test_planted_holdout_truth_in_a_data_file_is_detected(fake_repo: Path) -> No
         audit.audit_no_holdout_truth([planted])
 
 
+def test_planted_real_schema_truth_keys_are_detected(fake_repo: Path) -> None:
+    """对抗审查 I-3：真值的**真实字段名**是 TaskSpec 的三个冻结字段。
+
+    修复前审计只认 `expected_final_state` 等四个在 schema 里根本不存在的键名
+    ——`git add -f` 一份 holdout.jsonl（行结构是 `task.initial_state` /
+    `task.expected_calls`）时六项审计全绿。
+    """
+    planted = _write(
+        fake_repo,
+        "manifests/holdout.jsonl",
+        json.dumps(
+            {
+                "task": {
+                    "task_id": "t-1",
+                    "initial_state": {"orders": {}},
+                    "target_state": {"orders": {}},
+                    "expected_calls": [{"name": "refund_order", "arguments": {}}],
+                }
+            }
+        )
+        + "\n",
+    )
+    with pytest.raises(audit.AuditFailure, match="封存 holdout 真值"):
+        audit.audit_no_holdout_truth([planted])
+
+
+def test_legacy_trajectories_are_exempt_from_the_truth_scan(fake_repo: Path) -> None:
+    """reports/legacy/ 是已公开的 MVP 产物，豁免口径与绝对路径审计一致。"""
+    planted = _write(
+        fake_repo,
+        "reports/legacy/mvp/oracle/trajectories.jsonl",
+        json.dumps({"task": {"initial_state": {}, "expected_calls": []}}) + "\n",
+    )
+    audit.audit_no_holdout_truth([planted])
+
+
 def test_a_planted_absolute_dev_path_value_is_detected(fake_repo: Path) -> None:
     planted = _write(
         fake_repo,

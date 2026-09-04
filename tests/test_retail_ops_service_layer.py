@@ -146,11 +146,17 @@ def _app(
     release_dir = workspace / "release"
     write_formal_release_report(_release_report(workspace), release_dir)
     chosen = backend or _StubBackend()
+
+    def factory(model: Any, adapter: Any) -> Any:
+        # I-5 收紧后，后端必须声明它加载的权重（工厂是注入缝，"没说"也被拒）。
+        chosen.model_dir = f"models/{model.local_dir}"
+        return chosen
+
     return create_formal_app(
         release_dir,
         workspace / BUNDLE_REL,
         workspace / "build",
-        backend_factory=lambda model, adapter: chosen,
+        backend_factory=factory,
         **{"api_key": API_KEY, **kwargs},
     )
 

@@ -9,10 +9,18 @@
 
 本模块是 SPEC §6 的执行者：它的输入只能是两份 sealed holdout 报告，且必须先
 通过 `require_comparable_sealed_runs` 的配对契约校验。
+
+**SRE 审查 C-1（2026-09-04）**：这份报告才是真正驱动生产部署（serve 按
+`deployment` 加载候选权重）的通道，却直到本轮都没有内容哈希——手工把 NO-GO
+翻成 GO 并同步改 deployment 就能通过 `validate_decision_consistency`（它只查
+内部一致性，不从 metrics 重算门禁）。修法与 `ReleaseReport` 同构：
+`report_id = sha256(全字段，排除自身)`，`load_formal_release_report` 重算比对；
+旧报告（无该字段）加载后取 None，不报错。
 """
 
 from __future__ import annotations
 
+import hashlib
 import html
 from collections.abc import Sequence
 from pathlib import Path
@@ -38,6 +46,7 @@ from veritool_rl.retail_ops.release.release import (
     GateSchemaVersion,
     ReleaseDecision,
     _gates_v1_2_with_ood,
+    _gates_v1_3_with_ood,
     build_release_gates,
 )
 
@@ -53,6 +62,8 @@ class FormalReleaseReport(StrictModel):
     值为 `None` 时不参与自哈希，保证旧版本报告的 report_id 复算不变。
     """
 
+    #: SRE 审查 C-1：全字段自哈希（排除自身）。旧报告无此字段，加载后取 None。
+    report_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     schema_version: GateSchemaVersion = "1.0"
     decision: ReleaseDecision
     deployment: Literal["candidate", "baseline"]
@@ -143,16 +154,28 @@ def decide_formal_release(
     require_comparable_sealed_runs(base, candidate)
 
     evidence_complete = base.evidence_complete and candidate.evidence_complete
-    if gate_schema_version == "1.2" and ood_evidence is not None:
+    if gate_schema_version in ("1.2", "1.3") and ood_evidence is not None:
         base_ood, cand_ood = ood_evidence
-        gates = _gates_v1_2_with_ood(
-            base.metrics,
-            candidate.metrics,
-            evidence_complete=evidence_complete,
-            policy=policy,
-            paired_outcomes=paired_outcomes,
-            baseline_ood_metrics=base_ood,
-            candidate_ood_metrics=cand_ood,
+        gates = (
+            _gates_v1_3_with_ood(
+                base.metrics,
+                candidate.metrics,
+                evidence_complete=evidence_complete,
+                policy=policy,
+                paired_outcomes=paired_outcomes,
+                baseline_ood_metrics=base_ood,
+                candidate_ood_metrics=cand_ood,
+            )
+            if gate_schema_version == "1.3"
+            else _gates_v1_2_with_ood(
+                base.metrics,
+                candidate.metrics,
+                evidence_complete=evidence_complete,
+                policy=policy,
+                paired_outcomes=paired_outcomes,
+                baseline_ood_metrics=base_ood,
+                candidate_ood_metrics=cand_ood,
+            )
         )
     else:
         gates = build_release_gates(
@@ -166,48 +189,71 @@ def decide_formal_release(
     failed_gate_ids = [gate.gate_id for gate in gates if not gate.passed]
     decision = ReleaseDecision.NO_GO if failed_gate_ids else ReleaseDecision.GO
 
-    # OOD 可选字段
+    # OOD 可选字段。残缺/越界的指标不得进入报告（SRE 审查 C-2）：
+    # 门禁已把该情形记为 invalid_ood_evidence 并判 FAIL，报告侧取 None
+    # 表示「未记录合法读数」，而不是把非法值带进 schema 校验面。
     ood_report_id = None
     ood_task_success = None
     base_ood_task_success = None
     if ood_evidence is not None:
         base_ood, cand_ood = ood_evidence
-        if cand_ood is not None:
-            ood_task_success = cand_ood.get("task_success")
-        if base_ood is not None:
-            base_ood_task_success = base_ood.get("task_success")
 
-    return FormalReleaseReport(
-        schema_version=gate_schema_version,
-        decision=decision,
-        deployment="baseline" if failed_gate_ids else "candidate",
-        policy_version=policy.policy_version,
-        dataset_version=base.dataset_version,
-        task_count=base.task_count,
-        base_report_id=base.report_id,
-        candidate_report_id=candidate.report_id,
-        bundle_sha256=base.bundle_sha256,
-        holdout_artifact_sha256=base.holdout_artifact_sha256,
-        holdout_receipt_sha256=base.holdout_receipt_sha256,
-        parser_id=base.parser_id,
-        evaluator_id=base.evaluator_id,
-        code_commit=base.code_commit,
-        uv_lock_sha256=base.uv_lock_sha256,
-        model=base.model,
-        adapter=candidate.adapter,
-        candidate_model=candidate.model if _is_merged(candidate) else None,
-        deployment_form=candidate.deployment_form,
-        generation=base.generation,
-        base_policy_id=base.policy_id,
-        candidate_policy_id=candidate.policy_id,
-        gates=gates,
-        failed_gate_ids=failed_gate_ids,
-        base_metrics=base.metrics,
-        candidate_metrics=candidate.metrics,
-        ood_report_id=ood_report_id,
-        ood_task_success=ood_task_success,
-        base_ood_task_success=base_ood_task_success,
+        def _valid_success(metrics: dict[str, Any] | None) -> float | None:
+            if metrics is None:
+                return None
+            value = metrics.get("task_success")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            return float(value) if 0.0 <= float(value) <= 1.0 else None
+
+        ood_task_success = _valid_success(cand_ood)
+        base_ood_task_success = _valid_success(base_ood)
+
+    return finalize_formal_release_report(
+        FormalReleaseReport(
+            schema_version=gate_schema_version,
+            decision=decision,
+            deployment="baseline" if failed_gate_ids else "candidate",
+            policy_version=policy.policy_version,
+            dataset_version=base.dataset_version,
+            task_count=base.task_count,
+            base_report_id=base.report_id,
+            candidate_report_id=candidate.report_id,
+            bundle_sha256=base.bundle_sha256,
+            holdout_artifact_sha256=base.holdout_artifact_sha256,
+            holdout_receipt_sha256=base.holdout_receipt_sha256,
+            parser_id=base.parser_id,
+            evaluator_id=base.evaluator_id,
+            code_commit=base.code_commit,
+            uv_lock_sha256=base.uv_lock_sha256,
+            model=base.model,
+            adapter=candidate.adapter,
+            candidate_model=candidate.model if _is_merged(candidate) else None,
+            deployment_form=candidate.deployment_form,
+            generation=base.generation,
+            base_policy_id=base.policy_id,
+            candidate_policy_id=candidate.policy_id,
+            gates=gates,
+            failed_gate_ids=failed_gate_ids,
+            base_metrics=base.metrics,
+            candidate_metrics=candidate.metrics,
+            ood_report_id=ood_report_id,
+            ood_task_success=ood_task_success,
+            base_ood_task_success=base_ood_task_success,
+        )
     )
+
+
+def formal_release_content_id(report: FormalReleaseReport) -> str:
+    """全字段自哈希（排除 report_id 自身）——与 `ReleaseReport` 同构。"""
+    payload = report.model_dump(mode="json")
+    payload.pop("report_id", None)
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def finalize_formal_release_report(report: FormalReleaseReport) -> FormalReleaseReport:
+    """回填 report_id（self-hash）。"""
+    return report.model_copy(update={"report_id": formal_release_content_id(report)})
 
 
 def _is_merged(report: SealedEvaluationReport) -> bool:
@@ -223,8 +269,21 @@ def write_formal_release_report(report: FormalReleaseReport, output_dir: Path) -
 
 
 def load_formal_release_report(path: Path) -> FormalReleaseReport:
-    """读取并严格校验封存 holdout 的发布报告。"""
-    return FormalReleaseReport.model_validate_json(path.read_text(encoding="utf-8"))
+    """读取并严格校验封存 holdout 的发布报告。
+
+    带 report_id 的新报告重算并比对——篡改任一字段都会被拒；
+    旧报告（无 report_id）取 None，不报错。
+    """
+    report = FormalReleaseReport.model_validate_json(path.read_text(encoding="utf-8"))
+    if report.report_id is not None:
+        expected = formal_release_content_id(report)
+        if report.report_id != expected:
+            msg = (
+                f"formal release report 的 report_id 自哈希不匹配：声明 {report.report_id}，"
+                f"复算 {expected}。报告可能被篡改。"
+            )
+            raise ValueError(msg)
+    return report
 
 
 def _rollback_note(report: FormalReleaseReport) -> str:

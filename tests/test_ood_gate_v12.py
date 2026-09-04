@@ -110,7 +110,7 @@ def test_v12_gate_set_extends_v11_with_ood() -> None:
     assert GATE_IDS_BY_SCHEMA["1.0"] == GATE_IDS
     assert GATE_IDS_BY_SCHEMA["1.1"] == GATE_IDS_V1_1
     assert GATE_IDS_BY_SCHEMA["1.2"] == GATE_IDS_V1_2
-    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2"}
+    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3"}
 
 
 def test_v10_and_v11_gate_sets_untouched() -> None:
@@ -509,9 +509,9 @@ def test_load_ood_evidence_rejects_non_v12() -> None:
             "candidate_metrics_path": "b.json",
         }
     }
-    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2 下有效"):
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3 下有效"):
         _load_ood_evidence(config, "1.0")
-    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2 下有效"):
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3 下有效"):
         _load_ood_evidence(config, "1.1")
 
 
@@ -523,6 +523,94 @@ def test_load_ood_evidence_rejects_missing_keys() -> None:
         _load_ood_evidence({"ood_evidence": {}}, "1.2")
     with pytest.raises(ValueError, match="缺少必填键"):
         _load_ood_evidence({"ood_evidence": {"base_metrics_path": "a.json"}}, "1.2")
+
+
+# ---------------------------------------------------------------------------
+# SRE 审查 C-2：残缺的 OOD 指标必须 fail-closed，不得静默读作 0.0
+# ---------------------------------------------------------------------------
+
+
+def test_v12_ood_gate_fails_closed_when_base_metrics_lack_task_success() -> None:
+    """base 侧 JSON 缺 task_success 键时，OOD 门禁必须判 FAIL。
+
+    修复前：`.get("task_success", 0.0)` 把残缺 base 读数静默当 0，
+    `ood_success_delta_min` 恒通过——把真实 delta 为负的候选洗成 GO。
+    """
+    base, candidate, _, _ = _pair()
+    broken_base = {"task_count": 120}  # 缺 task_success
+    candidate_ood = _metrics(task_success=0.75)
+
+    report = decide_formal_release(
+        base,
+        candidate,
+        _policy(),
+        gate_schema_version="1.2",
+        paired_outcomes=PAIRED,
+        ood_evidence=(broken_base, candidate_ood),
+    )
+
+    ood_success_gate = next(g for g in report.gates if g.gate_id == "ood_task_success_min")
+    ood_delta_gate = next(g for g in report.gates if g.gate_id == "ood_success_delta_min")
+    assert not ood_success_gate.passed
+    assert ood_success_gate.observed == "invalid_ood_evidence"
+    assert not ood_delta_gate.passed
+    assert ood_delta_gate.observed == "invalid_ood_evidence"
+    assert report.decision is ReleaseDecision.NO_GO
+
+
+def test_v12_ood_gate_fails_closed_when_candidate_metrics_lack_task_success() -> None:
+    """candidate 侧缺键同样 FAIL——两侧纪律对称。"""
+    base, candidate, _, _ = _pair()
+
+    report = decide_formal_release(
+        base,
+        candidate,
+        _policy(),
+        gate_schema_version="1.2",
+        paired_outcomes=PAIRED,
+        ood_evidence=(_metrics(task_success=0.75), {"task_count": 120}),
+    )
+
+    ood_success_gate = next(g for g in report.gates if g.gate_id == "ood_task_success_min")
+    assert not ood_success_gate.passed
+    assert report.decision is ReleaseDecision.NO_GO
+
+
+def test_v12_ood_gate_rejects_task_success_outside_unit_interval() -> None:
+    """task_success 超出 [0, 1]（如 1.5）不得参与门禁算术。"""
+    base, candidate, _, _ = _pair()
+
+    report = decide_formal_release(
+        base,
+        candidate,
+        _policy(),
+        gate_schema_version="1.2",
+        paired_outcomes=PAIRED,
+        ood_evidence=(_metrics(task_success=0.75), {"task_success": 1.5}),
+    )
+
+    ood_success_gate = next(g for g in report.gates if g.gate_id == "ood_task_success_min")
+    assert not ood_success_gate.passed
+    assert report.decision is ReleaseDecision.NO_GO
+
+
+def test_load_ood_evidence_rejects_metrics_without_task_success(tmp_path: Path) -> None:
+    """_load_ood_evidence 在加载期就拒绝缺 task_success 或数值越界的指标文件。"""
+    from veritool_rl.product_cli import _load_ood_evidence
+
+    base_path = tmp_path / "base.json"
+    cand_path = tmp_path / "cand.json"
+    base_path.write_text(json.dumps({"task_count": 120}), encoding="utf-8")
+    cand_path.write_text(json.dumps({"task_success": 1.5}), encoding="utf-8")
+
+    config = {
+        "ood_evidence": {
+            "base_metrics_path": str(base_path),
+            "candidate_metrics_path": str(cand_path),
+        }
+    }
+    with pytest.raises(ValueError, match="task_success"):
+        _load_ood_evidence(config, "1.2")
 
 
 def test_load_ood_evidence_rejects_non_dict_metrics(tmp_path: Path) -> None:
@@ -692,3 +780,70 @@ def test_run_formal_release_no_ood_evidence_when_absent(tmp_path: Path) -> None:
         _run_formal_release(args, config)
 
     assert captured_ood["ood_evidence"] is None
+
+
+# ---------------------------------------------------------------------------
+# 对抗审查 C-3：配对轨迹文件必须锚定到 sealed 报告记录的产物哈希
+# ---------------------------------------------------------------------------
+
+
+def test_run_formal_release_rejects_unanchored_trajectory_files(tmp_path: Path) -> None:
+    """轨迹文件被换掉时，配对证据与 sealed 报告不一致——发布必须在加载期拒绝。
+
+    sealed 报告的 `private_artifact_sha256["trajectories.jsonl"]` 就是真文件的
+    哈希；修复前 release 路径对它零消费，攻击者可以摆一份边际一致、联合分布
+    被操纵的逐任务证据把 CI 下界洗正。
+    """
+    import hashlib
+    from argparse import Namespace
+    from unittest.mock import patch
+
+    trajectory_file = tmp_path / "trajectories.jsonl"
+    trajectory_file.write_text('{"task": {"task_id": "x"}, "success": true}\n', encoding="utf-8")
+    assert (
+        hashlib.sha256(trajectory_file.read_bytes()).hexdigest()
+        != "6" * 64  # build_sealed_report 的默认锚
+    )
+
+    config = {
+        "pipeline": "formal_release",
+        "bundle_dir": "domains/retail_ops/v1",
+        "gate_schema_version": "1.2",
+    }
+
+    sealed_base = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.BASE,
+        adapter=None,
+        metrics=_metrics(task_success=0.80),
+    )
+    sealed_candidate = build_sealed_report(
+        schema_version="1.1",
+        deployment_form=DeploymentForm.MERGED,
+        merged=True,
+        adapter=None,
+        metrics=_metrics(task_success=1.00),
+    )
+
+    with (
+        patch("veritool_rl.product_cli.load_sealed_evaluation_report") as mock_load,
+        patch("veritool_rl.product_cli.load_bundle") as mock_bundle,
+        patch("veritool_rl.product_cli._current_code_commit", return_value="a" * 40),
+    ):
+        mock_load.side_effect = [sealed_base, sealed_candidate]
+        bundle_mock = mock_bundle.return_value
+        bundle_mock.bundle_sha256 = "c" * 64
+        bundle_mock.release = _policy()
+
+        args = Namespace(
+            baseline_dir=tmp_path / "base",
+            candidate_dir=tmp_path / "cand",
+            output_dir=tmp_path / "out",
+            baseline_trajectories=trajectory_file,
+            candidate_trajectories=trajectory_file,
+        )
+
+        from veritool_rl.product_cli import _run_formal_release
+
+        with pytest.raises(ValueError, match="锚定的 SHA-256 不一致"):
+            _run_formal_release(args, config)

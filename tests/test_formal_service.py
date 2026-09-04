@@ -465,3 +465,149 @@ def test_default_formal_backend_factory_honours_the_rollback(workspace: Path) ->
     del workspace
     assert calls[0][1] is None
     assert calls[1][1] == str(_adapter().adapter_dir)
+
+
+# ---------------------------------------------------------------------------
+# SRE 审查修复（I-3 / I-4 / I-5 / I-7）
+# ---------------------------------------------------------------------------
+
+
+def test_episode_latency_metric_is_not_structurally_zero(workspace: Path) -> None:
+    """SRE I-3：/metrics 的 episode 延迟不得恒为 0。
+
+    修复前：`_finish` 在路由体内读 `duration_ms`，而该字段在 observe 的
+    `finally`（call_next 返回之后）才写入——读到的永远是初始 0.0。
+    """
+    from veritool_rl.retail_ops.serve.service import create_formal_app
+
+    app = create_formal_app(
+        _write_release(workspace, go=True),
+        workspace / BUNDLE_REL,
+        workspace / "build",
+        backend_factory=_factory_recording([]),
+        api_key=API_KEY,
+    )
+    client = TestClient(app)
+    task_id = client.get("/v1/tasks", headers=AUTH).json()["task_ids"][0]
+    response = client.post(f"/v1/tasks/{task_id}/run", headers=AUTH)
+    assert response.status_code == 200
+
+    metrics_text = client.get("/metrics").text
+    quantiles = [
+        float(line.rsplit(" ", 1)[1])
+        for line in metrics_text.splitlines()
+        if line.startswith("retail_agent_ops_episode_latency_ms")
+    ]
+    assert len(quantiles) == 2, f"延迟分位数缺失：{metrics_text}"
+    assert all(value > 0.0 for value in quantiles), (
+        f"episode 延迟分位数仍恒为 0（I-3 未修复）：{quantiles}"
+    )
+
+
+def test_a_non_ascii_api_key_is_rejected_not_a_500() -> None:
+    """SRE I-4b：非 ASCII key 在 compare_digest 里抛 TypeError，必须是 401 不是 500。
+
+    httpx 无法发送非 ASCII 头，因此这里直接对 `_authorized` 做单元测试
+    （真实 ASGI 头按 latin-1 解码成含非 ASCII 字符的 str）。
+    """
+    from types import SimpleNamespace
+
+    from veritool_rl.retail_ops.serve.service import _authorized
+
+    request = SimpleNamespace(
+        headers={"authorization": "Bearer kéy", "x-api-key": ""},
+    )
+    assert _authorized(request, API_KEY) is False
+    assert _authorized(SimpleNamespace(headers={"authorization": f"Bearer {API_KEY}"}), API_KEY)
+    assert _authorized(SimpleNamespace(headers={"x-api-key": "kéy"}), API_KEY) is False
+
+
+def test_unauthorized_requests_still_count_in_metrics(workspace: Path) -> None:
+    """SRE I-4a（回归锚）：普通 401 必须进请求指标。"""
+    from veritool_rl.retail_ops.serve.service import create_formal_app
+
+    app = create_formal_app(
+        _write_release(workspace, go=False),
+        workspace / BUNDLE_REL,
+        workspace / "build",
+        backend_factory=_factory_recording([]),
+        api_key=API_KEY,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    def _request_total(text: str) -> float:
+        return sum(
+            float(line.rsplit(" ", 1)[1])
+            for line in text.splitlines()
+            if line.startswith("retail_agent_ops_requests_total")
+        )
+
+    before = _request_total(client.get("/metrics").text)
+    response = client.get("/v1/tasks", headers={"Authorization": "Bearer wrong"})
+    assert response.status_code == 401
+
+    after = _request_total(client.get("/metrics").text)
+    assert after == before + 1, "401 请求必须计入请求指标"
+
+
+def test_backend_without_declared_pins_is_rejected(workspace: Path) -> None:
+    """SRE I-5：不声明 model_dir/adapter_path 的后端必须被拒，不得 vacuous pass。"""
+    from veritool_rl.retail_ops.serve.service import create_formal_app
+
+    release_dir = _write_release(workspace, go=False)
+
+    class _AnonymousBackend:
+        """什么都不声明——修复前它整体绕过模型与 adapter 核对。"""
+
+        revision = REVISION
+
+        def generate(self, messages: Any, tools: Any, max_new_tokens: int) -> GeneratedText:
+            del messages, tools, max_new_tokens
+            return GeneratedText(text="ok", input_tokens=1, output_tokens=1)
+
+    with pytest.raises(ValueError, match="声明"):
+        create_formal_app(
+            release_dir,
+            workspace / BUNDLE_REL,
+            workspace / "build",
+            backend_factory=lambda model, adapter: _AnonymousBackend(),
+            api_key=API_KEY,
+        )
+
+
+def test_requests_without_content_length_get_a_411_verdict() -> None:
+    """SRE I-7：无 content-length（chunked）的带体请求必须被判 411。
+
+    httpx 会自动补 content-length，无法经 TestClient 模拟 chunked，
+    因此对判定函数做单元测试（中间件只是它的薄壳）。
+    """
+    from starlette.requests import Request
+
+    from veritool_rl.retail_ops.serve.service import MAX_REQUEST_BYTES, _request_body_verdict
+
+    def _request(method: str, headers: list[tuple[bytes, bytes]]) -> Request:
+        return Request({"type": "http", "method": method, "headers": headers})
+
+    chunked = _request("POST", [(b"transfer-encoding", b"chunked")])
+    assert _request_body_verdict(chunked) == 411
+
+    normal = _request("POST", [(b"content-length", b"10")])
+    assert _request_body_verdict(normal) is None
+
+    oversized = _request("POST", [(b"content-length", str(MAX_REQUEST_BYTES + 1).encode())])
+    assert _request_body_verdict(oversized) == 413
+
+    # GET /health 这类无体方法不声明 content-length 是常态，不得误伤
+    assert _request_body_verdict(_request("GET", [])) is None
+
+
+def test_content_length_with_non_ascii_digits_gets_a_411_verdict() -> None:
+    """scoped re-review Minor-2：上标数字让 int() 抛 ValueError 的既有路径被堵住。"""
+    from starlette.requests import Request
+
+    from veritool_rl.retail_ops.serve.service import _request_body_verdict
+
+    request = Request(
+        {"type": "http", "method": "POST", "headers": [(b"content-length", "¹²".encode())]}
+    )
+    assert _request_body_verdict(request) == 411

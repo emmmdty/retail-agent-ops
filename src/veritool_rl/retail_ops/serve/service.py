@@ -245,13 +245,16 @@ def create_formal_app(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        declared = request.headers.get("content-length")
-        if declared is not None and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
-            _mark_rejected("request_too_large")
-            return JSONResponse(
-                status_code=413,
-                content={"detail": f"请求体超过 {MAX_REQUEST_BYTES} 字节上限"},
+        verdict = _request_body_verdict(request)
+        if verdict is not None:
+            reason = "request_length_required" if verdict == 411 else "request_too_large"
+            _mark_rejected(reason)
+            detail = (
+                "带请求体的请求必须声明 content-length"
+                if verdict == 411
+                else f"请求体超过 {MAX_REQUEST_BYTES} 字节上限"
             )
+            return JSONResponse(status_code=verdict, content={"detail": detail})
         return await call_next(request)
 
     @app.middleware("http")
@@ -264,6 +267,15 @@ def create_formal_app(
         started = time.perf_counter()
         try:
             response = await call_next(request)
+        except Exception:
+            # SRE 审查 I-4：未处理异常此前完全绕过指标与结构化日志——
+            # "一次请求恰好一行日志"的承诺必须在异常路径同样成立。
+            record["duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+            record["status"] = 500
+            if request.url.path not in _OPEN_PATHS:
+                metrics.record_request(request.url.path, 500)
+                emit(record)
+            raise
         finally:
             record["duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
         record["status"] = response.status_code
@@ -301,6 +313,10 @@ def create_formal_app(
         if not episode_lock.acquire(blocking=False):
             _mark_rejected("concurrency_limit")
             raise HTTPException(status_code=503, detail="服务已达并发上限，请稍后重试")
+        # SRE 审查 I-3：episode 延迟必须在这里计时。`duration_ms` 由 observe
+        # 中间件在 call_next **返回之后**才写入，路由体内读到的永远是初始 0.0，
+        # /metrics 的延迟分位数因此从上线起就恒为 0。
+        episode_started = time.perf_counter()
         future = executor.submit(
             run_episode,
             task,
@@ -310,7 +326,7 @@ def create_formal_app(
         )
         future.add_done_callback(lambda _: episode_lock.release())
         try:
-            return future.result(timeout=episode_timeout_s)
+            trajectory = future.result(timeout=episode_timeout_s)
         except FutureTimeoutError:
             metrics.record_timeout()
             _mark_rejected("episode_timeout")
@@ -322,6 +338,10 @@ def create_formal_app(
                     "timeout_s": episode_timeout_s,
                 },
             ) from None
+        record = REQUEST_RECORD.get(None)
+        if record is not None:
+            record["episode_ms"] = round((time.perf_counter() - episode_started) * 1000, 3)
+        return trajectory
 
     def _finish(trajectory: Trajectory) -> None:
         record = REQUEST_RECORD.get(None) or {}
@@ -333,8 +353,13 @@ def create_formal_app(
         record["violations"] = list(trajectory.violations)
         record["deployment"] = release.deployment
         record["policy_id"] = policy_id
+        episode_ms = record.get("episode_ms")
+        if episode_ms is None:
+            # 无 episode 计时的请求不该发生（_run_guarded 总会写）；给 0.0 并
+            # 依赖 episodes 计数兜底，不伪造一个看似合法的延迟数。
+            episode_ms = 0.0
         metrics.record_episode(
-            latency_ms=float(record.get("duration_ms", 0.0)),
+            latency_ms=float(episode_ms),
             tool_calls=len(tool_calls),
             violations=len(trajectory.violations),
         )
@@ -375,15 +400,39 @@ def create_formal_app(
     return app
 
 
+def _request_body_verdict(request: Request) -> int | None:
+    """请求体检查：411（无 content-length 的带体方法）/ 413（超限）/ None（放行）。
+
+    SRE 审查 I-7：chunked 传输没有 content-length，会绕过大小检查——FastAPI
+    随后把整个 body 读进内存才由 Pydantic 拒绝。带请求体的方法必须声明长度。
+    """
+    declared = request.headers.get("content-length")
+    # scoped re-review Minor-2：isdigit 对 "¹²" 等上标数字也返回 True，int() 会抛
+    # ValueError 变 500——长度必须全 ASCII 数字才算数，否则视同未声明（411）。
+    declared_valid = declared is not None and declared.isascii() and declared.isdigit()
+    if request.method in {"POST", "PUT", "PATCH"} and not declared_valid:
+        return 411
+    if declared_valid and int(declared or "0") > MAX_REQUEST_BYTES:
+        return 413
+    return None
+
+
 def _authorized(request: Request, api_key: str) -> bool:
-    """常量时间比较，避免按前缀逐字符试探。"""
+    """常量时间比较，避免按前缀逐字符试探。
+
+    `hmac.compare_digest` 对含非 ASCII 字符的 str 抛 TypeError（SRE 审查 I-4），
+    会在鉴权中间件里变成一个不进任何指标日志的 500——两侧先编码成 bytes。
+    """
     header = request.headers.get("authorization", "")
     scheme, _, presented = header.partition(" ")
     if scheme.lower() != "bearer" or not presented:
         presented = request.headers.get("x-api-key", "")
     if not presented:
         return False
-    return hmac.compare_digest(presented, api_key)
+    return hmac.compare_digest(
+        presented.encode("utf-8", errors="replace"),
+        api_key.encode("utf-8", errors="replace"),
+    )
 
 
 def _mark_rejected(reason: str) -> None:
@@ -443,10 +492,15 @@ def _require_backend_matches_deployment(
     权重会让"回滚"变成一句空话。
     """
     declared_model = getattr(backend, "model_dir", None)
-    if declared_model is not None and Path(declared_model).name != expected_model.local_dir:
+    if declared_model is None:
+        # SRE 审查 I-5：不声明 pin 的后端会让全部核对 vacuous pass——工厂是
+        # 注入缝，"没说加载了什么"必须与"加载错了"同样被拒绝。
+        msg = "后端未声明 model_dir，无法核对它与发布决策加载了同一份权重"
+        raise ValueError(msg)
+    if Path(declared_model).name != expected_model.local_dir:
         msg = (
             f"后端加载的模型与发布决策不一致：期望 {expected_model.local_dir}，"
-            f"实际 {Path(declared_model).name}"
+            f"实际 {declared_model}"
         )
         raise ValueError(msg)
     declared = getattr(backend, "adapter_path", None)
