@@ -1148,3 +1148,51 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-08-27 | `--profile smoke`（GPU 0，第一次） | tc=3 训练成功、base 读数产出；candidate adapter 路径失败 |
 | 2026-08-27 | `--profile smoke`（GPU 0，第二次） | 15:38 驱动卡死，`nvidia-smi` 进入 D 状态 |
 | 2026-08-27 | 全量门禁 | 1352 passed；ruff / format / mypy(111) 全绿 |
+
+## 2026-09-04 — 踩坑与根因总账文档
+
+- 新建 `docs/PITFALLS.md`：四层根因总账（难度切分偏移 / SFT 表面触发器 / 训练方差与约束 /
+  迭代面饱和）+ 24 条踩坑清单（现象/机制/教训/出处）+ 8 条已证伪方向 + 7 条解决办法入口。
+  性质为综合与索引，不产生新读数，不替代任何唯一事实源。
+- `findings.md` 顶部加指针条目；`task_plan.md` 记录本轮任务定义。
+- 验收：pytest 1352 passed、ruff check / format --check / mypy / `git diff --check` 全绿。
+
+## 2026-09-04 — 质量收口第二轮交接文档
+
+- 新建 `docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`：
+  下一窗口执行入口。内容：Phase A–F（审计基线与高/中严重度缺陷修复、v1.3 绝对违规门
+  + 最小效应宽度、方差治理与二维迭代面、rtc 第四轮 + DPO 入口门证据包 + 一次性 v1.3
+  发布判定、宽工具面迁移分析（按简历项目质量定，用户决策）、测试补齐与收口）。
+- 用户点名要求已写入：允许 subagent、测试岗位主管标准（§6：先测试计划后实现、
+  突变验证、负例模式、阈值锁、向后兼容）、全面审计三 persona 规程（§7）、
+  七个用户决策门（§8）。
+- `task_plan.md` Current Task 更新为指向该交接文档。
+- 验收：pytest 1352 passed、ruff check / format --check / mypy / `git diff --check` 全绿。
+
+## 2026-09-04 — 质量收口第二轮（v1.3 绝对门 + 全面审计 + 测试补齐；纯 CPU）
+
+- 执行入口：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`。
+- **Phase A**：三 persona subagent 审查 + 抽查采信；5C+7I 修复（TDD + 突变验证），
+  scoped re-review 通过；findings 报告 13 条全部收口（#3 首版修复有两个真 bug——
+  `with ThreadPoolExecutor` 的 `__exit__` 仍锁死调用方、超时轨迹进 replay 崩溃——本轮重修）。
+- **Phase B**：v1.3 门禁上线（16 测试 + 4 突变）；阈值 Literal/validator 锁，release.yaml
+  未动；**B3 诊断重算 obs5/obs6 都 NO-GO（预期），落盘 v13-diagnostic-*，历史 GO 并列保留**。
+- **Phase C1/C3**：训练随机源固定（CPU）+ 可消/不可消清单；二维迭代面生成器 +
+  Oracle 自洽 + CLI 组合模式。GPU 部分待授权。
+- **Phase C4/D2/E1**：三份决策文档落盘并停等用户（评测语义提案 / DPO 入口证据包
+  （四条件判定满足）/ 宽工具面迁移分析（建议不迁移））。
+- **Phase F**：7.2 清单测试补齐 + 治理测试自修复 4 处；文档数字同步。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-04 | `.venv/bin/pytest -q` | **1435 passed**（作者环境） |
+| 2026-09-04 | 干净 clone 实跑（无私有数据） | **1397 passed / 38 skipped / 0 failed** |
+| 2026-09-04 | ruff check / format --check / mypy | 全绿（mypy 113 源文件） |
+| 2026-09-04 | `uv lock --check` / `git diff --check` | 通过 |
+| 2026-09-04 | `scripts/ci/verify_qualification_chain.py` | 通过（决策与内容哈希与冻结期望一致） |
+| 2026-09-04 | `scripts/ci/audit_public_release.py` | 通过（6 项，541 文件） |
+| 2026-09-04 | 突变验证 | 超时包装/replay 过滤/正式报告自哈希/v1.3 两门/阈值锁/交叉面措辞 全部红→绿 |
+
+**停等用户决策的清单**：v1.3 阈值冻结（#1）；gpu-5090 恢复方式（#2）；max_steps/reason
+评测语义（#3）；DPO 启动（#4，入口条件已满足）；宽工具面迁移（#6，建议不迁移）；
+每条 GPU/商业 API 命令（#7）。本轮未消耗 GPU / 商业 API / 封存观测。

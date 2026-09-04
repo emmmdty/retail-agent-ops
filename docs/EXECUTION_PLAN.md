@@ -438,3 +438,38 @@
 - **不解释「为什么是 −14 而不是 −10」**：两点训练行数相同（各 8 行），
   行数不是唯一解释，本轮没有能分离机制的实验，不写猜测。
 - **不把「同源措辞高估收益」的机制归因写成结论**：只做了一次实验。
+
+---
+
+## 质量收口第二轮（2026-09-04，纯 CPU 部分；执行入口 `docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`）
+
+**状态**：Phase A/B/C（CPU 部分）/C4/D2/E1/F 全部执行完毕；C2/D1/D3/D4/E2 等 GPU 与
+决策门项备料后停下（见各文档的决策门）。
+
+- **Phase A（审计基线）**：三 persona subagent 全面审查（评测基建 / SRE / 对抗）+
+  逐条抽查采信；5 Critical + 7 Important 修复（全部 TDD + 突变验证），修复后 scoped
+  re-review 通过（无 C/I 遗留，3 Minor 已修 2 记 1）。findings.md 有逐项归宿表。
+  findings 报告 13 条的高/中项全部收口（#3 的首版修复本身有两个真 bug，本轮重修）。
+- **Phase B（v1.3 门禁）**：`GATE_IDS_V1_3 = v1.2 + policy_violation_count_max(0) +
+  success_delta_ci_lower_min(+0.02)`；阈值以 ReleasePolicyConfig 的 Literal/validator
+  类型锁钉死，release.yaml 文件未动（bundle_sha256 不变）。16 条测试 + 4 处突变验证。
+  **阈值数值（0 / +0.02）已于 2026-09-04 经用户确认冻结（决策门 #1 关闭）。**
+- **Phase B3（诊断性重算）**：sft-008 合并形态在 v1.3 口径下观测 5 与观测 6 都是
+  **NO-GO**（违规 2/7 > 0 被绝对门拦下；观测 6 的 +0.0083 < +0.02 被宽度门拦下）。
+  落盘 `reports/retail_ops/v1/r6/v13-diagnostic-obs5|obs6`；历史 GO 保持原样，两套
+  判定并列。这是绝对门生效的证据，不是失败；真正的 v1.3 发布判定在 D4 一次性进行。
+- **Phase C1（方差治理，CPU 部分）**：`configure_training_determinism` 固定可消随机
+  源并写 provenance；bitsandbytes 原子操作不可消已诚实记录。**C2 GPU 双跑验证待
+  决策门 #2。**
+- **Phase C3（二维迭代面，CPU 部分）**：探针 × 措辞池交叉面生成器 + Oracle 自洽 +
+  CLI 组合模式；GPU 评测读数另需授权。
+- **Phase C4/D2/E1**：三份提案/证据包/分析文档落盘（`docs/PROPOSAL_EVAL_SEMANTICS_C4.md`、
+  `docs/DPO_ENTRY_EVIDENCE_D2.md`、`docs/TOOLFACE_MIGRATION_ANALYSIS_E1.md`），
+  **全部停等用户决策**；DPO 四项入口条件判定为已满足（见 D2 文档）。
+- **Phase F（测试补齐与治理）**：按 7.2 清单补齐 runner/parser/metrics/schema/环境/
+  边界测试；治理测试自身 4 处缺陷修复（收集护栏、台账值巧合依赖、任意阈值、黄金锚
+  说明）；测试数 1352 → **1435**，文档同步（README/CLAUDE/RESUME_EVIDENCE）。
+- **验收**：作者环境 `pytest` 1435 passed、ruff check / format --check / mypy(113) /
+  `uv lock --check` / `git diff --check` / qualification chain / audit 全绿；
+  干净 clone 实跑 **1397 passed / 38 skipped / 0 failed**（2026-09-04）。
+- **未消耗**：GPU、商业 API、封存 holdout 观测（诊断性重算只复算既有证据）。

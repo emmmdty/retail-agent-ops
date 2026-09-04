@@ -6,6 +6,65 @@
 R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.md` 为准，
 历史任务摘要在 `progress.md`。
 
+## Current Task: 质量收口第二轮——v1.3 绝对门 + 方差治理 + 全面审计（2026-09-04 开始）
+
+**输入**：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`（用户已批准）。
+**输出**：Phase A–F 中纯 CPU 可完成项；GPU/API/决策门项备料后停。
+**非目标**：不重试 PITFALLS §三 8 条已证伪方向；不改 v1/v2 冻结契约；
+不为了让数字好看改任务、关守卫或挑读数；不改写历史文档（append-only）。
+
+### 执行顺序与状态（2026-09-04 收口）
+
+- [x] **Phase A2**：findings 高/中严重度残余项 TDD 修复（#3 首版修复有两个真 bug：
+      `__exit__` 仍锁死调用方、超时轨迹进 replay 崩溃——重修为 daemon 线程 + 共享
+      后端锁 + replay 过滤；#5 一致性校验）；低严重度项归宿表入 findings.md。
+- [x] **Phase A1**：三 persona subagent code review + 逐条抽查采信；5C+7I 修复
+      （全部 TDD + 突变验证）；scoped re-review 通过（3 Minor：2 修 1 记）。
+- [x] **Phase B**：v1.3 门禁 TDD（16 条测试 + 4 处突变验证）；阈值 Literal/validator 锁，
+      release.yaml 未动；**阈值（0 / +0.02）已于 2026-09-04 经用户确认冻结**。
+- [x] **Phase B3**：v1.3 诊断性重算落盘（obs5/obs6 都 NO-GO，符合预期）；历史 GO 并列保留。
+- [x] **Phase C1（CPU 部分）**：`configure_training_determinism` + 可消/不可消清单；
+      **C2 GPU 双跑验证待决策门 #2**。
+- [x] **Phase C3（CPU 部分）**：二维迭代面生成器 + Oracle 自洽 + CLI 组合模式；
+      **GPU 评测读数另需授权**。
+- [x] **Phase C4**：`docs/PROPOSAL_EVAL_SEMANTICS_C4.md`（缓议建议）→ **停**。
+- [x] **Phase D2**：`docs/DPO_ENTRY_EVIDENCE_D2.md`（四项入口条件判定满足）→ **停**。
+- [x] **Phase E1**：`docs/TOOLFACE_MIGRATION_ANALYSIS_E1.md`（建议不迁移）→ **停**。
+- [x] **Phase F1**：7.2 清单测试补齐 + 治理测试自身 4 处缺陷修复。
+- [x] **Phase F2/F3**：治理同步（README/CLAUDE/RESUME_EVIDENCE，1435/1397+38）+
+      progress/EXECUTION_PLAN/PROJECT_LOG(LOG-20260904-01) 收口；全量门禁全绿。
+- [ ] **Phase D1（rtc 第四轮）/ D3（DPO 训练）/ D4（一次性 v1.3 发布判定）/ E2（退化
+      曲线重跑）**：全部需要 GPU / 商业 API / 用户决策门，本轮未执行。
+
+### 测试岗位主管计划（§6，每个功能先列四类用例）
+
+- **#3 超时**：正例=慢策略被 `_run_episode_with_timeout` 在时限内终止并产出
+  `INTERNAL_ERROR` 轨迹；反例=快策略不受影响、逐字节等于直接调用；边界=超时值
+  极小/充足；突变=去掉 timeout 参数包装，测试必须红。
+- **#5 一致性校验**：正例=config 与 manifest 版本一致时正常评测；反例=不一致时
+  `evaluate_ood` 必须抛错（种违规必须被抓到）；突变=去掉校验行，测试必须红。
+- **v1.3 门禁**：正例=违规 0 且 ci_lower ≥ +0.02 过门；反例=违规 ≥1 必 FAIL、
+  ci_lower < +0.02 必 FAIL（含 +0.0083 真实读数形状）；边界=违规恰 0、ci_lower 恰
+  等于阈值；突变=注释掉新门断言，测试红；阈值锁=改 `ReleasePolicyConfig` 字段值
+  或绕过 YAML 构造非 0/0.02 阈值必须被 Literal 拒绝；向后兼容=v1.0/1.1/1.2 的
+  GATE_IDS 逐字节断言 + 既有磁盘报告 report_id 复算。
+
+**验收命令**：`.venv/bin/pytest -q`、`.venv/bin/ruff check .`、`.venv/bin/ruff format --check .`、
+`.venv/bin/mypy`、`env -u UV_INDEX_URL -u UV_DEFAULT_INDEX uv lock --check`、`git diff --check`、
+`.venv/bin/python scripts/ci/verify_qualification_chain.py`、
+`.venv/bin/python scripts/ci/audit_public_release.py`。
+
+### 上一任务：踩坑与根因总账文档（2026-09-04，已完成）
+
+**已完成**：`docs/PITFALLS.md`（四层根因 + 24 条踩坑 + 8 条已证伪方向 + 解决办法入口）、
+`findings.md` 指针条目、面试官视角审查与可解性分析（对话内，要点已收进 PITFALLS §四）。
+
+**下一窗口执行入口**：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`
+——v1.3 绝对门 + 最小效应宽度、方差治理、二维迭代面、rtc 第四轮、DPO 入口门证据包、
+一次性 v1.3 发布判定、宽工具面迁移分析（按简历项目质量定，用户决策）、全面审计
+（三 persona subagent）与测试补齐（测试岗位主管标准）。允许 subagent；决策门与
+GPU 协议见该文档 §4/§8。
+
 ## Current Phase
 
 **R10 推到 8.5+ 已完成**（2026-08-24），但**第 3 项已于 2026-08-27 作废**。

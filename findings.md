@@ -1,3 +1,196 @@
+# Findings
+
+## 2026-09-04 — Phase C1：训练随机源固定（CPU 实现，GPU 验证待用户授权）
+
+- `training/sft.py` 新增 `configure_training_determinism(torch, seed)`：在模型/优化器
+  初始化**之前**固定可消随机源（cuBLAS 工作区 `:4096:8`、torch/python/numpy 种子、
+  cuDNN deterministic=True + benchmark=False、`use_deterministic_algorithms(True, warn_only=True)`），
+  并把 provenance 写进 `metrics.json` 的 `determinism` 字段。
+- **可消**：cuBLAS 工作区、LoRA 初始化与 dropout 消费的全局 RNG、cuDNN 算法选择。
+- **不可消（诚实记录）**：bitsandbytes NF4/`paged_adamw_8bit` 内核的 atomicAdd 归约
+  （无确定性替代实现，warn_only 放行并留痕）；跨 GPU 型号/驱动的逐位复现。
+- 测试 3 条（fake torch 注入；torch 不在 CPU venv，源码结构断言锁调用次序）。
+- **C2（同 seed 双跑 adapter SHA-256 对比）需要 GPU，属决策门 #2，本轮未执行。**
+
+## 2026-09-04 — Phase C3：二维迭代面生成器（CPU，探针 × 措辞池）
+
+- 新模块 `retail_ops/domain/policy_boundary_phrasing_tasks.py`：任务**就是**
+  `build_policy_boundary_tasks` 的产物（状态/gold/kind 逐字节相同），只换
+  `user_request`（措辞池 `paraphrases_for_task` 确定性选取）与 `task_id`，
+  metadata 携带 `phrasing_id`/`phrasing_partition`/`probe_task_id` 做归因。
+- `ood_manifests` 登记新 dataset_version `retail_ops_policy_boundary_phrasing_v1_20260904`
+  并开放组合模式（boundary=true + 交叉面措辞池）；既有互斥对 v2/v4 保持；
+  scoped re-review Minor-1 修复后，交叉面版本号在 boundary=false 路径被显式拒绝
+  （素材↔版本号双射不破）。
+- 装置自洽：Oracle 全解 120 条零违规（措辞变化不破坏 gold 可解性）；确定性复验。
+- **GPU 评测读数属另一次授权**；分片纪律沿用 OOD v2（train_aug 不得当评测面）。
+
+## 2026-09-04 — Phase F1：测试补齐（7.2 清单）与治理测试自修复
+
+按优先级补齐（每条都有失败先行或现状锁定说明）：
+- §1.1 runner：FINAL_RESPONSE 非成功终止分支、自定义 system_prompt 进 messages、
+  parse_error 不触达 guardrail 的隐含契约、user_simulator 的 `_known_order_id`/
+  `clarification_metadata`（§1.7）；
+- §1.2 parser：空响应、Pydantic 校验失败；**发现并记录**：`ToolCall.arguments` 有
+  默认 `{}`（缺 arguments 合法）——显式写入测试；
+- §1.3/§1.4 metrics：`split_headline_and_diagnostic`（DIAGNOSTIC_METRICS 只含
+  verifier_reward）、bootstrap 全 True/全 False/对撞结局、全零步轨迹批、verifier
+  三分量函数与 breakdown 同源；
+- §1.5 schema：`validate_json_value`（非 JSON 类型/非字符串 key/NaN/Inf）、
+  StrictModel 的 extra=forbid 与 allow_inf_nan（作用于 float 字段）；
+- §1.8 环境：v4 的 CANCEL_ELIGIBLE/REFUND_THEN_CANCEL 环境层 Oracle 全解、
+  同 idempotency_key 重放（v2 bundle schema 才接受该参数——v1/v3/v4 为严格双参数）；
+- §2.2 边界：max_steps=1、max_steps=0 被 schema 拒绝、连续 unknown_tool、嵌套
+  arguments；
+- §3 治理测试自身：`_collected_test_count` 加收集失败护栏（不再把 import 错误误报成
+  文档数字不符）；`_MUST_BE_ALLOWED` 语料跳过含当前台账值的句子（消除「当前值恰好
+  不是 3」的巧合依赖，并断言跳过后仍有检验力）；故障矩阵 `>=20` 改为**每类故障
+  小节至少引用 1 个真实测试**的结构绑定；e2e 硬编码值保留并写明「黄金锚」定位
+  （环境有意变更时 consciously 更新）。
+- 服务层 7.2 缺口（401/episode_timeout/空任务列表）经核实**已被前几轮修复覆盖**
+  （test_retail_ops_service_layer:315 超时测试存在；manifest task_count ge=1 使空
+  任务集不可达），本轮补普通 401 进指标的回归锚。
+
+## 2026-09-04 — Phase A1 收尾：scoped re-review 结论
+
+修复后复审（subagent + 主窗口 6 组独立突变复现，全部被杀）：**10 项修复全部通过，
+无 Critical/Important 遗留**。3 个 Minor 的归宿：
+1. 交叉面 dataset_version 在 boundary=false 路径可冒用 → **已修**（显式拒绝 + 测试）；
+2. content-length 非 ASCII 数字使 int() 抛 ValueError → **已修**（非 ASCII 视同未
+   声明 → 411 + 测试）；HTTP/2 可省略 content-length 的边界记录在案（当前服务是
+   HTTP/1.1）；
+3. backend_lock 是批内局部锁（跨批无串行化）→ **记录不修**：当前 CLI 单批用法不
+   触发；同进程多批是未来场景，届时应把锁提升为 runner 级单例。
+
+---
+
+## 2026-09-04 — Phase B：v1.3 门禁上线与诊断性重算
+
+### B1/B2 实现（TDD，`tests/test_release_gate_v13.py` 16 条）
+
+- `GATE_IDS_V1_3 = (*GATE_IDS_V1_2, "policy_violation_count_max", "success_delta_ci_lower_min")`；
+  v1.0/v1.1/v1.2 的 `GATE_IDS` 逐字节不动（既有测试锁定），磁盘上 11+ 份 formal 报告
+  与 4 份 qualification 报告在 v1.3 代码上仍可加载，13 份 sealed 证据 report_id 复算不变。
+- 两个新阈值以 `ReleasePolicyConfig` 的 `Literal[0]` / `Literal[0.02]` 类型锁钉死
+  （沿用 `invalid_call_count_max` 模式）；**`domains/retail_ops/v1/release.yaml` 一个字节未动**
+  （`bundle_sha256` 不变，既有证据配对前提保持），既有阈值锁测试继续成立。
+  突变验证 4 处全红：Literal 放宽、门禁集合删门、违规门恒过、CI 宽度门退化为 ≥0。
+- CI 下界由 `_core_gates` 单次计算、两个 CI 门禁逐位同源（重构不改变 v1.1 输出）。
+- `decide_formal_release` 支持 v1.3 + OOD 证据；`_load_ood_evidence` 接受 1.2/1.3。
+- **阈值数值（0 / +0.02）已于 2026-09-04 经用户确认冻结**（决策门 #1 关闭）。
+
+### B3 诊断性重算（落盘 `reports/retail_ops/v1/r6/v13-diagnostic-obs5|obs6`）
+
+当前候选 `sft-008`（合并部署形态）在 v1.3 口径下**两次观测都 NO-GO**——
+这是绝对门生效的证据，不是失败；历史 GO（v1.0/v1.1 口径）保持原样不改写，两套判定并列：
+
+| 观测 | 历史 v1.0/v1.1 判定 | v1.3 重算 | 被拦下的门 |
+|---|---|---|---|
+| 观测 5（原候选） | GO / candidate（ci_lower +0.0583） | **NO-GO** | `policy_violation_count_max`：违规 2 > 0 |
+| 观测 6（重建候选） | GO / candidate（ci_lower **+0.0083**） | **NO-GO** | `policy_violation_count_max`：违规 7 > 0；`success_delta_ci_lower_min`：+0.0083 < +0.02（该次私有轨迹不在本机，报告按 fail-closed 落盘；宽度不足的结论以台账冻结读数 +0.0083 为准） |
+
+附注：obs5 的配对轨迹哈希与 sealed 报告锚定值逐字核对通过（对抗审查 C-3 修复在真实数据上的首次验证）。
+**本次重算是诊断，不消耗封存观测；真正的 v1.3 发布判定在 Phase D4 一次性进行。**
+
+---
+
+## 2026-09-04 — Phase A1：三 persona 全面 code review（评测基建 / SRE / 对抗审查）
+
+三个独立 subagent persona 对 `src/veritool_rl/`、`scripts/`、`configs/`、`.github/workflows/`、
+`tests/` 抽样做了书面审查；全部 Critical/Important 声称经主窗口逐条抽查复现后才采信。
+共 5 Critical + 9 Important + 若干 Minor；**5C + 7I 已修复**（全部 TDD：先红后绿 + 突变验证），
+2I + Minor 记录归宿。
+
+### 已修复（Critical）
+
+| # | persona | 问题 | 修复 |
+|---|---|---|---|
+| C-1 | SRE/对抗 | **FormalReleaseReport 无自哈希**——真正驱动 serve 部署的通道上，手工把 NO-GO 翻成 GO 可通过全部校验（类 docstring 声称有自哈希但实现缺失）；R1 通道的 ReleaseReport 有防护而正式通道没有 | 加 `report_id` 全字段自哈希 + `load_formal_release_report` 复算比对（旧报告 None 放行）；篡改/legacy/正例三测试，突变验证红 |
+| C-2 | SRE/对抗 | **v1.2 OOD 门禁对残缺 base 证据 fail-open**：`.get("task_success", 0.0)` 把残缺 base 读成 0，`ood_success_delta_min` 恒通过，真实 delta 为负的候选可被洗成 GO | `_ood_gates` 对缺键/越界值判 FAIL（`invalid_ood_evidence`）；`_load_ood_evidence` 加载期校验必需键与 [0,1]；`decide_formal_release` 不再把越界值拷进报告字段 |
+| C-1′ | 评测基建 | **episode 超时的僵尸线程与后续 episode 并发共享同一后端**：并发生成污染后续 `latency_ms`（发布门禁项）与显存峰值且无标记；serve 路径有信号量串行化而评测路径没有 | `episode_timeout` 增加 `backend_lock`（批内共享，僵尸持锁到自然结束，后续 episode 等待计入各自超时窗）；三条评测路径 + toolcount_eval 全部接入；测试编码「一个挂起毒化余下批次但整批照常返回、污染读数全部丢弃」的诚实语义 |
+
+### 已修复（Important）
+
+| # | persona | 问题 | 修复 |
+|---|---|---|---|
+| I-1′ | 评测基建 | `_failure_type` 把超时（INTERNAL_ERROR）归为 `verifier_failure`，基础设施失败混进模型失败 taxonomy（episode_timeout 的 docstring 承诺从未兑现） | 新增 `infrastructure_error` 分类；全超时批 `failure_type_distribution` 有测试 |
+| I-2′ | 评测基建 | 全超时批 `compute_metrics` 抛 ZeroDivisionError（`format_error_rate` 无零分母守卫，唯一漏网的一行）——GPU 跑完全批后连 fail-closed 证据都拿不到 | 零分母守卫；回归测试 |
+| I-3′ | 评测基建 | sealed 路径不传 `config.episode_timeout`，配置值被静默忽略（唯一产出 GO/NO-GO 的路径落回默认 30.0） | 传入 `config.episode_timeout` |
+| I-4′ | 评测基建 | toolcount_eval 只兜异常兜不住挂起——findings #3 的「一步卡死锁死整批」在这条路径原样存在 | 改用 `run_episode_with_timeout` + 批内后端锁；超时记 `infrastructure_error="episode_timeout"` |
+| I-2a | SRE | CLI `_paired_outcomes` 的守卫只硬编码 v1.1，放过同样需要配对证据的 v1.2 | 从 `GATE_IDS_BY_SCHEMA` 结构化推导（含 `success_delta_ci_lower` 的口径都需要），v1.3 自动覆盖 |
+| I-3a | SRE | serve 的 episode 延迟指标**结构性恒为 0**：`_finish` 在路由体内读 `duration_ms`，而它在 observe 的 finally（call_next 返回后）才写入 | `_run_guarded` 内独立计时写 `episode_ms`；测试断言分位数 > 0 |
+| I-4a | SRE | 未处理异常完全绕过请求指标与结构化日志；非 ASCII key 在 `hmac.compare_digest` 抛 TypeError → 不进任何日志的 500 | observe 增加 except 分支记录后重抛；`_authorized` 两侧先编码 bytes |
+| I-5a | SRE | `_require_backend_matches_deployment` 对不声明 `model_dir` 的后端整体 vacuous pass——注入一个什么都不说的后端可绕过模型/adapter 核对 | 缺声明即 ValueError；测试 fake 同步收紧 |
+| I-7a | SRE | 请求大小上限只查 content-length 头，chunked 传输绕过（整个 body 进内存后才被拒） | 带体方法无 content-length 一律 411（`_request_body_verdict` 可单测） |
+| I-3a′ | 对抗 | **公开审计的 holdout 真值键名与真实 schema 对不上**：只认 `expected_final_state` 等四个不存在的键，`git add -f` 一份 holdout.jsonl（真实键 `initial_state`/`target_state`/`expected_calls`）六项审计全绿；`.jsonl` 后缀根本不在扫描范围 | 键表补真实 schema 字段；`STRUCTURED_SUFFIXES` 加 `.jsonl`；legacy 前缀豁免与相邻审计对齐；种违规测试（真实键名 JSONL 必须被抓到） |
+
+### 对抗 C-3（Critical）：配对轨迹文件锚定
+
+`_run_formal_release` 现在核对 `--*_trajectories` 文件的 SHA-256 与 sealed 报告
+`private_artifact_sha256["trajectories.jsonl"]` 锚定值：不一致即拒绝。修复前该锚在
+release 路径**零消费**——攻击者可摆一份边际一致（`_paired_ci_gate` 只校验边际）、
+联合分布被操纵（成功任务摆在最大重叠 task_id 上）的逐任务证据把 CI 下界洗正。
+
+### 治理测试修复（对抗 I-1 的可落地半边）
+
+`test_release_configs_declare_their_gate_schema_version` 的允许集从硬编码
+`{"1.0", "1.1"}` 改为从 `GATE_IDS_BY_SCHEMA` 结构化推导——原集合会**阻止 v1.2/v1.3
+配置落地**（提交用最新最严口径的配置反而让 CI 红）。
+**「新发布必须用最新 gate schema」的选购限制是政策决定，记入用户决策清单**（与
+v1.3 上线一并决定），未单方面实现。
+
+### 记录归宿（不修或待决策）
+
+| # | persona | 问题 | 归宿 |
+|---|---|---|---|
+| I-2b | 对抗 | `SEALED_PAIRING_FIELDS` 不含 `inference_engine`/`runtime_env_sha256`——「换 venv 跑」在配对层仍无声通过（v1.2 记录了字段但配对不消费） | **待用户决策**：把两个 runtime 字段纳入配对是 pairing 语义变更，可能影响历史配对可比性；建议随 v1.3 发布判定（Phase D4）一并生效——base/candidate 两侧同引擎时零影响，且正好堵住发布判定那条路径上的洞 |
+| M-1a | SRE | `release.json`/`report.md`/`report.html` 三份产物间无一致性绑定（手改 md/html 不被发现） | 记录。serve 只读 json，部署不受影响；绑定属加固项 |
+| M-2a | SRE | `ServiceMetrics._latencies` 无界增长 | 记录。单卡服务生命周期内量级可控 |
+| M-2′ | 评测基建 | `ToolSelectionScore.accuracy` 对 `compared==0` fail-open 给 1.0，与批汇总的 0.0 反向 | 记录。改动会影响 run_v3_degradation 消费方，且该曲线读数已作废；留待重跑前统一 |
+| M-3′ | 评测基建 | `policy_violation_count` 在 core（按轨迹计数）与 toolcount（按实例计数）同名不同义 | 记录。core 侧口径是冻结契约，改名牵动证据 schema；使用处已注明 |
+| M-6′ | 评测基建 | 超时测试头部注释描述已废弃的 ThreadPoolExecutor 实现 | 已修（测试文件自身更新） |
+| M-3a | 对抗 | GO/OOD 成对检查与双语文档同步用手写文件清单（黑名单式） | 归入 Phase F1 处理 |
+
+---
+
+## 2026-09-04 — 评测脚本 Bug 审查报告修复收口（Phase A2）
+
+前置说明：报告里 4 个高/中项在 2026-08-28 的两轮修复提交（`1e00c0c`、`829bf95`）里已有
+部分实现，本轮补齐其测试证据并发现**超时修复本身还有一个真 bug**（见 #3）。
+全部修复按 TDD 执行（先红后绿 + 突变验证）。
+
+### 高/中严重度项归宿
+
+| # | 归宿 | 说明 |
+|---|---|---|
+| #3 | **修复有缺陷，本轮重修** | `829bf95` 的 `with ThreadPoolExecutor` + `future.result(timeout)` 有两个问题：(a) `Executor.__exit__` 会 `shutdown(wait=True)` 等卡死线程返回——超时后调用方**仍被阻塞整个卡死时长**（实测慢策略 6.01s，轨迹字段正确但批次照样被锁死）；(b) 超时轨迹（`steps=[]`、`final_state={}`）进入 `replay_trajectory` 抛 `ReplayMismatch`，整批崩溃。重修：抽共享 `core/agent/episode_timeout.py`（daemon 线程 + 异常重抛），两处评测路径改用；replay 求和跳过 `INTERNAL_ERROR` 轨迹，其不完整性由既有 `_evidence_complete` fail-closed 承接。测试 `tests/test_evaluation_timeout.py` 7 条（含批内单条慢记录不锁死整批的负例、快策略逐字节不变的边界、耗时上界断言）；突变两处均验证红→绿。 |
+| #1/#2 | 已修（`1e00c0c`），本轮核验 | Literal 扩到 5 个版本；CLI 以 `manifest.dataset_version` 传入 config。既有 OOD 测试套件锁定行为。 |
+| #4/#13 | 已修（`829bf95`），本轮补测试 | `descriptions.get(name, schema.description)` 回退。补 `test_perturb_schema_falls_back_to_bundle_description_for_v3_tools`（v3 全 15 工具：dict 内沿用硬编码描述、dict 外回退 bundle 描述）；突变（改回 `[]`）红→绿。 |
+| #5 | **本轮修复** | `evaluate_ood` 新增 `config.dataset_version == manifest.dataset_version` 校验，不一致抛错。负例（v1 manifest + v2 config 被拒）+ 正例（显式一致版本正常评测）；突变（删校验行）红→绿。 |
+
+### 低严重度项归宿
+
+| # | 归宿 | 理由 |
+|---|---|---|
+| #6 | **不修** | formal 路径当前没有任何调用方传 guardrail/user_simulator，重放与产出条件由「同一路径同参数」构造性保证；引入参数属 speculative change（没有调用方）。qualification 路径已正确双传且有测试。若未来 formal 启用 guardrail，必须同时改 run 与 replay 两处——这一点已在本表留档。 |
+| #7 | **本轮修复** | `_MAX_STEPS = BaseEvaluationConfig.model_fields["max_steps"].default` 单源绑定；config Literal 成为唯一改动点，数据集侧仍由 `_require_step_budget` 运行时校验。补绑定测试。 |
+| #8 | **不修** | 正式 `metrics.json` 保持 headline 精简是刻意设计：细分诊断维度（distractor/unknown/invalid）属于 `toolcount_eval.py` 的职责且已存在。两套口径含义不同是有文档的，不是缺陷；把它们合并反而稀释 headline 的可比性（v1/v2 冻结契约）。 |
+| #9 | **本轮修复** | `retail_ops_ood_v4_r9_sft003.yaml` 的两行错置注释已删，改为描述实际配置（v4 bundle + sft-003 base+adapter）。纯注释，无哈希影响。 |
+| #10 | **不修** | 与 #6 同类：OOD 路径 run 与 replay 当前都不带 guardrail，条件一致。留档同 #6。 |
+| #11 | **本轮修复** | `_run_ood_evaluate` 在精确匹配校验前拦截配置里的 `dataset_version`，报错直接说明「版本取自 manifest.json，不在配置里声明」。补测试。 |
+| #12 | **不修** | #5 校验生效后 config 侧值恒等于 manifest 侧值，`config_dataset_version` 字段没有信息量；加字段反而制造两处真相。 |
+
+---
+
+## 2026-09-04 — 最终指标根因综合分析（指针）
+
+对 R2–R10 全部评测台账、诊断文档与代码现状做了四路并行审查，把「最终指标为什么
+还不到」收敛为四层根因（难度切分偏移 / SFT 表面触发器 / 训练方差与约束 / 迭代面
+饱和），并整理 24 条踩坑、8 条已证伪方向与 7 条解决办法入口。
+**完整内容见 `docs/PITFALLS.md`**，此处不重复。
+
+---
+
 # 评测脚本 Bug 审查报告
 
 **审查范围**：`src/veritool_rl/retail_ops/evaluate/` 全部模块、`product_cli.py` 评测入口、`configs/retail_ops/evaluate/`、`scripts/run_v3_degradation.py`。
