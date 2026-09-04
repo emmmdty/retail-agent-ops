@@ -1,0 +1,7 @@
+# R9 Phase B 第四轮：dev_sft_export — 用 Oracle 为 120 条 v4r4 dev 任务导出 SFT 数据
+# （训练时换入为 eval_relpath，评测前换回 TaskSpec dev.jsonl——round4 交接坑 2）
+pipeline: dev_sft_export
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v4_20260904
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v4_20260904/dev.json
+attempt_id: dev-sft-v4-004

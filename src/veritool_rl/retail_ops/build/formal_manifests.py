@@ -60,6 +60,25 @@ _EXPECTED_PER_CATEGORY = {
     FormalSplit.DEV: 10,
     FormalSplit.HOLDOUT: 20,
 }
+
+
+def _expected_per_scenario(split: FormalSplit, dataset_version: str) -> dict[str, int]:
+    """每场景任务配额：默认冻结常量；方案甲版本（`_V4_EXTENDED_CANCEL_VERSIONS`）
+    的 train split 上 CANCEL_* 4 场景为 70（35 family × 2 variant）。"""
+    from veritool_rl.retail_ops.domain.formal_tasks import (
+        _V4_CANCEL_SCENARIOS,
+        _V4_EXTENDED_CANCEL_VERSIONS,
+    )
+
+    if split is not FormalSplit.TRAIN or dataset_version not in _V4_EXTENDED_CANCEL_VERSIONS:
+        base = _EXPECTED_PER_CATEGORY[split]
+        return {scenario.value: base for scenario in _V4_SCENARIO_ORDER}
+    return {
+        scenario.value: (70 if scenario in _V4_CANCEL_SCENARIOS else 40)
+        for scenario in _V4_SCENARIO_ORDER
+    }
+
+
 _FINGERPRINT_FIELDS = (
     "task_fingerprints",
     "family_fingerprints",
@@ -111,11 +130,13 @@ class _FormalSplitEvidence(StrictModel):
         split = FormalSplit(self.split)
         is_v4 = self.bundle_version == "4.0.0"
         scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
-        expected_per_category = _EXPECTED_PER_CATEGORY[split]
-        expected_counts = {scenario.value: expected_per_category for scenario in scenario_order}
+        expected_counts = _expected_per_scenario(split, self.dataset_version)
+        if not is_v4:
+            base = _EXPECTED_PER_CATEGORY[split]
+            expected_counts = {scenario.value: base for scenario in scenario_order}
         if self.category_counts != expected_counts:
             raise ValueError(f"{split.value} category_counts 不符合冻结配额")
-        expected_total = expected_per_category * len(scenario_order)
+        expected_total = sum(expected_counts.values())
         if self.task_count != expected_total:
             raise ValueError(f"{split.value} task_count 不符合冻结配额")
         for field in _FINGERPRINT_FIELDS:
@@ -177,14 +198,15 @@ class FormalDatasetReceipt(StrictModel):
         """Require the exact three split quotas and public file bindings."""
         is_v4 = self.bundle_version == "4.0.0"
         scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
-        expected_task_counts = {
-            split.value: count * len(scenario_order)
-            for split, count in _EXPECTED_PER_CATEGORY.items()
-        }
-        expected_category_counts = {
-            split.value: {scenario.value: count for scenario in scenario_order}
-            for split, count in _EXPECTED_PER_CATEGORY.items()
-        }
+        expected_task_counts: dict[str, int] = {}
+        expected_category_counts: dict[str, dict[str, int]] = {}
+        for split in FormalSplit:
+            per_scenario = _expected_per_scenario(split, self.dataset_version)
+            if not is_v4:
+                base = _EXPECTED_PER_CATEGORY[split]
+                per_scenario = {scenario.value: base for scenario in scenario_order}
+            expected_task_counts[split.value] = sum(per_scenario.values())
+            expected_category_counts[split.value] = per_scenario
         if self.split_task_counts != expected_task_counts:
             raise ValueError("split_task_counts 不符合冻结配额")
         if self.split_category_counts != expected_category_counts:

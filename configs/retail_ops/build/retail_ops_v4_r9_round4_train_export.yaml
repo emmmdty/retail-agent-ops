@@ -1,0 +1,19 @@
+# R9 Phase B 第四轮导出：与 train-export-v4-003 的差别只有数据集版本
+# （retail_ops_v4_20260904，方案甲把 CANCEL_* train family 20→35）与 teacher 证据
+# attempt（teacher-v4-004，mimo）。措辞增强保持不变（per_task=3，bank-v4 同一批），
+# sft_oversample 为空（rtc oversample 是已证伪方向，不得复活）。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260904
+dataset_version: retail_ops_v4_20260904
+teacher_attempt_id: teacher-v4-004
+attempt_id: train-export-v4-004
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+
+# bank_sha256 是声明的期望值：换了池子却忘了改这里，会静默产出另一份训练集。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  per_task: 3

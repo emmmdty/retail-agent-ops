@@ -1,0 +1,10 @@
+# R9 Phase B 第四轮：teacher_collect — 对 v4r4 train split 采集 teacher 轨迹
+# 全部 600 条 train 任务按任务续跑采集；本轮 teacher 为 mimo-v2.5
+# （用户 2026-09-04 指定端点；与第三轮 DeepSeek 的 provider 差异记入台账）。
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v4_20260904
+dataset_version: retail_ops_v4_20260904
+attempt_id: teacher-v4-004
+max_episodes_per_task: 2
+max_request_attempts: 3

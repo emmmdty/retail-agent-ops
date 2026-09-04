@@ -1,0 +1,7 @@
+# R9 Phase B 第四轮：formal_freeze — 生成 v4r4 正式任务集
+# 方案甲 family 覆盖（用户 2026-09-04 选项 A）：CANCEL_* 4 场景 family 池
+# 10 态 × 5 语境 = 50，train 35 / dev 5 / holdout 10；其余 8 场景 20/5/10 不变。
+# 总量 600/120/240。新 dataset_version 遵循版本↔内容双射。
+pipeline: formal_freeze
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v4_20260904
