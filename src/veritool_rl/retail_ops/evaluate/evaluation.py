@@ -368,10 +368,11 @@ def _retail_failure_type(trajectory: Trajectory) -> str:
         return "tool_selection"
     if "invalid_arguments" in error_codes:
         return "argument_schema"
+    if trajectory.termination is TerminationReason.INTERNAL_ERROR:
+        # 必须先于场景分支：恢复类任务上的超时是基础设施失败，不是 recovery_failure。
+        return "environment_error"
     if trajectory.task.scenario is TaskScenario.REFUND_RECOVERY:
         return "recovery_failure"
     if trajectory.termination is TerminationReason.STEP_LIMIT:
         return "step_limit"
-    if trajectory.termination is TerminationReason.INTERNAL_ERROR:
-        return "environment_error"
     return "verifier_failure"

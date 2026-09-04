@@ -13,14 +13,17 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from veritool_rl.core.agent.episode_timeout import run_episode_with_timeout
 from veritool_rl.core.agent.policy import OraclePolicy, Policy
 from veritool_rl.core.agent.runner import run_episode
 from veritool_rl.core.envs.base import ToolEnv
 from veritool_rl.core.trajectory import TaskSpec, Trajectory
+from veritool_rl.core.trajectory.schema import TerminationReason
 
 EnvFactory = Callable[[TaskSpec], ToolEnv]
 
@@ -190,12 +193,25 @@ def evaluate_tasks(
     tool_count: int,
     *,
     seed: int = 0,
+    episode_timeout: float = 30.0,
 ) -> tuple[BreakpointMetrics, list[EpisodeOutcome]]:
-    """跑一批 episode 并汇总。异常记为基础设施失败，不伪装成模型失败。"""
+    """跑一批 episode 并汇总。异常记为基础设施失败，不伪装成模型失败。
+
+    带超时与批内共享后端锁（findings #3 的第四条评测路径）：策略挂起不是异常，
+    `try/except` 兜不住——超时轨迹同样如实记为基础设施失败。
+    """
     outcomes: list[EpisodeOutcome] = []
+    backend_lock = threading.Lock()
     for task in tasks:
         try:
-            trajectory = run_episode(task, env_factory, policy_factory(task), seed=seed)
+            trajectory = run_episode_with_timeout(
+                task,
+                env_factory,
+                policy_factory(task),
+                seed=seed,
+                timeout=episode_timeout,
+                backend_lock=backend_lock,
+            )
         except Exception as error:  # 故意兜住并如实标记来源，不伪装成模型失败
             outcomes.append(
                 EpisodeOutcome(
@@ -205,6 +221,18 @@ def evaluate_tasks(
                     violations=[],
                     score=None,
                     infrastructure_error=f"{type(error).__name__}: {error}",
+                )
+            )
+            continue
+        if trajectory.termination is TerminationReason.INTERNAL_ERROR:
+            outcomes.append(
+                EpisodeOutcome(
+                    task_id=task.task_id,
+                    scenario=task.scenario.value,
+                    success=False,
+                    violations=[],
+                    score=None,
+                    infrastructure_error="episode_timeout",
                 )
             )
             continue

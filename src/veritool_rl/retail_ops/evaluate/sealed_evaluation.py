@@ -71,7 +71,9 @@ from veritool_rl.retail_ops.release.formal_governance import (
 # sealed 评测写出与 dev base 完全相同的四份私有产物。
 SEALED_ARTIFACT_NAMES = BASE_ARTIFACT_NAMES
 
-_MAX_STEPS = 5
+#: findings #7：与 `BaseEvaluationConfig.max_steps` 单源绑定，改步数预算只需改
+#: config 的 Literal 一处；冻结数据集那一路由 `_require_step_budget` 运行时校验。
+_MAX_STEPS = BaseEvaluationConfig.model_fields["max_steps"].default
 _SEALED_EVIDENCE_DIR = "sealed-eval"
 
 
@@ -319,7 +321,9 @@ def evaluate_authorized_holdout(
     policy = QwenPolicy(backend, _policy_id(config), config.generation.max_new_tokens)
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
-    trajectories, replayed = execute_formal_records(records, bundle, policy, receipt.seed)
+    trajectories, replayed = execute_formal_records(
+        records, bundle, policy, receipt.seed, episode_timeout=config.episode_timeout
+    )
     wall_time_seconds = time.perf_counter() - started
     measurement = hardware_provider.measure()
 

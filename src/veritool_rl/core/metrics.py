@@ -152,7 +152,11 @@ def compute_metrics(
         "invalid_output_count": format_errors,
         "invalid_call_count": invalid,
         "invalid_call_rate": invalid / attempted if attempted else 0.0,
-        "format_error_rate": format_errors / sum(len(t.steps) for t in trajectories),
+        "format_error_rate": (
+            format_errors / total_steps
+            if (total_steps := sum(len(t.steps) for t in trajectories))
+            else 0.0
+        ),
         "tool_selection_accuracy": correct_tools / tool_denominator if tool_denominator else 0.0,
         "argument_accuracy": (
             correct_arguments / argument_denominator if argument_denominator else 0.0
@@ -252,6 +256,9 @@ def _clarification_metrics(trajectories: Sequence[Trajectory]) -> dict[str, Any]
 def _failure_type(trajectory: Trajectory) -> str | None:
     if trajectory.success:
         return None
+    if trajectory.termination.value == "internal_error":
+        # 评测基础设施失败（episode 超时）不是模型失败，不得混进 verifier_failure。
+        return "infrastructure_error"
     if trajectory.violations:
         return "policy_violation"
     if any(step.parse_error is not None for step in trajectory.steps):

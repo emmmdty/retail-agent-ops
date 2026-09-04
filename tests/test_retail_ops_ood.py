@@ -275,3 +275,106 @@ def test_the_ood_evaluation_rejects_a_mismatched_bundle(
             backend_factory=lambda config, root: _OracleBackend(),
             hardware_provider=_FakeHardware(),
         )
+
+
+# ---------------------------------------------------------------------------
+# findings #5：config 与 manifest 的 dataset_version 必须一致
+# ---------------------------------------------------------------------------
+
+
+def test_the_ood_evaluation_rejects_a_config_manifest_dataset_version_mismatch(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """config 声明的数据集版本与 manifest 不一致时必须拒绝，不得静默评测。
+
+    后果（findings #5）：两份报告的 `config_sha256` 各嵌入自己的 config 版本、
+    `dataset_version` 字段取 manifest 的值——两份数据来源不同的证据在
+    `config_sha256` 维度上不可比，且这种不一致没有任何报警。
+    突变验证：删除 `evaluate_ood` 的一致性校验行，本测试必须红。
+    """
+    import veritool_rl.retail_ops.evaluate.ood_evaluation as module
+
+    monkeypatch.setattr(module, "verify_local_model_files", lambda *a, **k: None)
+
+    with pytest.raises(ValueError, match="dataset_version"):
+        evaluate_ood(
+            config=OodEvaluationConfig(
+                # manifest 实际是 OOD v1（见 workspace fixture），config 却声明 v2
+                dataset_version="retail_ops_ood_v2_20260817",
+                model=ModelArtifact(
+                    repo="Qwen/Qwen3-4B",
+                    revision="8cd0101f",
+                    local_dir="Qwen3-4B-pinned",
+                    file_sha256={"config.json": "0" * 64},
+                ),
+                generation=GenerationSettings(max_new_tokens=256),
+                code_commit="a" * 40,
+            ),
+            bundle=load_bundle(workspace / BUNDLE_REL),
+            manifest=load_ood_manifest(workspace / "ood" / "manifest.json"),
+            build_dir=workspace / "ood",
+            models_root=workspace / "models",
+            output_dir=workspace / "out3",
+            backend_factory=lambda config, root: _OracleBackend(),
+            hardware_provider=_FakeHardware(),
+        )
+
+
+def test_the_ood_evaluation_accepts_a_matching_dataset_version(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """config 显式声明与 manifest 相同的版本时正常评测——校验不得误伤合法调用。"""
+    import veritool_rl.retail_ops.evaluate.ood_evaluation as module
+
+    monkeypatch.setattr(module, "verify_local_model_files", lambda *a, **k: None)
+    manifest = load_ood_manifest(workspace / "ood" / "manifest.json")
+    tasks = load_ood_tasks(workspace / "ood")
+    backend = _OracleBackend()
+    backend.load(tasks)
+
+    evidence = evaluate_ood(
+        config=OodEvaluationConfig(
+            dataset_version=manifest.dataset_version,
+            model=ModelArtifact(
+                repo="Qwen/Qwen3-4B",
+                revision="8cd0101f",
+                local_dir="Qwen3-4B-pinned",
+                file_sha256={"config.json": "0" * 64},
+            ),
+            generation=GenerationSettings(max_new_tokens=256),
+            code_commit="a" * 40,
+        ),
+        bundle=load_bundle(workspace / BUNDLE_REL),
+        manifest=manifest,
+        build_dir=workspace / "ood",
+        models_root=workspace / "models",
+        output_dir=workspace / "out4",
+        backend_factory=lambda config, root: backend,
+        hardware_provider=_FakeHardware(),
+    )
+
+    assert evidence.dataset_version == manifest.dataset_version
+    assert evidence.task_count == manifest.task_count
+
+
+def test_ood_evaluate_config_may_not_declare_dataset_version() -> None:
+    """findings #11：在 OOD eval 配置里写 dataset_version 必须得到指路的报错。
+
+    `_require_config_keys` 的精确匹配只会说「配置字段不符合命令契约」，
+    操作者无从知道真正的规则：数据集版本由 manifest 决定。
+    """
+    from argparse import Namespace
+
+    from veritool_rl.product_cli import _run_ood_evaluate
+
+    config = {
+        "pipeline": "ood_base",
+        "bundle_dir": "domains/retail_ops/v1",
+        "models_root": "models",
+        "model": {"repo": "Qwen/Qwen3-4B"},
+        "generation": {"max_new_tokens": 256},
+        "dataset_version": "retail_ops_ood_v1_20260815",
+    }
+
+    with pytest.raises(ValueError, match="manifest"):
+        _run_ood_evaluate(Namespace(), config)

@@ -489,3 +489,22 @@ def test_sealed_evaluation_rolls_back_private_evidence_when_public_write_fails(
     assert public_report_path.read_text(encoding="utf-8") == "{}"
     assert not (formal.private_dir / "sealed-eval" / "sealed-001").exists()
     assert not list((formal.private_dir / "sealed-eval").glob(".*staging*"))
+
+
+# ---------------------------------------------------------------------------
+# findings #7：步数预算常量的单源绑定
+# ---------------------------------------------------------------------------
+
+
+def test_sealed_step_budget_is_bound_to_the_base_config_literal() -> None:
+    """`_MAX_STEPS` 必须是 `BaseEvaluationConfig.max_steps` 的默认值本身。
+
+    三处 5（config Literal、_MAX_STEPS、冻结数据集）曾经互相独立：改 config 而
+    忘改 _MAX_STEPS 时，sealed 路径会按旧预算拒收合法任务。绑定后 config 是
+    唯一改动点；数据集那一路仍由 `_require_step_budget` 运行时校验。
+    """
+    from veritool_rl.retail_ops.evaluate import sealed_evaluation
+    from veritool_rl.retail_ops.evaluate.base_evaluation import BaseEvaluationConfig
+
+    assert BaseEvaluationConfig.model_fields["max_steps"].default == sealed_evaluation._MAX_STEPS
+    assert sealed_evaluation._MAX_STEPS == 5

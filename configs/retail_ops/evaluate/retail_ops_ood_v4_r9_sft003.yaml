@@ -1,7 +1,6 @@
 # R9 Phase B sft-003 在 OOD v4（跨工具泛化，12 场景 × 10）上的评测。
 # Phase B 核心主张的正面计量：语义重叠工具选择 × 说法泛化。
-# R9 Phase B 第二轮候选（sft-002）在 OOD v2 dev 上的评测。
-# v1 bundle 任务集（3 工具），检验措辞增强修复后 phrasing 泛化是否恢复。
+# 使用 v4 bundle（5 工具 / 12 场景，domains/retail_ops/v4）与 sft-003 的 base+adapter 形态。
 pipeline: ood_candidate
 bundle_dir: domains/retail_ops/v4
 models_root: models

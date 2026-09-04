@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-import concurrent.futures
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from veritool_rl.core.agent.episode_timeout import run_episode_with_timeout
 from veritool_rl.core.agent.qwen import (
     GenerationBackend,
     GenerationSettings,
@@ -26,7 +27,7 @@ from veritool_rl.core.agent.qwen import (
     QwenPolicy,
     verify_local_model_files,
 )
-from veritool_rl.core.agent.runner import SYSTEM_PROMPT, run_episode
+from veritool_rl.core.agent.runner import SYSTEM_PROMPT
 from veritool_rl.core.artifacts import write_json
 from veritool_rl.core.metrics import compute_metrics
 from veritool_rl.core.trajectory import TaskSpec, Trajectory
@@ -44,6 +45,7 @@ from veritool_rl.retail_ops.evaluate.base_evaluation import (
     HardwareProvenance,
     ModelArtifact,
     _content_sha256,
+    _evidence_complete,
     _finalize_evidence,
     _rate,
     _require_backend_matches_pin,
@@ -72,6 +74,7 @@ class OodEvaluationConfig(StrictModel):
         "retail_ops_ood_v2_2_20260817",
         "retail_ops_policy_boundary_v1_20260819",
         "retail_ops_ood_v4_20260823",
+        "retail_ops_policy_boundary_phrasing_v1_20260904",
     ] = "retail_ops_ood_v1_20260815"
     seed: Literal[0] = 0
     model: ModelArtifact
@@ -149,6 +152,20 @@ def evaluate_ood(
     """在分布外集合上跑一次评测并写出证据。"""
     if manifest.bundle_sha256 != bundle.bundle_sha256:
         raise ValueError("OOD manifest 与 bundle SHA-256 不匹配")
+    if config.dataset_version != manifest.dataset_version:
+        # findings #5：两值不一致时，证据的 `dataset_version` 取 manifest、
+        # `config_sha256` 嵌 config 的值——同一份证据里两个版本号各说各话，
+        # 且没有任何报警。宁可拒绝也不产出不可比证据。
+        raise ValueError(
+            "OOD config 与 manifest 的 dataset_version 不一致："
+            f"config={config.dataset_version} manifest={manifest.dataset_version}"
+        )
+    if config.seed != manifest.seed:
+        # 与 dataset_version 校验同构：config 参与证据、manifest 决定运行，
+        # 两者不一致时证据会声称一个没有被执行的 seed。
+        raise ValueError(
+            f"OOD config 与 manifest 的 seed 不一致：config={config.seed} manifest={manifest.seed}"
+        )
     tasks = load_ood_tasks(build_dir)
     if len(tasks) != manifest.task_count:
         raise ValueError("OOD 任务数与 manifest 不一致")
@@ -168,6 +185,8 @@ def evaluate_ood(
 
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
+    # 批内共享的后端锁：与 execute_formal_records 同一纪律（见 episode_timeout）。
+    backend_lock = threading.Lock()
     trajectories = [
         _run_episode_with_timeout(
             task,
@@ -175,15 +194,23 @@ def evaluate_ood(
             policy,
             manifest.seed,
             config.episode_timeout,
+            backend_lock=backend_lock,
         )
         for task in tasks
     ]
     wall_time_seconds = time.perf_counter() - started
     measurement = hardware_provider.measure()
 
+    # 超时轨迹没有可重放的步骤；跳过它们并让 `evidence_complete` fail-closed
+    # （与 base_evaluation.execute_formal_records 同一契约）。
+    replayable = [
+        trajectory
+        for trajectory in trajectories
+        if trajectory.termination is not TerminationReason.INTERNAL_ERROR
+    ]
     replayed = sum(
         replay_trajectory(trajectory, lambda current: RetailOpsEnv(current, bundle)).matched
-        for trajectory in trajectories
+        for trajectory in replayable
     )
     metrics = compute_metrics(trajectories, config.bootstrap_samples, manifest.seed)
 
@@ -228,7 +255,7 @@ def evaluate_ood(
                 sorted(Counter(_ood_kind(t.task) for t in trajectories if not t.success).items())
             ),
             replayable_count=replayed,
-            evidence_complete=replayed == len(trajectories),
+            evidence_complete=_evidence_complete(trajectories, replayed),
         ),
         "run_id",
     )
@@ -243,22 +270,18 @@ def _run_episode_with_timeout(
     policy: Any,
     seed: int,
     timeout: float,
+    *,
+    backend_lock: threading.Lock | None = None,
 ) -> Trajectory:
-    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。"""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(run_episode, task, env_factory, policy, seed)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            return Trajectory(
-                task=task,
-                steps=[],
-                final_state={},
-                violations=[],
-                termination=TerminationReason.INTERNAL_ERROR,
-                success=False,
-                metadata={"infrastructure_error": "episode_timeout", "timeout_s": timeout},
-            )
+    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。
+
+    实现共用 `core.agent.episode_timeout`：daemon 线程在超时后立即放行调用方，
+    `with ThreadPoolExecutor` 版本会在 `__exit__` 里等卡死线程返回（实测被
+    `tests/test_evaluation_timeout.py` 的耗时上界断言抓到）。
+    """
+    return run_episode_with_timeout(
+        task, env_factory, policy, seed, timeout, backend_lock=backend_lock
+    )
 
 
 def _policy_id(config: OodEvaluationConfig) -> str:

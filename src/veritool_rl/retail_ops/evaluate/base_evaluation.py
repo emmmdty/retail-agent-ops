@@ -8,12 +8,12 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import hashlib
 import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -23,6 +23,7 @@ from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from veritool_rl.core.agent.episode_timeout import run_episode_with_timeout
 from veritool_rl.core.agent.policy import Policy
 from veritool_rl.core.agent.qwen import (
     GenerationBackend,
@@ -32,7 +33,7 @@ from veritool_rl.core.agent.qwen import (
     QwenPolicy,
     verify_local_model_files,
 )
-from veritool_rl.core.agent.runner import SYSTEM_PROMPT, run_episode
+from veritool_rl.core.agent.runner import SYSTEM_PROMPT
 from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, write_jsonl
 from veritool_rl.core.metrics import compute_metrics
 from veritool_rl.core.trajectory import Trajectory
@@ -476,13 +477,25 @@ def execute_formal_records(
     def env_factory(task: Any) -> RetailOpsEnv:
         return RetailOpsEnv(task, bundle)
 
+    # 批内共享的后端锁：被超时放弃的僵尸线程持锁到自然结束（见
+    # episode_timeout 模块 docstring），后续 episode 的等待计入各自超时窗口。
+    backend_lock = threading.Lock()
     trajectories = [
-        _run_episode_with_timeout(record.task, env_factory, policy, seed, episode_timeout)
+        _run_episode_with_timeout(
+            record.task, env_factory, policy, seed, episode_timeout, backend_lock=backend_lock
+        )
         for record in records
     ]
-    replayed = sum(
-        replay_trajectory(trajectory, env_factory).matched for trajectory in trajectories
-    )
+    # 超时轨迹没有可重放的步骤（steps=[]、final_state={}），直接重放会抛
+    # ReplayMismatch 使整批崩溃。它们通过 `_evidence_complete` 的
+    # `all(trajectory.steps)` 使证据不完整——发布门禁据此 fail-closed，
+    # 而不是在这里制造第二个基础设施故障。
+    replayable = [
+        trajectory
+        for trajectory in trajectories
+        if trajectory.termination is not TerminationReason.INTERNAL_ERROR
+    ]
+    replayed = sum(replay_trajectory(trajectory, env_factory).matched for trajectory in replayable)
     return trajectories, replayed
 
 
@@ -492,22 +505,18 @@ def _run_episode_with_timeout(
     policy: Policy,
     seed: int,
     timeout: float,
+    *,
+    backend_lock: threading.Lock | None = None,
 ) -> Trajectory:
-    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。"""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(run_episode, task, env_factory, policy, seed)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            return Trajectory(
-                task=task,
-                steps=[],
-                final_state={},
-                violations=[],
-                termination=TerminationReason.INTERNAL_ERROR,
-                success=False,
-                metadata={"infrastructure_error": "episode_timeout", "timeout_s": timeout},
-            )
+    """带超时的 `run_episode` 包装；超时返回 `INTERNAL_ERROR` 轨迹。
+
+    实现共用 `core.agent.episode_timeout`：daemon 线程在超时后立即放行调用方，
+    `with ThreadPoolExecutor` 版本会在 `__exit__` 里等卡死线程返回（实测被
+    `tests/test_evaluation_timeout.py` 的耗时上界断言抓到）。
+    """
+    return run_episode_with_timeout(
+        task, env_factory, policy, seed, timeout, backend_lock=backend_lock
+    )
 
 
 def publish_run_evidence(

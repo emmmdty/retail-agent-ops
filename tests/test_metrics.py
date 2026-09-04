@@ -146,3 +146,145 @@ def test_metrics_count_parse_errors_and_transient_calls() -> None:
     assert invalid_metrics["failure_type_distribution"] == {"invalid_output": 1}
     assert recovery_metrics["schema_valid_rate"] == 1.0
     assert recovery_metrics["executable_rate"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# 审计修复（评测基建 persona I-1 / I-2 / M-4）：超时是基础设施失败，不是模型失败
+# ---------------------------------------------------------------------------
+
+
+def _timeout_trajectory() -> object:
+    from veritool_rl.core.trajectory import TaskScenario, Trajectory
+    from veritool_rl.core.trajectory.schema import TaskSpec, TerminationReason
+
+    task = TaskSpec(
+        task_id="t-timeout",
+        split="dev",
+        scenario=TaskScenario.LOOKUP_STATUS,
+        user_request="查询订单。",
+        initial_state={"customer_id": "C-1", "current_day": 20, "orders": {}},
+        target_state={"customer_id": "C-1", "current_day": 20, "orders": {}},
+    )
+    return Trajectory(
+        task=task,
+        steps=[],
+        final_state={},
+        violations=[],
+        termination=TerminationReason.INTERNAL_ERROR,
+        success=False,
+        metadata={"infrastructure_error": "episode_timeout", "timeout_s": 30.0},
+    )
+
+
+def test_timeout_trajectories_are_classified_as_infrastructure_error() -> None:
+    """超时轨迹在失败 taxonomy 里必须与模型失败分开（episode_timeout 的承诺）。"""
+    from veritool_rl.core.metrics import _failure_type
+
+    assert _failure_type(_timeout_trajectory()) == "infrastructure_error"
+
+
+def test_compute_metrics_survives_an_all_timeout_batch() -> None:
+    """全超时批不得让 compute_metrics 崩溃——证据必须能带着 fail-closed 落盘。"""
+    from veritool_rl.core.metrics import compute_metrics
+
+    trajectory = _timeout_trajectory()
+    metrics = compute_metrics([trajectory, trajectory], bootstrap_samples=10, seed=0)
+
+    assert metrics["task_success"] == 0.0
+    assert metrics["format_error_rate"] == 0.0
+    assert metrics["failure_type_distribution"] == {"infrastructure_error": 2}
+
+
+# ---------------------------------------------------------------------------
+# F1 测试补齐（7.2 清单 §1.3 / §1.4）
+# ---------------------------------------------------------------------------
+
+
+def test_split_headline_and_diagnostic_separates_verifier_reward() -> None:
+    """`split_headline_and_diagnostic` 从未被测过：verifier_reward 只能出现在诊断侧。"""
+    from veritool_rl.core.metrics import DIAGNOSTIC_METRICS, split_headline_and_diagnostic
+
+    metrics = {
+        "task_success": 0.9,
+        "policy_violation_count": 0,
+        "verifier_reward": 0.7,
+        "milestone": 0.8,
+    }
+    headline, diagnostic = split_headline_and_diagnostic(metrics)
+
+    # DIAGNOSTIC_METRICS 只含 verifier_reward；milestone 留在 headline 侧
+    assert headline == {"task_success": 0.9, "policy_violation_count": 0, "milestone": 0.8}
+    assert diagnostic == {"verifier_reward": 0.7}
+    assert "verifier_reward" in DIAGNOSTIC_METRICS
+    assert "milestone" not in DIAGNOSTIC_METRICS
+    # 无损：两侧合并还原输入
+    assert {**headline, **diagnostic} == metrics
+
+
+def test_paired_bootstrap_handles_degenerate_and_balanced_outcomes() -> None:
+    """全 True / 全 False / 一半一半三种配对结局的 CI 行为。"""
+    from veritool_rl.core.metrics import paired_bootstrap_delta_ci95
+
+    identical_true = [(True, True)] * 50
+    low, high = paired_bootstrap_delta_ci95(identical_true)
+    assert low == 0.0 and high == 0.0  # 无差异对的 delta 恒 0
+
+    identical_false = [(False, False)] * 50
+    low, high = paired_bootstrap_delta_ci95(identical_false)
+    assert low == 0.0 and high == 0.0
+
+    balanced = [(i % 2 == 0, i % 2 == 1) for i in range(50)]
+    low, high = paired_bootstrap_delta_ci95(balanced)
+    assert low < 0 < high, "完全对撞的结局应当给出跨 0 的区间"
+
+
+def test_all_zero_step_trajectories_produce_defined_metrics() -> None:
+    """零步（超时）轨迹批：除 format_error_rate 外的其余比率也必须有定义。"""
+    from veritool_rl.core.metrics import compute_metrics
+
+    trajectory = _timeout_trajectory()
+    metrics = compute_metrics([trajectory], bootstrap_samples=10, seed=0)
+
+    for key in (
+        "schema_valid_rate",
+        "executable_rate",
+        "invalid_call_rate",
+        "tool_selection_accuracy",
+        "argument_accuracy",
+        "task_success",
+    ):
+        assert key in metrics, key
+        value = metrics[key]
+        assert isinstance(value, (int, float)) and 0.0 <= value <= 1.0, (key, value)
+
+
+def test_verifier_component_functions_agree_with_the_breakdown() -> None:
+    """7.2 §1.4：三个分量函数与 `compute_reward_breakdown` 必须同源一致。"""
+    from pathlib import Path
+
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.rewards.verifier import (
+        final_state_reward,
+        milestone_reward,
+        policy_reward,
+    )
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        t
+        for t in build_qualification_tasks(seed=0)
+        if t.scenario is TaskScenario.REFUND_DENIED_WINDOW
+    )
+    trajectory = run_episode(
+        task, lambda current: RetailOpsEnv(current, bundle), OraclePolicy(task), 0
+    )
+    env = RetailOpsEnv(task, bundle)
+
+    assert final_state_reward(env, trajectory) == env.verify_final_state()
+    assert policy_reward(env, trajectory) == (-1.0 if env.check_policy() else 0.0)
+    assert milestone_reward(env, trajectory) == env.verify_milestone()
