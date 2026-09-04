@@ -1,5 +1,25 @@
 # Findings
 
+## 2026-09-04 — Phase C2：同 seed 双跑实测——仍不逐位复现，方差已量化（gpu-5090）
+
+- **设置**：sft-008 的训练配置（`retail_ops_v1_r6b_no_oversample_sft.yaml`，960 行 /
+  180 步）同 seed（0）连跑两次（`reports/retail_ops/v1/r6/sft-008-determinism-{a,b}`），
+  C1 的 `configure_training_determinism` 在两次里都以同一份 provenance 生效
+  （两次 `metrics.json` 的 `determinism` 字段逐字段相同）。
+- **判读（跑前写定，交接 §4 第 1 步）**：SHA-256 不同 → 分支 2。实测
+  `adapter_model.safetensors` 哈希 `c7e7f765…` vs `4f4a4223…`。
+- **方差量化**：180 个 loss 点上 mean |Δloss| = 7.4e-4、max |Δloss| = 2.8e-3；
+  两条 eval_loss 曲线从第 2 次评估起分叉（0.1437 vs 0.1489，终值 0.1410 vs 0.1500）；
+  adapter 权重 mean |Δw| = 2.96e-4。train_loss 终值 0.0407 vs 0.0401。
+- **归因**：`determinism.provenance` 声明为不可消的 bitsandbytes NF4 /
+  `paged_adamw_8bit` 内核 atomicAdd 归约（warn_only=True 放行并留痕）。
+  C1 治理收窄了方差但按设计不能消除它。
+- **表述治理**：`AGENTS.md`/`RESUME_EVIDENCE.md` 的「同 seed 逐位不同」从无边界表述
+  收紧为「**C1 治理后、本配置 + 本卡（RTX 5090 / torch 2.13.0+cu130 / bitsandbytes 0.49.2）
+  实测仍不逐位复现，loss 方差 mean 7.4e-4 / max 2.8e-3**」。dev「58–60/60」区间表述不变。
+- 逐位复现不成立 → 按交接判读规则**不追加** PROJECT_LOG（方法论级结论未变更）。
+- 成本：两次训练 ~20.5 min GPU，零 API 费用。
+
 ## 2026-09-04 — Phase C1：训练随机源固定（CPU 实现，GPU 验证待用户授权）
 
 - `training/sft.py` 新增 `configure_training_determinism(torch, seed)`：在模型/优化器

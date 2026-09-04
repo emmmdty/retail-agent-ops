@@ -305,3 +305,28 @@ qualification 链路）都能做到逐字节复现，这一条是例外，必须
 于是把两次重建的私有产物同步到本地，完整跑了一遍：两份公开报告与远端 SHA-256 逐位一致
 （`83cb55c4…` / `10ae05f6…`）、两份 `run_id` 自哈希复算通过（`434ed72b…` / `8308481d…`）、
 `verify_artifacts=True` 各校验 4 个产物、篡改 `trajectories.jsonl` 最后一个字节被拒。
+
+## 追加（2026-09-04）：C2 同 seed 双跑——随机源固定后仍不逐位复现，方差已量化
+
+第一轮的「同 seed 逐位不同」是在**没有随机源治理**的代码上测的（训练代码
+`c466b64`，2026-08-09）。质量收口第二轮的 Phase C1 加了
+`configure_training_determinism`（cuBLAS 工作区、全局 RNG、cuDNN、
+`use_deterministic_algorithms(warn_only=True)`），C2 用 **sft-008 的训练配置**
+（`retail_ops_v1_r6b_no_oversample_sft.yaml`，960 行 / 180 步，seed 0）在 gpu-5090
+（RTX 5090 / torch 2.13.0+cu130 / bitsandbytes 0.49.2）连跑两次做实测：
+
+| 运行 | `adapter_model.safetensors` SHA-256 | train_loss（终值） | eval_loss（末次） |
+|---|---|---|---|
+| determinism-a | `c7e7f765…` | 0.0407 | 0.1410 |
+| determinism-b | `4f4a4223…` | 0.0401 | 0.1500 |
+
+- **判读（跑前写定于交接 §4 第 1 步）**：SHA-256 不同 → 仍不逐位复现。
+- **方差量化**：180 个 loss 点 mean |Δloss| = 7.4e-4、max = 2.8e-3；
+  adapter 权重 mean |Δw| = 2.96e-4；eval_loss 从第 2 次评估起分叉
+  （0.1437 vs 0.1489）。
+- **归因**：两次运行的 `determinism` provenance 逐字段相同——全部可消随机源都已
+  钉死；差异只能来自 provenance 里声明为不可消的 bitsandbytes NF4 /
+  `paged_adamw_8bit` 内核 atomicAdd 归约（无确定性替代实现，warn_only 放行并留痕）。
+- **结论边界**：第一轮那句「训练是本项目唯一不能逐位复现的环节」**仍然成立**，
+  但从「无边界观察」升级为「**在随机源治理下、指定配置/卡/驱动/库版本上实测仍不
+  复现，且差异被量化到 loss mean 7.4e-4 的量级**」。dev「58–60/60」的区间表述不变。

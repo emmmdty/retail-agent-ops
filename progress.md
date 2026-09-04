@@ -1196,3 +1196,31 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 **停等用户决策的清单**：v1.3 阈值冻结（#1）；gpu-5090 恢复方式（#2）；max_steps/reason
 评测语义（#3）；DPO 启动（#4，入口条件已满足）；宽工具面迁移（#6，建议不迁移）；
 每条 GPU/商业 API 命令（#7）。本轮未消耗 GPU / 商业 API / 封存观测。
+
+## 2026-09-04 — GPU 执行阶段第 0/1 步：环境准备 + C2 方差验证（gpu-5090）
+
+- 执行入口：`docs/handoffs/2026-09-04-gpu-phase-c2-d1-e2-d4-execution-prompt.md`（用户已批准）。
+- **第 0 步**：本地全量门禁全绿（1435 passed）并推送 origin（`88ccabb..3b993c5`）；
+  远端 ff-only 同步到 `3b993c59`，已跟踪文件零改动；驱动正常（GPU 0 约 20 GB 空闲）；
+  远端 venv 用 `uv sync --frozen --extra dev --extra train` 校齐；mimo provider 块写入
+  本地与远端 `.env`（密钥不进仓库），1 次最小连通性 smoke（361 tokens）验证 mimo-v2.5
+  可用；本地预检：107 条测试 + smoke/full preflight 5 断点全过。
+- **第 1 步（C2）**：sft-008 训练配置同 seed（0）双跑（determinism-a/b），provenance
+  逐字段一致。**判读 = 分支 2（不逐位复现）**：adapter SHA-256 `c7e7f765…` vs
+  `4f4a4223…`；loss 方差 mean 7.4e-4 / max 2.8e-3（180 点）；adapter 权重 mean |Δw|
+  2.96e-4；归因 `determinism.provenance` 声明不可消的 bitsandbytes 原子操作。
+  表述治理：AGENTS.md / RESUME_EVIDENCE.md 的「同 seed 逐位不同」收紧为带边界与
+  量化方差的实测结论；`REBUILD_VERIFICATION.md` 追加节；findings.md 记录。
+  按预注册判读，逐位复现不成立 → 不追加 PROJECT_LOG。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-04 | 本地 `pytest -q` / ruff / format / mypy | 1435 passed；全绿 |
+| 2026-09-04 | `git push origin main` | `88ccabb..3b993c5` |
+| 2026-09-04 | 远端 `git pull --ff-only` | `f192b6f4..3b993c59`，工作树干净（仅 untracked `archive/`） |
+| 2026-09-04 | 远端 `uv sync --frozen --extra dev --extra train` | torch 2.13.0+cu130 / CUDA OK / CLI OK |
+| 2026-09-04 | mimo 连通性 smoke（本地，1 请求） | HTTP 200，361 tokens（记账） |
+| 2026-09-04 | 本地 toolcount/v3 测试 + smoke/full preflight | 107 passed；5 断点 Oracle 全解零违规 |
+| 2026-09-04 | C2 训练 a（GPU 0，616.9 s） | train_loss 0.1596；adapter `c7e7f765…` |
+| 2026-09-04 | C2 训练 b（GPU 0，614.6 s） | train_loss 0.1597；adapter `4f4a4223…` |
+| 2026-09-04 | C2 判读：SHA-256 + loss 曲线 + 权重差 | 不逐位复现；mean 7.4e-4 / max 2.8e-3 |
