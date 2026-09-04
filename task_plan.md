@@ -6,7 +6,27 @@
 R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.md` 为准，
 历史任务摘要在 `progress.md`。
 
-## Current Task: 质量收口第二轮——v1.3 绝对门 + 方差治理 + 全面审计（2026-09-04 开始）
+## Current Task: GPU 执行阶段（2026-09-04）→ 新窗口执行入口
+
+**纯 CPU 部分已完成并提交**（9 个 commit，`3121e7d` 止）：Phase A 审计与修复（5C+7I）、
+Phase B v1.3 门禁上线与阈值冻结（0 / +0.02，LOG-20260904-01/02）、Phase B3 诊断重算、
+Phase C1/C3 CPU 部分、Phase C4/D2/E1 决策文档、Phase F 测试补齐与治理收口。
+
+**下一窗口执行入口**：`docs/handoffs/2026-09-04-gpu-phase-c2-d1-e2-d4-execution-prompt.md`
+——C2 方差验证（同 seed 双跑 adapter SHA-256）→ D1 rtc 第四轮（照预注册执行，teacher
+换 mimo）→ E2 退化曲线续跑（远端 tc=3 缺 eval-candidate，从 smoke 续）→ D4 一次性
+v1.3 发布判定（bank-004 用 mimo 生成；判读规则先写定提交；预期 NO-GO 是绝对门生效的
+诚实结果）。用户已批准 gpu-5090 与 mimo-v2.5 端点；决策门 #1/#4/#6 已关闭。
+
+### 已关闭的决策门（2026-09-04）
+
+| # | 决策 | 结论 |
+|---|---|---|
+| 1 | v1.3 阈值 | 冻结 0 / +0.02 |
+| 4 | DPO | D4 之后再说 |
+| 6 | 宽工具面迁移 | 不迁移（发布口径维持 v1/v2） |
+
+## 上一任务：质量收口第二轮——v1.3 绝对门 + 方差治理 + 全面审计（2026-09-04，CPU 部分完成）
 
 **输入**：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`（用户已批准）。
 **输出**：Phase A–F 中纯 CPU 可完成项；GPU/API/决策门项备料后停。
