@@ -21,7 +21,11 @@ from veritool_rl.core.trajectory.schema import StrictModel
 
 _GENERATOR_ID = "family_sha256_v1"
 _CURRENT_DAY = 20
+# 前 7 档是 v1/v4 冻结数据集的 margin 网格（R7 状态增强刻意落在网格之外，
+# 不得改动）；第 8–10 档只被 `_V4_EXTENDED_CANCEL_VERSIONS` 版本上的
+# CANCEL_* 扩展 family（state 7–9）使用，不改变任何旧版本的重建路径。
 _MARGINS = (1, 2, 3, 5, 7, 10, 14)
+_V4_TASK_MARGINS = (*_MARGINS, 4, 6, 12)
 _LOOKUP_STATUSES = (
     "pending",
     "processing",
@@ -181,20 +185,35 @@ class FormalTaskSet(StrictModel):
                 raise ValueError(f"{field} 跨 split 重叠")
 
     def assert_exact_quotas_v4(self) -> None:
-        """Verify v4 totals: 12 scenarios × (40/10/20) = 480/120/240."""
-        expected_per_category = {
-            FormalSplit.TRAIN: 40,
-            FormalSplit.DEV: 10,
-            FormalSplit.HOLDOUT: 20,
+        """Verify v4 totals.
+
+        默认 12 scenarios × (40/10/20) = 480/120/240；`_V4_EXTENDED_CANCEL_VERSIONS`
+        上的版本（方案甲）CANCEL_* 4 场景 train 提到 70 任务（35 family × 2），
+        总量 600/120/240。
+        """
+        extended = self.dataset_version in _V4_EXTENDED_CANCEL_VERSIONS
+        train_per_scenario = {
+            scenario: (70 if extended and scenario in _V4_CANCEL_SCENARIOS else 40)
+            for scenario in _V4_SCENARIOS
         }
-        for split, expected_count in expected_per_category.items():
+        expected_total = {
+            FormalSplit.TRAIN: sum(train_per_scenario.values()),
+            FormalSplit.DEV: 10 * len(_V4_SCENARIOS),
+            FormalSplit.HOLDOUT: 20 * len(_V4_SCENARIOS),
+        }
+        for split in (FormalSplit.TRAIN, FormalSplit.DEV, FormalSplit.HOLDOUT):
             records = self.records(split)
-            if len(records) != expected_count * len(_V4_SCENARIOS):
+            if len(records) != expected_total[split]:
                 raise ValueError(f"v4 {split} 任务总数不符合冻结配额")
             if any(record.task.split != split.value for record in records):
                 raise ValueError(f"v4 {split} 容器与任务 split 不一致")
             scenario_counts = Counter(record.task.scenario for record in records)
-            if scenario_counts != dict.fromkeys(_V4_SCENARIOS, expected_count):
+            expected_counts = (
+                train_per_scenario
+                if split is FormalSplit.TRAIN
+                else dict.fromkeys(_V4_SCENARIOS, 10 if split is FormalSplit.DEV else 20)
+            )
+            if scenario_counts != expected_counts:
                 raise ValueError(f"v4 {split} 类别配额不符合冻结契约")
 
             families: dict[str, list[FormalTaskRecord]] = {}
@@ -681,6 +700,23 @@ _V4_SCENARIOS = (
 
 _V4_CANCEL_REASONS = ("changed_mind", "duplicate_order", "billing_error", "quality_concern")
 
+# CANCEL_* 四场景：R9 Phase B 第四轮（方案甲 family 覆盖）的对象。
+_V4_CANCEL_SCENARIOS = frozenset(
+    {
+        TaskScenario.CANCEL_ELIGIBLE,
+        TaskScenario.CANCEL_DENIED_RECENT,
+        TaskScenario.CANCEL_DENIED_IN_USE,
+        TaskScenario.CANCEL_RECOVERY,
+    }
+)
+
+# 方案甲（用户 2026-09-04 选项 A）：这些版本上 CANCEL_* 场景 family 池从
+# 7 态 × 5 语境扩到 10 态 × 5 语境（state 7–9 使用新增 margin 档 4/6/12，
+# 语义上与 state 0–6 不重叠），train family 20 → 35；dev/holdout 配额不变。
+# 版本键控保证 `retail_ops_v4_20260822` 的重建路径与冻结时逐位同构
+# （版本↔内容双射不破）。
+_V4_EXTENDED_CANCEL_VERSIONS = frozenset({"retail_ops_v4_20260904"})
+
 
 def _v4_scenario_contract(
     scenario: TaskScenario,
@@ -838,14 +874,8 @@ def _v4_family_spec(
     state_variant: int,
     context_variant: int,
 ) -> dict[str, Any]:
-    margin = _MARGINS[state_variant]
-    cancel_scenarios = {
-        TaskScenario.CANCEL_ELIGIBLE,
-        TaskScenario.CANCEL_DENIED_RECENT,
-        TaskScenario.CANCEL_DENIED_IN_USE,
-        TaskScenario.CANCEL_RECOVERY,
-    }
-    if scenario in cancel_scenarios:
+    margin = _V4_TASK_MARGINS[state_variant]
+    if scenario in _V4_CANCEL_SCENARIOS:
         idx = (scenario_index + state_variant * 5 + context_variant) % len(_V4_CANCEL_REASONS)
         reason = _V4_CANCEL_REASONS[idx]
     elif scenario is TaskScenario.REFUND_THEN_CANCEL:
@@ -875,18 +905,25 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
 
     Quotas per scenario: train=20 families (40 tasks), dev=5 families (10 tasks),
     holdout=10 families (20 tasks).
+
+    第四轮扩展（`_V4_EXTENDED_CANCEL_VERSIONS`）：CANCEL_* 4 场景 family 池
+    10 态 × 5 语境 = 50，train=35 families（70 tasks），dev/holdout 不变；
+    总量 600/120/240。
     """
     if not dataset_version:
         raise ValueError("dataset_version 不能为空")
 
+    extended = dataset_version in _V4_EXTENDED_CANCEL_VERSIONS
     records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
     for scenario_index, scenario in enumerate(_V4_SCENARIOS):
+        state_count = 10 if extended and scenario in _V4_CANCEL_SCENARIOS else 7
+        train_families = 35 if state_count == 10 else 20
         families = sorted(
             (
                 _v4_family_spec(
                     dataset_version, scenario, scenario_index, state_variant, context_variant
                 )
-                for state_variant in range(7)
+                for state_variant in range(state_count)
                 for context_variant in range(5)
             ),
             key=lambda family: _sha256({"family": family}),
@@ -894,9 +931,9 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
         for family_index, family in enumerate(families):
             split = (
                 FormalSplit.TRAIN
-                if family_index < 20
+                if family_index < train_families
                 else FormalSplit.DEV
-                if family_index < 25
+                if family_index < train_families + 5
                 else FormalSplit.HOLDOUT
             )
             family_fingerprint = _sha256({"family": family})

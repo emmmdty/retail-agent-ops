@@ -377,6 +377,9 @@ def test_every_release_report_on_disk_still_loads() -> None:
     """
     from veritool_rl.retail_ops.release.release import load_release_report
 
+    if not (ROOT / "reports" / "retail_ops").is_dir():
+        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
+
     paths = sorted((ROOT / "reports/retail_ops").rglob("release.json"))
     formal: list[Path] = []
     qualification: list[Path] = []
@@ -409,6 +412,9 @@ def test_every_sealed_evidence_report_id_survives_v13_code() -> None:
         load_sealed_evaluation_report,
     )
 
+    if not (ROOT / "reports").is_dir():
+        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
+
     paths = sorted((ROOT / "reports").rglob("sealed-report.json"))
     assert len(paths) >= 13
     for path in paths:
@@ -419,6 +425,9 @@ def test_every_sealed_evidence_report_id_survives_v13_code() -> None:
 def test_release_evidence_load_survives_a_v13_field_purge() -> None:
     """突变验证的另一半：从 v1.3 报告 JSON 里剥掉新字段名不得影响旧报告加载。"""
     # 旧报告根本没有这两个新门——把 JSON 里任何新键剥掉后加载应当等价。
+    if not (ROOT / "reports" / "retail_ops").is_dir():
+        pytest.skip("评测/发布产物是 ignored 的运行产物，不随仓库分发（见 NOTICE.md）")
+
     paths = sorted((ROOT / "reports/retail_ops/v1/r6").glob("formal-release-006-v11/release.json"))
     assert paths
     payload = json.loads(paths[0].read_text(encoding="utf-8"))
