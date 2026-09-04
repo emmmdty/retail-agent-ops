@@ -795,14 +795,21 @@ def test_merged_model_config_declares_a_derived_revision_not_an_upstream_one() -
 
 
 def test_release_configs_declare_their_gate_schema_version() -> None:
-    """ "这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠默认值。"""
+    """ "这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠默认值。
+
+    允许集从 `GATE_IDS_BY_SCHEMA` 结构化推导而不是硬编码：对抗审查 I-1 指出
+    硬编码 {"1.0", "1.1"} 会**阻止 v1.2 配置落地**——提交一份用最新最严口径的
+    发布配置反而让 CI 变红，两头都失效。
+    """
     import yaml
+
+    from veritool_rl.retail_ops.release.release import GATE_IDS_BY_SCHEMA
 
     for path in sorted((ROOT / "configs/retail_ops/release").glob("*.yaml")):
         parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
         if parsed.get("pipeline") != "formal_release":
             continue
-        assert parsed["gate_schema_version"] in {"1.0", "1.1"}, path.name
+        assert parsed["gate_schema_version"] in set(GATE_IDS_BY_SCHEMA), path.name
 
 
 #: 不受「不得复述观测总数」约束的文件。
@@ -1081,11 +1088,26 @@ def test_the_total_count_detector_catches_what_it_claims_to() -> None:
     但它**不证明完备**——完备性对自然语言检测来说根本不存在，
     `_total_count_offenders` 的 docstring 里逐条写明了挡不住什么。
     过度承诺本身就是本仓库反复抓的那类问题，所以这里说清楚边界。
+
+    **7.2 审查补的护栏**：`_MUST_BE_ALLOWED` 里有「前三次观测都是 NO-GO」这类
+    含历史数字的句子——检测器的语义是「**当前**那个数不得被在别处复制」，所以
+    当台账的当前值恰好等于语料里的某个历史数字时，该句子会被合法地标记。
+    测试因此**跳过**（并显式报告）含当前值的语料句，而不是依赖「当前值恰好
+    不是 3」这个巧合——否则台账涨到 3 时这条测试会因正确行为而变红。
     """
     for sentence in _MUST_BE_CAUGHT:
         assert _total_count_offenders(_normalized_text(sentence)) != [], f"漏检：{sentence}"
+    skipped_for_current_value: list[str] = []
+    current = str(_ledger_observation_count())
     for sentence in _MUST_BE_ALLOWED:
+        if re.search(rf"(?<!\d){re.escape(current)}(?!\d)", _normalized_text(sentence)):
+            skipped_for_current_value.append(sentence)
+            continue
         assert _total_count_offenders(_normalized_text(sentence)) == [], f"误伤：{sentence}"
+    # 护栏本身不得退化成"全部跳过"：语料里必须仍有与当前值无关的句子在被检查
+    assert len(skipped_for_current_value) < len(_MUST_BE_ALLOWED), (
+        "语料全部含当前观测值——检测器的放行语料失去了检验力"
+    )
 
 
 def test_no_active_doc_predicts_which_observation_comes_next() -> None:
@@ -1249,15 +1271,23 @@ def _collected_test_count() -> int:
     用**当前解释器**跑，不要往 PATH 前面硬塞 `ROOT/.venv/bin`：那个目录在一个干净
     clone 上并不存在，于是相关测试会以"找不到 python"失败，而报出来的却像是
     "文档数字对不上"（2026-08-17 外部审阅第六轮在 clone 上撞到的真 bug）。
+    7.2 审查补的护栏：收集过程本身出错（import 失败等）时，必须报
+    「收集失败」，不能让上层把它误读成"文档数字对不上"。
     """
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=300,
-    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,
+        )
+    except subprocess.CalledProcessError as error:
+        raise AssertionError(
+            "pytest --collect-only 失败——这是收集/导入错误，不是文档数字问题。"
+            f"stderr 末尾：{error.stderr[-500:] if error.stderr else '(空)'}"
+        ) from None
     match = re.search(r"(\d+) tests collected", completed.stdout)
     assert match is not None, f"无法从 pytest 输出里解析收集数：{completed.stdout[-500:]}"
     return int(match.group(1))

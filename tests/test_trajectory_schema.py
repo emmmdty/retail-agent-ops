@@ -116,3 +116,50 @@ def test_task_spec_supports_retail_ops_decisions_and_qualification_split() -> No
 
     assert task.expected_decision is ExpectedDecision.DENY
     assert task.required_reads == ["order-1"]
+
+
+# ---------------------------------------------------------------------------
+# F1 测试补齐（7.2 清单 §1.5）：validate_json_value 与 StrictModel
+# ---------------------------------------------------------------------------
+
+
+def test_validate_json_value_rejects_non_json_types_and_non_finite_floats() -> None:
+    """递归验证器：拒绝非 JSON 类型、非字符串 key、NaN/Inf。"""
+    from veritool_rl.core.trajectory.schema import validate_json_value
+
+    # 通过时原样返回该值（不是 None）
+    payload = {"a": [1, "x", None, True, {"b": 1.5}]}
+    assert validate_json_value(payload) == payload
+
+    with pytest.raises(ValueError):
+        validate_json_value({1: "int-key"})
+    with pytest.raises(ValueError):
+        validate_json_value({("t", 1): "tuple-key"})
+    with pytest.raises(ValueError):
+        validate_json_value({"x": float("nan")})
+    with pytest.raises(ValueError):
+        validate_json_value({"x": float("inf")})
+    with pytest.raises(ValueError):
+        validate_json_value({"x": float("-inf")})
+    with pytest.raises(ValueError):
+        validate_json_value({"x": object()})
+
+
+def test_strict_models_reject_unknown_fields_and_non_finite_values() -> None:
+    """`StrictModel` 的 extra=forbid 与 allow_inf_nan=False 是全仓契约的基座。"""
+    from typing import Any
+
+    from pydantic import ValidationError
+
+    from veritool_rl.core.trajectory.schema import StrictModel
+
+    class _Probe(StrictModel):
+        value: Any
+        ratio: float
+
+    with pytest.raises(ValidationError):
+        _Probe.model_validate({"value": 1.0, "ratio": 0.5, "unknown": "field"})
+    # allow_inf_nan=False 作用于 float 字段（Any 字段不校验数值性）
+    with pytest.raises(ValidationError):
+        _Probe.model_validate({"value": 1.0, "ratio": float("nan")})
+    assert _Probe.model_validate({"value": 1.0, "ratio": 0.5}).ratio == 0.5

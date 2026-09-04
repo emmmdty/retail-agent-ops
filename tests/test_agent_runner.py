@@ -261,3 +261,263 @@ def test_runner_records_terminal_response_before_verification() -> None:
 
     assert trajectory.success is True
     assert trajectory.termination is TerminationReason.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# F1 测试补齐（7.2 清单 §1.1 / §1.2 / §2.2）
+# ---------------------------------------------------------------------------
+
+
+def test_premature_final_response_terminates_with_final_response_reason() -> None:
+    """runner 非成功终止分支：说了结束语但任务没做完 → FINAL_RESPONSE，不算成功。
+
+    `test_runner_records_terminal_response_before_verification` 只覆盖了
+    success 路径；这条锁定它的反面——「提前收尾」不得伪装成成功。
+    """
+
+    from pathlib import Path
+
+    from veritool_rl.core.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.core.trajectory.schema import TerminationReason
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        t for t in build_qualification_tasks(seed=0) if t.scenario is TaskScenario.REFUND_ELIGIBLE
+    )
+
+    class _PrematurePolicy:
+        name = "premature"
+
+        def respond(self, messages, tools):
+            del messages, tools
+            return parse_qwen_response("我已经处理完您的请求了。")
+
+    trajectory = run_episode(
+        task, lambda current: RetailOpsEnv(current, bundle), _PrematurePolicy(), 0
+    )
+
+    assert trajectory.termination is TerminationReason.FINAL_RESPONSE
+    assert trajectory.success is False
+
+
+def test_custom_system_prompt_reaches_the_model_messages() -> None:
+    """system_prompt 参数必须真的进 messages 的 system 段。"""
+    from pathlib import Path
+
+    from veritool_rl.core.agent.policy import OraclePolicy
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = build_qualification_tasks(seed=0)[0]
+
+    class _CapturePolicy(OraclePolicy):
+        def __init__(self, task):
+            super().__init__(task)
+            self.seen_system: list[str] = []
+
+        def respond(self, messages, tools):
+            self.seen_system.append(messages[0]["content"])
+            return super().respond(messages, tools)
+
+    policy = _CapturePolicy(task)
+    marker = "自定义系统提示词-探针"
+    run_episode(
+        task,
+        lambda current: RetailOpsEnv(current, bundle),
+        policy,
+        0,
+        system_prompt=marker,
+    )
+
+    assert policy.seen_system, "policy 没有被调用"
+    assert all(content == marker for content in policy.seen_system)
+
+
+def test_parse_error_path_skips_the_guardrail_but_records_format_error() -> None:
+    """隐含契约：parse_error 路径不触达 guardrail（没有调用可查），但要记 format_error。
+
+    guardrail 是对**工具调用**的第二道防线；没有合法调用时它无从参与。
+    这条测试把这个隐含契约写下来，防止未来有人把 guardrail 挪到 parse 之前
+    而不改变语义声明。
+    """
+    from pathlib import Path
+
+    from veritool_rl.core.agent.guardrail import Guardrail
+    from veritool_rl.core.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        t for t in build_qualification_tasks(seed=0) if t.scenario is TaskScenario.REFUND_ELIGIBLE
+    )
+
+    class _BrokenPolicy:
+        name = "broken"
+
+        def respond(self, messages, tools):
+            del messages, tools
+            return parse_qwen_response("<tool_call>{bad json}</tool_call>")
+
+    consulted: list[object] = []
+
+    class _SpyGuardrail(Guardrail):
+        def check_call(self, call, tools):
+            consulted.append(call)
+            return super().check_call(call, tools)
+
+    trajectory = run_episode(
+        task,
+        lambda current: RetailOpsEnv(current, bundle),
+        _BrokenPolicy(),
+        0,
+        guardrail=_SpyGuardrail(),
+    )
+
+    assert consulted == [], "parse_error 路径不得触达 guardrail"
+    assert trajectory.steps
+    assert all(step.parse_error is not None for step in trajectory.steps)
+
+
+def test_max_steps_one_executes_exactly_one_step() -> None:
+    """max_steps=1 边界：一步预算下只跑一次 respond，终止原因是步数上限或提前收尾。"""
+    from pathlib import Path
+
+    from veritool_rl.core.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = next(
+        t for t in build_qualification_tasks(seed=0) if t.scenario is TaskScenario.LOOKUP_STATUS
+    ).model_copy(update={"max_steps": 1})
+
+    calls: list[int] = []
+
+    class _CountingPolicy:
+        name = "counting"
+
+        def respond(self, messages, tools):
+            calls.append(len(messages))
+            return parse_qwen_response('<tool_call>{"name":"get_order","arguments":{}}</tool_call>')
+
+    trajectory = run_episode(
+        task, lambda current: RetailOpsEnv(current, bundle), _CountingPolicy(), 0
+    )
+
+    assert len(calls) == 1
+    assert trajectory.termination.value in {"step_limit", "final_response", "success"}
+
+
+def test_task_spec_rejects_zero_max_steps() -> None:
+    """max_steps=0 被 schema 拒绝（ge=1）：零步 episode 是配置错误不是合法边界。"""
+    import pytest as _pytest
+    from pydantic import ValidationError as _ValidationError
+
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.core.trajectory.schema import TaskSpec
+
+    with _pytest.raises(_ValidationError):
+        TaskSpec(
+            task_id="t",
+            split="dev",
+            scenario=TaskScenario.LOOKUP_STATUS,
+            user_request="查询",
+            initial_state={},
+            target_state={},
+            max_steps=0,
+        )
+
+
+def test_consecutive_unknown_tool_calls_do_not_crash_the_episode() -> None:
+    """连续 unknown_tool：轨迹继续、步数耗尽、终止原因 step_limit、无违规。"""
+    from pathlib import Path
+
+    from veritool_rl.core.agent.parser import parse_qwen_response
+    from veritool_rl.core.agent.runner import run_episode
+    from veritool_rl.retail_ops.domain.bundle import load_bundle
+    from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
+    from veritool_rl.retail_ops.domain.tasks import build_qualification_tasks
+
+    bundle = load_bundle(Path("domains/retail_ops/v1"))
+    task = build_qualification_tasks(seed=0)[0].model_copy(update={"max_steps": 3})
+
+    class _UnknownToolPolicy:
+        name = "unknown-tool"
+
+        def respond(self, messages, tools):
+            del messages, tools
+            return parse_qwen_response(
+                '<tool_call>{"name":"delete_everything","arguments":{}}</tool_call>'
+            )
+
+    trajectory = run_episode(
+        task, lambda current: RetailOpsEnv(current, bundle), _UnknownToolPolicy(), 0
+    )
+
+    assert len(trajectory.steps) == 3
+    assert all(
+        step.observation is not None and step.observation.error_code == "unknown_tool"
+        for step in trajectory.steps
+    )
+    assert trajectory.termination.value == "step_limit"
+    assert trajectory.violations == []
+
+
+def test_nested_arguments_survive_parsing_and_execution() -> None:
+    """深层嵌套但合法的 arguments 结构：解析器与 wire format 不失真。"""
+    import json as _json
+
+    from veritool_rl.core.agent.parser import parse_qwen_response
+
+    nested = {"order_id": "O-1", "extra": {"a": [1, 2, {"b": None}]}}
+    output = parse_qwen_response(
+        f'<tool_call>{{"name":"get_order","arguments":{_json.dumps(nested)}}}</tool_call>'
+    )
+    assert output.parse_error is None
+    assert output.tool_call is not None
+    assert output.tool_call.arguments == nested
+
+
+def test_parser_empty_response_and_pydantic_validation_failure() -> None:
+    """7.2 §1.2：空响应与「JSON 合法但 Pydantic 校验失败」两条 parser 分支。"""
+    from veritool_rl.core.agent.parser import parse_qwen_response
+
+    empty = parse_qwen_response("")
+    assert empty.parse_error == "empty_response"
+    assert empty.tool_call is None
+    assert empty.final_response is None
+
+    whitespace = parse_qwen_response("   \n  ")
+    assert whitespace.parse_error == "empty_response"
+
+    # JSON 解析成功、ToolCall.model_validate 失败：arguments 类型非法
+    bad_types = parse_qwen_response(
+        '<tool_call>{"name":"get_order","arguments":"not-a-dict"}</tool_call>'
+    )
+    assert bad_types.parse_error == "invalid_tool_call_json"
+    assert bad_types.tool_call is None
+
+    # 缺 arguments 不是 Pydantic 失败——ToolCall.arguments 有默认 {}（既有契约，
+    # 显式记录在这里）；缺 name 才是校验失败
+    default_args = parse_qwen_response('<tool_call>{"name":"get_order"}</tool_call>')
+    assert default_args.parse_error is None
+    assert default_args.tool_call is not None
+    assert default_args.tool_call.arguments == {}
+
+    missing_name = parse_qwen_response('<tool_call>{"arguments":{}}</tool_call>')
+    assert missing_name.parse_error == "invalid_tool_call_json"

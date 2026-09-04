@@ -48,8 +48,22 @@ def test_the_fault_matrix_exists_and_covers_every_required_class() -> None:
 
 
 def test_every_fault_class_names_a_real_test() -> None:
-    references = REFERENCE_PATTERN.findall(_matrix_text())
-    assert len(references) >= 20, f"故障矩阵只引用了 {len(references)} 个测试，覆盖面不足"
+    text = _matrix_text()
+    # 7.2 审查指出 ">= 20" 不绑定任何设计约束：阈值改为**结构绑定**——
+    # 每个必需的故障类小节必须至少引用 1 个真实测试，而不是任意全局数字。
+    for section in REQUIRED_SECTIONS:
+        match = re.search(rf"^#+\s*.*{re.escape(section)}.*$", text, re.MULTILINE)
+        assert match is not None, f"故障矩阵缺少小节：{section}"
+        start = match.end()
+        next_heading = re.search(r"^#+\s", text[start:], re.MULTILINE)
+        body = text[start : start + (next_heading.start() if next_heading else len(text[start:]))]
+        references = REFERENCE_PATTERN.findall(body)
+        assert references, f"故障类「{section}」没有引用任何真实测试"
+
+    references = REFERENCE_PATTERN.findall(text)
+    assert len(references) >= len(REQUIRED_SECTIONS), (
+        f"故障矩阵只引用了 {len(references)} 个测试，少于故障类数 {len(REQUIRED_SECTIONS)}"
+    )
 
     broken: list[str] = []
     for relpath, test_name in references:

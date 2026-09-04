@@ -185,3 +185,57 @@ def test_clarification_metrics_are_zero_without_underspecified_tasks(tmp_path: P
     assert control["clarification_task_count"] == 0
     assert control["clarification_rate"] == 0.0
     assert control["task_success"] == 1.0, "模拟器不得影响不需要澄清的任务"
+
+
+# ---------------------------------------------------------------------------
+# F1 测试补齐（7.2 清单 §1.7）
+# ---------------------------------------------------------------------------
+
+
+def test_known_order_id_rejects_missing_or_non_string_metadata() -> None:
+    """metadata 里 order_id 缺失、非字符串或空串时返回 None → 模拟器给通用答复。"""
+    from veritool_rl.core.agent.user_simulator import _known_order_id
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.core.trajectory.schema import TaskSpec
+
+    def _task(metadata: dict) -> TaskSpec:
+        state = {"customer_id": "C-1", "current_day": 20, "orders": {}}
+        return TaskSpec(
+            task_id="t",
+            split="qualification",
+            scenario=TaskScenario.LOOKUP_STATUS,
+            user_request="请问订单到哪了？",
+            initial_state=state,
+            target_state=state,
+            metadata=metadata,
+        )
+
+    assert _known_order_id(_task({})) is None
+    assert _known_order_id(_task({"order_id": 123})) is None
+    assert _known_order_id(_task({"order_id": ""})) is None
+    assert _known_order_id(_task({"order_id": "O-1"})) == "O-1"
+
+
+def test_clarification_metadata_returns_dict_only_for_dict_values() -> None:
+    from veritool_rl.core.agent.user_simulator import clarification_metadata
+    from veritool_rl.core.trajectory import TaskScenario
+    from veritool_rl.core.trajectory.schema import TaskSpec
+
+    state = {"customer_id": "C-1", "current_day": 20, "orders": {}}
+
+    def _task(metadata: dict) -> TaskSpec:
+        return TaskSpec(
+            task_id="t",
+            split="qualification",
+            scenario=TaskScenario.LOOKUP_STATUS,
+            user_request="查询",
+            initial_state=state,
+            target_state=state,
+            metadata=metadata,
+        )
+
+    assert clarification_metadata(_task({})) is None
+    assert clarification_metadata(_task({"clarification": "yes"})) is None
+    assert clarification_metadata(_task({"clarification": {"withheld": "order_id"}})) == {
+        "withheld": "order_id"
+    }

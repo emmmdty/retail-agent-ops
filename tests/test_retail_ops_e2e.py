@@ -73,7 +73,16 @@ def test_retail_ops_v1_cpu_vertical_slice(tmp_path: Path) -> None:
             ]
         )
 
-    assert _read_json(base_dir / "metrics.json")["task_success"] == 8 / 12
+    # 这三个值是**端到端黄金锚**，不是可推导的规格值（7.2 §3.4 审查结论的保留理由）：
+    # 它们把「build → evaluate → release 全链路 + 环境/verifier/门禁语义」钉在一次
+    # 快照上。环境行为变化让它们变红时，失败是**故意的**——必须人工确认这是进步
+    # 还是回归，再 consciously 更新锚值；失败消息会指向这条说明。
+    base_success = _read_json(base_dir / "metrics.json")["task_success"]
+    assert base_success == 8 / 12, (
+        f"端到端黄金锚移动：base task_success {base_success} != 8/12。"
+        "若是环境/verifier 的有意变更，请更新本锚值并在 progress.md 记录；"
+        "否则这是回归。"
+    )
     assert _read_json(oracle_dir / "metrics.json")["task_success"] == 1.0
     assert _read_json(fault_dir / "metrics.json")["task_success"] == 0.0
     assert _read_json(go_dir / "release.json")["decision"] == "GO"
