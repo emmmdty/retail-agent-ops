@@ -53,6 +53,11 @@ from veritool_rl.retail_ops.domain.ood_v4_tasks import (
     OOD_V4_TASKS_PER_SCENARIO,
     build_ood_v4_tasks,
 )
+from veritool_rl.retail_ops.domain.policy_boundary_phrasing_tasks import (
+    POLICY_BOUNDARY_PHRASING_DATASET_VERSION,
+    POLICY_BOUNDARY_PHRASING_GENERATOR_ID,
+    build_policy_boundary_phrasing_tasks,
+)
 from veritool_rl.retail_ops.domain.policy_boundary_tasks import (
     POLICY_BOUNDARY_DATASET_VERSION,
     POLICY_BOUNDARY_GENERATOR_ID,
@@ -76,6 +81,9 @@ OodDatasetVersion = Literal[
     "retail_ops_policy_boundary_v1_20260819",
     # v4 跨工具泛化（Phase B）：bank-v4 素材、12 场景、5 工具 bundle。
     "retail_ops_ood_v4_20260823",
+    # 二维迭代面（Phase C3）：探针网格 × 措辞池分片。措辞不再与冻结数据集同源，
+    # 使同一次迭代同时看见边界型与措辞型退化（R7 失败机制的根治）。
+    "retail_ops_policy_boundary_phrasing_v1_20260904",
 ]
 
 _ALLOWED_DATASET_VERSIONS: tuple[str, ...] = get_args(OodDatasetVersion)
@@ -179,11 +187,24 @@ def build_ood_task_set(
     **探针不是分布外集合**：它与冻结数据集同源，只是把状态空间在一条轴上加密；
     共用这条构建/评测路径是为了复用 manifest 与报告，不代表它能回答泛化问题。
     """
-    if phrasing is not None and boundary:
+    crossed = (
+        phrasing is not None
+        and boundary
+        and phrasing.dataset_version == POLICY_BOUNDARY_PHRASING_DATASET_VERSION
+    )
+    if phrasing is not None and boundary and not crossed:
         raise ValueError("phrasing 与 boundary 互斥：一次只能构建一种任务集")
     bundle = load_bundle(bundle_dir)
     expected_counts: dict[str, int] | None
-    if boundary:
+    if crossed:
+        assert phrasing is not None  # crossed 的定义式已保证；为收窄类型
+        tasks = build_policy_boundary_phrasing_tasks(
+            seed, phrasing.index, partition=phrasing.partition
+        )
+        generator_id = POLICY_BOUNDARY_PHRASING_GENERATOR_ID
+        dataset_version = POLICY_BOUNDARY_PHRASING_DATASET_VERSION
+        expected_counts = expected_category_counts()
+    elif boundary:
         tasks = build_policy_boundary_tasks(seed)
         generator_id = POLICY_BOUNDARY_GENERATOR_ID
         dataset_version = POLICY_BOUNDARY_DATASET_VERSION
@@ -194,6 +215,14 @@ def build_ood_task_set(
         dataset_version = OOD_DATASET_VERSION
         expected_counts = None
     else:
+        if phrasing.dataset_version == POLICY_BOUNDARY_PHRASING_DATASET_VERSION:
+            # scoped re-review Minor-1：交叉面版本号只在 boundary=true 的组合模式里
+            # 合法；boundary=false 时挂它等于把 v2 内容登记成另一个数据集，
+            # 破坏「素材↔版本号双射」。
+            raise ValueError(
+                "交叉面 dataset_version 只能与 boundary=true 组合使用；"
+                "boundary=false 请用 v2/v4 的版本号"
+            )
         if phrasing.dataset_version == OOD_V4_DATASET_VERSION:
             tasks = build_ood_v4_tasks(phrasing.index, seed)
             generator_id = OOD_V4_GENERATOR_ID

@@ -345,6 +345,69 @@ def _ensure_new_training_output(output_dir: Path) -> None:
         raise FileExistsError(msg)
 
 
+def configure_training_determinism(torch_module: Any, *, seed: int) -> dict[str, Any]:
+    """固定训练里**可消**的随机源，返回写入 metrics 的运行时 provenance。
+
+    Phase C1（方差治理）的可消/不可消清单：
+
+    **可消、本函数固定**：
+    - cuBLAS 工作区配置（`:4096:8`）：不设它，`use_deterministic_algorithms`
+      在 bf16 GEMM 上会报错或跳过；
+    - torch 全局 RNG（LoRA A 矩阵 kaiming 初始化、lora_dropout 的 mask 采样）；
+    - Python `random` 与 NumPy 全局 RNG（transformers 的 set_seed 也覆盖它们，
+      这里独立设置作为不依赖 transformers 版本行为的兜底）；
+    - cuDNN：`deterministic=True`、`benchmark=False`（benchmark 会按首爆形状
+      选算法，算法选择本身受时序影响）；
+    - `use_deterministic_algorithms(True, warn_only=True)`：有确定性实现的
+      算子全部强制走确定性路径；没有的算子（见下）放行并告警，不炸训练。
+
+    **不可消、诚实记录**：
+    - bitsandbytes 的 NF4 反量化与 `paged_adamw_8bit` 优化器核：部分内核用
+      atomicAdd 做归约，CUDA 原子操作的浮点加法顺序不保证；warn_only 下若
+      它们告警，告警出现在训练日志里而非被吞掉。
+    - 跨 GPU 型号 / 跨驱动版本的逐位复现：kernel 实现本身不同，这不在"同配置
+      同 seed 重跑"的口径内。
+    - DataLoader：num_workers 默认 0（主进程），shuffle 由 `seed`/`data_seed`
+      固定——已经是可复现的，列在这里仅为完备。
+
+    `warn_only=True` 的理由：bitsandbytes 内核没有确定性替代实现，硬开关会让
+    训练直接崩溃，而我们要的是「可消的都消掉 + 不可消的留痕」。
+    """
+    import os
+    import random
+
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    provenance: dict[str, Any] = {
+        "cublas_workspace_config": os.environ["CUBLAS_WORKSPACE_CONFIG"],
+        "seed": seed,
+        "torch_manual_seed": True,
+        "cudnn_deterministic": True,
+        "cudnn_benchmark": False,
+        "use_deterministic_algorithms": True,
+        "warn_only": True,
+    }
+    torch_module.manual_seed(seed)
+    torch_module.backends.cudnn.deterministic = True
+    torch_module.backends.cudnn.benchmark = False
+    torch_module.use_deterministic_algorithms(True, warn_only=True)
+    random.seed(seed)
+    try:  # pragma: no cover - 依赖训练环境的依赖面
+        import numpy as np
+
+        np.random.seed(seed)
+        provenance["numpy_seeded"] = True
+    except ImportError:
+        provenance["numpy_seeded"] = False
+    try:  # pragma: no cover - 依赖训练环境的依赖面
+        from transformers import set_seed as hf_set_seed
+
+        hf_set_seed(seed)
+        provenance["transformers_seeded"] = True
+    except ImportError:
+        provenance["transformers_seeded"] = False
+    return provenance
+
+
 def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, Any]:
     """执行 QLoRA-SFT，保存可重载 adapter、配置和有限指标。"""
     resolved = resolve_sft_config(config, seed, output_dir)
@@ -369,6 +432,9 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise RuntimeError("QLoRA-SFT 必须看到且只看到一张 CUDA GPU")
     torch.cuda.reset_peak_memory_stats()
+    # Phase C1（方差治理）：可消随机源必须在任何模型/优化器初始化之前固定，
+    # 否则 LoRA 初始化与 dropout mask 已经消费了未播种的 RNG。
+    determinism = configure_training_determinism(torch, seed=seed)
     started_at = time.perf_counter()
     loaded_dataset = load_dataset(
         "json",
@@ -500,6 +566,7 @@ def run_sft(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
             torch.cuda,
             wall_time_seconds=training_finished_at - started_at,
         ),
+        "determinism": determinism,
     }
     _require_finite_losses(metrics)
     del trainer

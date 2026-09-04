@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -412,3 +413,99 @@ def test_run_sft_rejects_unlisted_extra_file_in_model_dir(
         run_sft(config, seed=0, output_dir=output_dir)
 
     assert not output_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase C1：训练随机源固定（方差治理）
+# ---------------------------------------------------------------------------
+
+
+class _FakeCudnn:
+    def __init__(self) -> None:
+        self.deterministic: bool | None = None
+        self.benchmark: bool | None = None
+
+
+class _FakeBackends:
+    def __init__(self, cudnn: _FakeCudnn) -> None:
+        self.cudnn = cudnn
+
+
+class _FakeTorch:
+    """记录 determinism 设置调用的最小 torch 替身。"""
+
+    def __init__(self) -> None:
+        self.cudnn = _FakeCudnn()
+        self.backends = _FakeBackends(self.cudnn)
+        self.manual_seeds: list[int] = []
+        self.deterministic_calls: list[bool] = []
+
+    def manual_seed(self, seed: int) -> None:
+        self.manual_seeds.append(seed)
+
+    def use_deterministic_algorithms(self, value: bool, *, warn_only: bool = False) -> None:
+        self.deterministic_calls.append(value)
+
+
+def test_configure_training_determinism_pins_every_consumable_source(
+    monkeypatch: Any,
+) -> None:
+    """可消随机源必须全部固定：cuBLAS 工作区、torch/python/numpy 种子、cuDNN 旗标。"""
+    import random
+
+    import veritool_rl.training.sft as sft_module
+
+    fake = _FakeTorch()
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG", raising=False)
+    rng_state = random.getstate()
+
+    provenance = sft_module.configure_training_determinism(fake, seed=7)
+
+    assert fake.manual_seeds == [7]
+    assert fake.cudnn.deterministic is True
+    assert fake.cudnn.benchmark is False
+    assert fake.deterministic_calls == [True]
+    import os
+
+    assert os.environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
+    assert random.getstate() != rng_state, "python 全局 RNG 必须被重播种子"
+    assert provenance["seed"] == 7
+    assert provenance["cublas_workspace_config"] == ":4096:8"
+    assert provenance["warn_only"] is True
+
+
+def test_configure_training_determinism_never_crashes_without_numpy_or_transformers(
+    monkeypatch: Any,
+) -> None:
+    """可选依赖缺失时不得崩溃——训练机与 CPU 开发机的依赖面不同。"""
+    import sys
+
+    import veritool_rl.training.sft as sft_module
+
+    monkeypatch.setitem(sys.modules, "numpy", None)
+    monkeypatch.setitem(sys.modules, "transformers", None)
+    provenance = sft_module.configure_training_determinism(_FakeTorch(), seed=3)
+    assert provenance["numpy_seeded"] is False
+    assert provenance["transformers_seeded"] is False
+
+
+def test_run_sft_applies_determinism_before_any_training_step() -> None:
+    """结构性锁：`run_sft` 必须在构建 SFTConfig 之前调用 determinism 设置。
+
+    torch 不在 CPU 开发环境里，因此这里用源码结构断言（与
+    test_source_layers_enforce_one_way_dependency 同一先例）锁定调用次序，
+    GPU 真跑时由运行时 provenance（metrics["determinism"]）二次验证。
+    """
+    from pathlib import Path
+
+    source = Path(sft_module_source_path()).read_text(encoding="utf-8")
+    apply_at = source.index("configure_training_determinism(torch")
+    config_at = source.index("training_args = SFTConfig(")
+    assert apply_at < config_at, "determinism 设置必须先于 SFTConfig 构造"
+    assert '"determinism": determinism' in source, "运行时 provenance 必须写进 metrics.json"
+
+
+def sft_module_source_path() -> str:
+    import veritool_rl.training.sft as module
+
+    return module.__file__
