@@ -189,15 +189,17 @@ class FormalTaskSet(StrictModel):
 
         默认 12 scenarios × (40/10/20) = 480/120/240；`_V4_EXTENDED_CANCEL_VERSIONS`
         上的版本（方案甲）CANCEL_* 4 场景 train 提到 70 任务（35 family × 2），
-        总量 600/120/240。
+        总量 600/120/240；`_V4_STEPWISE_VERSIONS` 上的版本（方案乙）train 再加
+        RTC_STEPWISE 40 任务，总量 640/120/240。
         """
         extended = self.dataset_version in _V4_EXTENDED_CANCEL_VERSIONS
+        stepwise = self.dataset_version in _V4_STEPWISE_VERSIONS
         train_per_scenario = {
             scenario: (70 if extended and scenario in _V4_CANCEL_SCENARIOS else 40)
             for scenario in _V4_SCENARIOS
         }
         expected_total = {
-            FormalSplit.TRAIN: sum(train_per_scenario.values()),
+            FormalSplit.TRAIN: sum(train_per_scenario.values()) + (40 if stepwise else 0),
             FormalSplit.DEV: 10 * len(_V4_SCENARIOS),
             FormalSplit.HOLDOUT: 20 * len(_V4_SCENARIOS),
         }
@@ -213,6 +215,8 @@ class FormalTaskSet(StrictModel):
                 if split is FormalSplit.TRAIN
                 else dict.fromkeys(_V4_SCENARIOS, 10 if split is FormalSplit.DEV else 20)
             )
+            if stepwise and split is FormalSplit.TRAIN:
+                expected_counts = {**expected_counts, TaskScenario.RTC_STEPWISE: 40}
             if scenario_counts != expected_counts:
                 raise ValueError(f"v4 {split} 类别配额不符合冻结契约")
 
@@ -442,10 +446,10 @@ def _materialize_task(
         "refund_status": policy_state["refund_status"],
     }
     orders = {order_id: primary_order}
-    # REFUND_THEN_CANCEL 需要第二个订单（other_order）
+    # REFUND_THEN_CANCEL / RTC_STEPWISE 需要第二个订单（other_order）
     other_short = identity[36:48].upper() if len(identity) > 48 else identity[:12].upper()
     other_order_id = f"O-{other_short}OTHER"
-    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+    if scenario in (TaskScenario.REFUND_THEN_CANCEL, TaskScenario.RTC_STEPWISE):
         orders[other_order_id] = {
             "customer_id": primary_owner,
             "status": "pending",
@@ -496,6 +500,10 @@ def _materialize_task(
             target_state["orders"][order_id]["refund_status"] = "refunded"
             target_state["orders"][other_order_id]["status"] = "cancelled"
             target_state["orders"][other_order_id]["cancel_status"] = "cancelled"
+        elif scenario is TaskScenario.RTC_STEPWISE:
+            # 辅助任务只触碰第二订单 B；主单 A 保持 initial 状态（同一状态的第一段）
+            target_state["orders"][other_order_id]["status"] = "cancelled"
+            target_state["orders"][other_order_id]["cancel_status"] = "cancelled"
         else:
             target_state["orders"][order_id]["refund_status"] = "refunded"
 
@@ -513,7 +521,7 @@ def _materialize_task(
         target_state=target_state,
         expected_calls=expected_calls,
         expected_decision=decision,
-        required_reads=[order_id],
+        required_reads=[other_order_id if scenario is TaskScenario.RTC_STEPWISE else order_id],
         transient_failures=dict(family["transient_failure_rule"]),
         max_steps=5 if scenario in _multi_call_scenarios else 4,
         metadata={
@@ -669,6 +677,9 @@ def _v4_user_request_fallback(
         return f"请查询订单 {order_id} 并判断 {reason} 取消是否可办。"
     if scenario is TaskScenario.REFUND_THEN_CANCEL:
         return f"请先为订单 {order_id} 办理退款，再取消订单 {other_order_id}。"
+    if scenario is TaskScenario.RTC_STEPWISE:
+        # 辅助任务的请求实体是 RTC 的第二订单 B（复用 cancel_eligible 措辞形状）
+        return f"请取消订单 {other_order_id}，原因是 {reason}。"
     if scenario is TaskScenario.CANCEL_RECOVERY:
         return f"请取消订单 {order_id}，原因是 {reason}；临时失败时重试一次。"
     msg = f"不支持的场景: {scenario}"
@@ -715,7 +726,12 @@ _V4_CANCEL_SCENARIOS = frozenset(
 # 语义上与 state 0–6 不重叠），train family 20 → 35；dev/holdout 配额不变。
 # 版本键控保证 `retail_ops_v4_20260822` 的重建路径与冻结时逐位同构
 # （版本↔内容双射不破）。
-_V4_EXTENDED_CANCEL_VERSIONS = frozenset({"retail_ops_v4_20260904"})
+_V4_EXTENDED_CANCEL_VERSIONS = frozenset({"retail_ops_v4_20260904", "retail_ops_v4_20260905"})
+
+# 方案乙（用户 2026-09-04 确认上乙）：这些版本上为 rtc 的每个 train family 派生
+# `rtc_stepwise` 辅助 family（同 state/context/reason，gold = 查 B + 取消 B），
+# 40 任务只进 train（dev/holdout 无此场景，评测面不变）；train 总量 640。
+_V4_STEPWISE_VERSIONS = frozenset({"retail_ops_v4_20260905"})
 
 
 def _v4_scenario_contract(
@@ -813,6 +829,23 @@ def _v4_scenario_contract(
                 "refund_status": "none",
             },
         )
+    if scenario is TaskScenario.RTC_STEPWISE:
+        # 方案乙辅助任务：RTC 同一状态的第一段——只「查 B 并取消 B」。
+        # policy_state 描述主单 A（与对应 rtc 任务同源，A 在本任务里不被触碰）。
+        get_order_other: dict[str, Any] = {
+            "name": "get_order",
+            "arguments": {"order_id": "other_order"},
+        }
+        return (
+            ExpectedDecision.ALLOW,
+            [get_order_other, cancel_other],
+            {},
+            {
+                "owner": "customer",
+                "refund_deadline": _CURRENT_DAY + margin,
+                "refund_status": "none",
+            },
+        )
     if scenario is TaskScenario.CANCEL_RECOVERY:
         return (
             ExpectedDecision.ALLOW,
@@ -843,6 +876,7 @@ def _v4_scenario_contract_dispatch(
         TaskScenario.CANCEL_DENIED_IN_USE,
         TaskScenario.REFUND_THEN_CANCEL,
         TaskScenario.CANCEL_RECOVERY,
+        TaskScenario.RTC_STEPWISE,
     }
     if scenario in v4_new:
         return _v4_scenario_contract(scenario, state_variant, margin, reason)
@@ -909,11 +943,16 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
     第四轮扩展（`_V4_EXTENDED_CANCEL_VERSIONS`）：CANCEL_* 4 场景 family 池
     10 态 × 5 语境 = 50，train=35 families（70 tasks），dev/holdout 不变；
     总量 600/120/240。
+
+    方案乙（`_V4_STEPWISE_VERSIONS`）：为 rtc 的每个 train family 派生一个
+    `rtc_stepwise` 辅助 family（同 state/context/reason，gold = 查 B + 取消 B），
+    40 任务只进 train；总量 640/120/240。
     """
     if not dataset_version:
         raise ValueError("dataset_version 不能为空")
 
     extended = dataset_version in _V4_EXTENDED_CANCEL_VERSIONS
+    stepwise = dataset_version in _V4_STEPWISE_VERSIONS
     records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
     for scenario_index, scenario in enumerate(_V4_SCENARIOS):
         state_count = 10 if extended and scenario in _V4_CANCEL_SCENARIOS else 7
@@ -947,6 +986,28 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
                     variant_index=variant_index,
                 )
                 records[split].append(FormalTaskRecord.from_task(task, variant_index))
+        if stepwise and scenario is TaskScenario.REFUND_THEN_CANCEL:
+            for family in families[:train_families]:
+                stepwise_family = _v4_family_spec(
+                    dataset_version,
+                    TaskScenario.RTC_STEPWISE,
+                    scenario_index,
+                    int(family["state_variant"]),
+                    int(family["context_variant"]),
+                )
+                stepwise_fingerprint = _sha256({"family": stepwise_family})
+                for variant_index in range(2):
+                    task = _materialize_task(
+                        dataset_version=dataset_version,
+                        seed=seed,
+                        split=FormalSplit.TRAIN,
+                        family=stepwise_family,
+                        family_fingerprint=stepwise_fingerprint,
+                        variant_index=variant_index,
+                    )
+                    records[FormalSplit.TRAIN].append(
+                        FormalTaskRecord.from_task(task, variant_index)
+                    )
 
     task_set = FormalTaskSet(
         dataset_version=dataset_version,

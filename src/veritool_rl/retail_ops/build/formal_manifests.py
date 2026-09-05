@@ -26,8 +26,13 @@ from veritool_rl.retail_ops.domain.formal_tasks import (
 
 _DATASET_VERSION = "retail_ops_v1_r2_20260722"
 # v4 正式数据集轨道：20260822 是 R9 Phase B 冻结版；20260904 是第四轮
-# （方案甲 family 覆盖，`_V4_EXTENDED_CANCEL_VERSIONS`）的新版本。
-_V4_DATASET_VERSIONS = ("retail_ops_v4_20260822", "retail_ops_v4_20260904")
+# （方案甲 family 覆盖，`_V4_EXTENDED_CANCEL_VERSIONS`）的新版本；20260905 是
+# 方案乙（`_V4_STEPWISE_VERSIONS`，rtc_stepwise 辅助任务）的版本。
+_V4_DATASET_VERSIONS = (
+    "retail_ops_v4_20260822",
+    "retail_ops_v4_20260904",
+    "retail_ops_v4_20260905",
+)
 _GENERATOR_ID = "family_sha256_v1"
 _PARSER_ID = "hermes-single-call-v1"
 _EVALUATOR_ID = "retail_ops_v1"
@@ -64,19 +69,25 @@ _EXPECTED_PER_CATEGORY = {
 
 def _expected_per_scenario(split: FormalSplit, dataset_version: str) -> dict[str, int]:
     """每场景任务配额：默认冻结常量；方案甲版本（`_V4_EXTENDED_CANCEL_VERSIONS`）
-    的 train split 上 CANCEL_* 4 场景为 70（35 family × 2 variant）。"""
+    的 train split 上 CANCEL_* 4 场景为 70（35 family × 2 variant）；方案乙版本
+    （`_V4_STEPWISE_VERSIONS`）的 train split 另有 RTC_STEPWISE 40（只进 train）。"""
     from veritool_rl.retail_ops.domain.formal_tasks import (
         _V4_CANCEL_SCENARIOS,
         _V4_EXTENDED_CANCEL_VERSIONS,
+        _V4_STEPWISE_VERSIONS,
     )
 
     if split is not FormalSplit.TRAIN or dataset_version not in _V4_EXTENDED_CANCEL_VERSIONS:
         base = _EXPECTED_PER_CATEGORY[split]
-        return {scenario.value: base for scenario in _V4_SCENARIO_ORDER}
-    return {
-        scenario.value: (70 if scenario in _V4_CANCEL_SCENARIOS else 40)
-        for scenario in _V4_SCENARIO_ORDER
-    }
+        expected = {scenario.value: base for scenario in _V4_SCENARIO_ORDER}
+    else:
+        expected = {
+            scenario.value: (70 if scenario in _V4_CANCEL_SCENARIOS else 40)
+            for scenario in _V4_SCENARIO_ORDER
+        }
+    if split is FormalSplit.TRAIN and dataset_version in _V4_STEPWISE_VERSIONS:
+        expected["rtc_stepwise"] = 40
+    return expected
 
 
 _FINGERPRINT_FIELDS = (
@@ -105,7 +116,10 @@ class _FormalSplitEvidence(StrictModel):
 
     schema_version: Literal["2.0"] = "2.0"
     dataset_version: Literal[
-        "retail_ops_v1_r2_20260722", "retail_ops_v4_20260822", "retail_ops_v4_20260904"
+        "retail_ops_v1_r2_20260722",
+        "retail_ops_v4_20260822",
+        "retail_ops_v4_20260904",
+        "retail_ops_v4_20260905",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -180,7 +194,10 @@ class FormalDatasetReceipt(StrictModel):
 
     schema_version: Literal["2.0"] = "2.0"
     dataset_version: Literal[
-        "retail_ops_v1_r2_20260722", "retail_ops_v4_20260822", "retail_ops_v4_20260904"
+        "retail_ops_v1_r2_20260722",
+        "retail_ops_v4_20260822",
+        "retail_ops_v4_20260904",
+        "retail_ops_v4_20260905",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -268,7 +285,10 @@ class _FormalPrivateTaskRow(StrictModel):
 
     schema_version: Literal["2.0"] = "2.0"
     dataset_version: Literal[
-        "retail_ops_v1_r2_20260722", "retail_ops_v4_20260822", "retail_ops_v4_20260904"
+        "retail_ops_v1_r2_20260722",
+        "retail_ops_v4_20260822",
+        "retail_ops_v4_20260904",
+        "retail_ops_v4_20260905",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -292,7 +312,10 @@ class _FormalPrivateTaskRow(StrictModel):
         *,
         bundle_sha256: str,
         dataset_version: Literal[
-            "retail_ops_v1_r2_20260722", "retail_ops_v4_20260822", "retail_ops_v4_20260904"
+            "retail_ops_v1_r2_20260722",
+            "retail_ops_v4_20260822",
+            "retail_ops_v4_20260904",
+            "retail_ops_v4_20260905",
         ] = ("retail_ops_v1_r2_20260722"),
         bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0",
         evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = (

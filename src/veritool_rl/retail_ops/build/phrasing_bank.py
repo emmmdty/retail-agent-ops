@@ -132,6 +132,8 @@ SCENARIO_INTENTS: dict[TaskScenario, str] = {
     TaskScenario.CANCEL_DENIED_IN_USE: INTENT_CANCEL,
     TaskScenario.CANCEL_RECOVERY: INTENT_CANCEL_RETRY,
     TaskScenario.REFUND_THEN_CANCEL: INTENT_REFUND_THEN_CANCEL,
+    # 方案乙辅助场景：请求形状 = cancel_eligible（实体是 RTC 的 other_order）
+    TaskScenario.RTC_STEPWISE: INTENT_CANCEL,
 }
 
 #: 措辞里**绝不能**出现的状态泄漏。顾客一旦说出「已经过期了」「不是我的单」

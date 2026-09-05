@@ -62,6 +62,9 @@ class TaskScenario(StrEnum):
     CANCEL_DENIED_IN_USE = "cancel_denied_in_use"
     REFUND_THEN_CANCEL = "refund_then_cancel"
     CANCEL_RECOVERY = "cancel_recovery"
+    # R9 Phase B 第四轮方案乙：RTC 中间辅助任务（只进 train split，
+    # 复用 cancel_eligible 结构、实体取 RTC 的 other_order；不进任何评测面）
+    RTC_STEPWISE = "rtc_stepwise"
     # FlightOps
     REBOOK_ELIGIBLE = "rebook_eligible"
     REBOOK_DENIED = "rebook_denied"
