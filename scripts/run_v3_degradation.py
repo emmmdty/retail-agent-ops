@@ -57,10 +57,11 @@ BUNDLE_DIR = PROJECT_ROOT / "domains" / "retail_ops" / "v3"
 MODELS_ROOT = PROJECT_ROOT / "models"
 MODEL_NAME = "Qwen3-4B-pinned"
 BREAKPOINTS = (3, 6, 9, 12, 15)
-# 20260905：修复 REFUND_DENIED_WINDOW / CANCEL_DENIED_RECENT 的状态方向
-# （此前 +margin 使场景「叫 DENY、状态可退」，教师按业务正确执行反被判失败）。
+# 20260905b：第二版修复——除 DENY-window 状态方向外，refund_eligible /
+# refund_recovery / refund_then_cancel 的 user_request 补上 gold 所需的 reason
+# （此前教师只能反问用户，行为正确却被判 wrong_final_state）。
 # 内容变 → 版本变（版本↔内容双射）。
-DATASET_VERSION = "retail_ops_v3_tc{tool_count}_20260905"
+DATASET_VERSION = "retail_ops_v3_tc{tool_count}_20260905b"
 
 #: 小样本与大样本**只差每场景条数**，场景集合、难度轴、生成器、seed 全部相同。
 PROFILES: dict[str, dict[str, Any]] = {

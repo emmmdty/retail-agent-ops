@@ -278,3 +278,30 @@ class TestDenyScenariosAreActuallyDenied:
         assert payload.get("error_code") not in (None, ""), (
             f"{scenario.value}: 环境{tool}未拒绝——{payload}"
         )
+
+
+class TestUserRequestCarriesGoldParameters:
+    """user_request 必须包含 gold 调用所需的全部非常量参数值。
+
+    2026-09-05 full 采集取证：refund_eligible / refund_recovery /
+    refund_then_cancel 的请求不含 reason（gold 的 refund_order/cancel_order
+    需要 4 选 1 的 reason），教师（mimo）只能反问用户——行为正确却被判
+    wrong_final_state（~50% 失败率，重试白白烧钱拖慢采集）。
+    反问在真实产品里是对的；任务判定要求「无需澄清即可执行」，
+    那么请求就必须自足。
+    """
+
+    def test_every_train_task_request_carries_its_gold_arguments(self) -> None:
+        task_set = build_toolcount_task_set("v", seed=0, tool_count=15)
+        for record in task_set.train:
+            task = record.task
+            request = task.user_request
+            gold_values: set[str] = set()
+            for call in task.expected_calls:
+                for value in call.arguments.values():
+                    if isinstance(value, str) and not value.isdigit():
+                        gold_values.add(value)
+            for value in gold_values:
+                assert value in request, (
+                    f"{task.task_id}: gold 参数 {value!r} 不在请求里：{request!r}"
+                )

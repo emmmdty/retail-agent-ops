@@ -430,7 +430,7 @@ def _scenario_task(
                     },
                 ),
             ],
-            user_request=(f"My order {order_id} has a problem, can you refund me?"),
+            user_request=(f"My order {order_id} arrived {reason}, can you refund me?"),
         )
     if scenario is TaskScenario.REFUND_DENIED_WINDOW:
         # DENY-by-window：订单必须**已过期**（deadline < current_day），环境才
@@ -516,7 +516,9 @@ def _scenario_task(
                     },
                 ),
             ],
-            user_request=(f"Please refund my order {order_id} due to a problem."),
+            user_request=(
+                f"Please refund my order {order_id} due to {reason}; if it fails, retry once."
+            ),
         )
     if scenario is TaskScenario.CHECK_REFUND_STATUS:
         return _make_task(
@@ -630,7 +632,10 @@ def _scenario_task(
                     },
                 ),
             ],
-            user_request=(f"Refund order {order_id} and cancel order {other_order_id}."),
+            user_request=(
+                f"Refund order {order_id} (reason: {reason}) and cancel order "
+                f"{other_order_id} (reason: {cancel_reason})."
+            ),
             required_reads=[order_id, other_order_id],
             other_order_id=other_order_id,
         )
