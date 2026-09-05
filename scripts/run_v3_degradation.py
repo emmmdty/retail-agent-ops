@@ -510,13 +510,19 @@ def check_smoke_gates(result: dict[str, Any]) -> list[str]:
         if count == 0:
             failures.append(f"{label} 没有有效 episode")
             continue
-        valid_rate = metrics["episodes_with_a_valid_call"] / count
-        if valid_rate < SMOKE_GATES["episodes_with_a_valid_call_rate_min"]:
-            failures.append(
-                f"{label} 只有 {valid_rate:.4f} 的 episode 发出过合法工具调用 "
-                f"< {SMOKE_GATES['episodes_with_a_valid_call_rate_min']}"
-                "（通常是 prompt/parser 坏了，不是模型弱）"
-            )
+        # 2026-09-05 门禁语义修订（用户裁定）：合法调用率门只约束 candidate 侧。
+        # 零训练基座在宽工具面上「不发合法调用」的比率随工具面单调上升
+        # （tc=3 1.00 → tc=15 0.5833，unknown=0/invalid=0——模型不是调错，
+        # 是不调用），这正是退化曲线要测的自变量效应，不是装置故障；
+        # 装置有效性由 candidate 侧（同装置、同 prompt、同 parser）证明。
+        if label == "candidate":
+            valid_rate = metrics["episodes_with_a_valid_call"] / count
+            if valid_rate < SMOKE_GATES["episodes_with_a_valid_call_rate_min"]:
+                failures.append(
+                    f"candidate 只有 {valid_rate:.4f} 的 episode 发出过合法工具调用 "
+                    f"< {SMOKE_GATES['episodes_with_a_valid_call_rate_min']}"
+                    "（通常是 prompt/parser 坏了，不是模型弱）"
+                )
     return failures
 
 
