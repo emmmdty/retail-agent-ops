@@ -12,7 +12,7 @@ import pytest
 
 from veritool_rl.core.agent.policy import OraclePolicy
 from veritool_rl.core.agent.runner import run_episode
-from veritool_rl.core.trajectory import TaskSpec
+from veritool_rl.core.trajectory import TaskScenario, TaskSpec
 from veritool_rl.retail_ops.domain.bundle import load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
 from veritool_rl.retail_ops.domain.v3_tasks import (
@@ -226,3 +226,55 @@ class TestPolicyGateIsNotTaskData:
         )
         assert observation.error_code == "policy_denied"
         assert env.check_policy() == ["cancel_requires_lookup"]
+
+
+class TestDenyScenariosAreActuallyDenied:
+    """DENY-by-window 场景的订单状态必须真的会被环境拒绝。
+
+    2026-09-05 full 采集取证发现：`_order` 统一 `_CURRENT_DAY + margin`，
+    REFUND_DENIED_WINDOW / CANCEL_DENIED_RECENT 的订单因此**永远在窗口内**——
+    教师按环境正确执行退款/取消，被 wrong_final_state 判失败；评测时该场景
+    变成送分题（模型「不作为」恰好匹配 target）。与 v1 formal 的
+    `_CURRENT_DAY - margin`（LOG：POLICY_BOUNDARY §3）方向相反。
+    Oracle 预检抓不到这个矛盾（不作为恰好匹配 target），所以必须有
+    「DENY 场景在环境层真的会 deny」的正向断言。
+    """
+
+    @pytest.mark.parametrize(
+        "scenario",
+        [TaskScenario.REFUND_DENIED_WINDOW, TaskScenario.CANCEL_DENIED_RECENT],
+    )
+    def test_deny_window_scenarios_start_expired(self, scenario: TaskScenario) -> None:
+        task_set = build_toolcount_task_set("v", seed=0, tool_count=15)
+        tasks = [r.task for r in task_set.train if r.task.scenario is scenario]
+        assert tasks, scenario
+        current_day = tasks[0].initial_state["current_day"]
+        for task in tasks:
+            order_id = task.required_reads[0]
+            order = task.initial_state["orders"][order_id]
+            assert order["refund_deadline"] < current_day, (
+                f"{task.task_id}: deadline={order['refund_deadline']} "
+                f">= current_day={current_day}——场景叫 DENY、状态却可退/可取消"
+            )
+
+    @pytest.mark.parametrize(
+        "scenario,tool",
+        [
+            (TaskScenario.REFUND_DENIED_WINDOW, "refund_order"),
+            (TaskScenario.CANCEL_DENIED_RECENT, "cancel_order"),
+        ],
+    )
+    def test_the_environment_actually_denies_them(self, scenario: TaskScenario, tool: str) -> None:
+        """环境层正向断言：对这些任务执行被拒动作必须返回 deny（自变量生效性）。"""
+        bundle = load_bundle(BUNDLE_DIR)
+        task_set = build_toolcount_task_set("v", seed=0, tool_count=15)
+        tasks = [r.task for r in task_set.train if r.task.scenario is scenario]
+        task = tasks[0]
+        env = RetailOpsEnv(task, bundle, allowed_tools=_TOOL_SUBSETS[15])
+        order_id = task.required_reads[0]
+        reason = "changed_mind"
+        observation = env.execute_tool(tool, {"order_id": order_id, "reason": reason})
+        payload = observation.model_dump()
+        assert payload.get("error_code") not in (None, ""), (
+            f"{scenario.value}: 环境{tool}未拒绝——{payload}"
+        )

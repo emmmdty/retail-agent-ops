@@ -433,13 +433,18 @@ def _scenario_task(
             user_request=(f"My order {order_id} has a problem, can you refund me?"),
         )
     if scenario is TaskScenario.REFUND_DENIED_WINDOW:
+        # DENY-by-window：订单必须**已过期**（deadline < current_day），环境才
+        # 会真的拒绝退款。2026-09-05 之前这里用 +margin——场景叫 DENY、状态
+        # 却窗口内可退，教师按业务正确执行退款反被判 wrong_final_state
+        # （Oracle「不作为」恰好匹配 target，预检抓不到）。与 v1 formal 的
+        # `_CURRENT_DAY - margin` 对齐；margin≥10 压缩到 2 保持难度语义。
         denied_margin = min(margin, 2) if margin >= 10 else margin
         return _make_task(
             scenario,
             split,
             order_id,
             customer_id,
-            denied_margin,
+            -denied_margin,
             expected_decision=ExpectedDecision.DENY,
             expected_calls=[
                 ToolCall(
@@ -555,13 +560,16 @@ def _scenario_task(
             user_request=(f"Please cancel order {order_id}, reason: {cancel_reason}."),
         )
     if scenario is TaskScenario.CANCEL_DENIED_RECENT:
+        # DENY-by-window：取消期限检查是 `current_day > refund_deadline` 才拒，
+        # 订单必须**已过期**。此前 +margin 使环境永不拒绝、场景不可成立
+        # （与 REFUND_DENIED_WINDOW 同一款缺陷）。
         denied_margin = min(margin, 2) if margin >= 10 else margin
         return _make_task(
             scenario,
             split,
             order_id,
             customer_id,
-            denied_margin,
+            -denied_margin,
             expected_decision=ExpectedDecision.DENY,
             expected_calls=[
                 ToolCall(
