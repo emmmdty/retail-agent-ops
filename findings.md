@@ -1,5 +1,21 @@
 # Findings
 
+## 2026-09-05 — D1 方案乙（rtc_stepwise）实现发现
+
+- **formal manifest 读写链有三处隐含「场景序完备」假设**，rtc_stepwise（只进 train、
+  不在 12 场景序里）逐一撞上：(1) `_split_evidence_values` 的 category_counts 按场景序
+  枚举，额外场景被静默丢弃 → 改为「场景序块 + 实际额外键」；(2) `_parse_and_validate_
+  private_rows` 的 expected 序列同样按场景序展开 → 额外场景块追加在末尾（写入侧行序
+  同构——stepwise 块必须在全部场景块之后，第一版插在 rtc 后即被行序校验拦下）；
+  (3) 额外场景的期望元素从字符串构造，而比较用 `is not`——TaskScenario 是 StrEnum，
+  `==` 成立但 `is not` 失败 → 期望元素必须转回枚举。
+- **教训**：给 manifest 校验器加「只出现于某一 split 的辅助场景」，写入序、读序、
+  计数三处必须同构；StrEnum 的 `is not` 比较是隐性陷阱（identity 比较不吸收 str）。
+- 方案乙版本 `retail_ops_v4_20260905` 同时属于 `_V4_EXTENDED_CANCEL_VERSIONS`
+  （继承方案甲的 CANCEL_* 扩展）与 `_V4_STEPWISE_VERSIONS`；train 640 / dev 120 /
+  holdout 240；Oracle 预检 640/640 全解零违规（0.3s）。
+- teacher-v4-005 采集启动（mimo，640 任务，~3h，进度监控同甲）。
+
 ## 2026-09-04 — D1 rtc 第四轮数据面：方案甲 family 覆盖的三个实现发现
 
 - **机制选型（用户选项 A）**：`_v4_family_spec` family 覆盖需要新 dataset_version
