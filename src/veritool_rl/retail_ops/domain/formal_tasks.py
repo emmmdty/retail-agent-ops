@@ -814,11 +814,11 @@ def _v4_scenario_contract(
                 "refund_status": "none",
             },
         )
+    get_order_other: dict[str, Any] = {
+        "name": "get_order",
+        "arguments": {"order_id": "other_order"},
+    }
     if scenario is TaskScenario.REFUND_THEN_CANCEL:
-        get_order_other: dict[str, Any] = {
-            "name": "get_order",
-            "arguments": {"order_id": "other_order"},
-        }
         return (
             ExpectedDecision.ALLOW,
             [get_order, refund, get_order_other, cancel_other],
@@ -832,10 +832,6 @@ def _v4_scenario_contract(
     if scenario is TaskScenario.RTC_STEPWISE:
         # 方案乙辅助任务：RTC 同一状态的第一段——只「查 B 并取消 B」。
         # policy_state 描述主单 A（与对应 rtc 任务同源，A 在本任务里不被触碰）。
-        get_order_other: dict[str, Any] = {
-            "name": "get_order",
-            "arguments": {"order_id": "other_order"},
-        }
         return (
             ExpectedDecision.ALLOW,
             [get_order_other, cancel_other],
