@@ -950,6 +950,8 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
     extended = dataset_version in _V4_EXTENDED_CANCEL_VERSIONS
     stepwise = dataset_version in _V4_STEPWISE_VERSIONS
     records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
+    rtc_train_families: list[dict[str, Any]] = []
+    rtc_scenario_index = -1
     for scenario_index, scenario in enumerate(_V4_SCENARIOS):
         state_count = 10 if extended and scenario in _V4_CANCEL_SCENARIOS else 7
         train_families = 35 if state_count == 10 else 20
@@ -982,28 +984,33 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
                     variant_index=variant_index,
                 )
                 records[split].append(FormalTaskRecord.from_task(task, variant_index))
-        if stepwise and scenario is TaskScenario.REFUND_THEN_CANCEL:
-            for family in families[:train_families]:
-                stepwise_family = _v4_family_spec(
-                    dataset_version,
-                    TaskScenario.RTC_STEPWISE,
-                    scenario_index,
-                    int(family["state_variant"]),
-                    int(family["context_variant"]),
+        if scenario is TaskScenario.REFUND_THEN_CANCEL:
+            rtc_scenario_index = scenario_index
+            rtc_train_families = families[:train_families]
+    if stepwise and rtc_train_families:
+        # 方案乙：stepwise 块追加在全部场景块之后（行序 = 12 场景块 + stepwise 块，
+        # 与 manifest 校验的 expected 序列一致）
+        for family in rtc_train_families:
+            stepwise_family = _v4_family_spec(
+                dataset_version,
+                TaskScenario.RTC_STEPWISE,
+                rtc_scenario_index,
+                int(family["state_variant"]),
+                int(family["context_variant"]),
+            )
+            stepwise_fingerprint = _sha256({"family": stepwise_family})
+            for variant_index in range(2):
+                task = _materialize_task(
+                    dataset_version=dataset_version,
+                    seed=seed,
+                    split=FormalSplit.TRAIN,
+                    family=stepwise_family,
+                    family_fingerprint=stepwise_fingerprint,
+                    variant_index=variant_index,
                 )
-                stepwise_fingerprint = _sha256({"family": stepwise_family})
-                for variant_index in range(2):
-                    task = _materialize_task(
-                        dataset_version=dataset_version,
-                        seed=seed,
-                        split=FormalSplit.TRAIN,
-                        family=stepwise_family,
-                        family_fingerprint=stepwise_fingerprint,
-                        variant_index=variant_index,
-                    )
-                    records[FormalSplit.TRAIN].append(
-                        FormalTaskRecord.from_task(task, variant_index)
-                    )
+                records[FormalSplit.TRAIN].append(
+                    FormalTaskRecord.from_task(task, variant_index)
+                )
 
     task_set = FormalTaskSet(
         dataset_version=dataset_version,

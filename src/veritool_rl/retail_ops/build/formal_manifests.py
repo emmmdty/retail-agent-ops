@@ -652,7 +652,14 @@ def _split_evidence_values(
         "split": split.value,
         "task_count": len(records),
         "category_counts": {
-            scenario.value: counts.get(scenario.value, 0) for scenario in scenario_order
+            # 场景序枚举优先；方案乙的 RTC_STEPWISE 只在 train 出现、不在场景序里，
+            # 作为额外键如实计入（dev/holdout 无额外键，与旧版本逐位不变）。
+            **{scenario.value: counts.get(scenario.value, 0) for scenario in scenario_order},
+            **{
+                key: value
+                for key, value in counts.items()
+                if key not in {scenario.value for scenario in scenario_order}
+            },
         },
         **{
             field: [getattr(record, field.removesuffix("s")) for record in records]
@@ -799,10 +806,19 @@ def _parse_and_validate_private_rows(
     rows = [_FormalPrivateTaskRow.model_validate_json(line) for line in lines]
     is_v4 = evidence.bundle_version == "4.0.0"
     scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
+    # 方案乙的 RTC_STEPWISE 只在 train 出现、不在场景序里：作为额外场景块
+    # 追加在场景序块之后（写入侧 records 顺序即如此）；旧版本额外集为空。
+    extra_scenarios = [
+        key for key in evidence.category_counts if key not in {s.value for s in scenario_order}
+    ]
     expected_scenarios = [
         scenario
         for scenario in scenario_order
         for _ in range(evidence.category_counts[scenario.value])
+    ] + [
+        TaskScenario(key)
+        for key in extra_scenarios
+        for _ in range(evidence.category_counts[key])
     ]
     records: list[FormalTaskRecord] = []
     for index, (row, expected_scenario) in enumerate(zip(rows, expected_scenarios, strict=True)):
