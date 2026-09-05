@@ -65,6 +65,43 @@ teacher 接受率门禁 ≥ 0.80；DENY 类措辞沿用 R9「评估/判断」式
 `dev.jsonl`、评测前换回 TaskSpec 格式；adapter `file_sha256` 从远端 `sha256sum` 现算；
 输出目录不可覆盖。
 
+### D1 方案乙（2026-09-04 用户确认上乙；预注册后动工）
+
+**方案甲判读（已执行，2026-09-05）**：第二分支「方向对，力度不够」（rtc dev 4/10、
+OOD v4 rtc 5/10、OOD v2 pv 4≤7；三面对 sft-003 全面占优）。按 round4 交接，甲→乙升级。
+
+**方案乙规格（round4 交接原文 + 用户 2026-09-04/05 确认）**：新增辅助场景
+`rtc_stepwise`——RTC 同一状态拆两段的第一段，只要求「查 B 并取消 B」（复用
+cancel_eligible 结构，订单号来自 RTC 的 other_order），与完整 RTC 以约 1:1 混入训练
+（rtc train 任务 40 ↔ stepwise 40）。实现：新 dataset_version
+`retail_ops_v4_20260905`（版本↔内容双射；dev/holdout 与 v4_20260904 同分布重抽、
+task_id 不同——记录在案）；`TaskScenario.RTC_STEPWISE` 只出现在 train split
+（dev/holdout 配额 0，评测面不变）；paraphrase 复用 cancel 意图 bucket。
+
+**判读规则（阈值与 round4 表逐字相同，候选 `sft-005`）**：
+
+| 结果 | 判定 | 后续 |
+|---|---|---|
+| rtc dev ≥ 8/10 且 OOD v4 rtc ≥ 5/10 且 pv 不升 | 修好 | 收口 Phase B |
+| rtc 改善但 < 上述线 | 方向对，力度不够 | 甲乙已尽，按第五节限定口径收口 |
+| rtc 无改善或 pv 恶化 | 假设错 | 停止，记录负结果，Phase B 就此收口 |
+
+**运行清单（产物目录逐字声明）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| E-0 | formal_freeze（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260905` + `manifests/retail_ops/v1/retail_ops_v4_20260905` |
+| E-1 | teacher_collect（mimo，640 任务） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260905/teacher-collection/teacher-v4-005`；CLI output_dir 占位 `reports/retail_ops/v1/r9/round4/teacher-run-005` |
+| E-2 | train_export（本地 CPU） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260905/train-export/train-export-v4-005` + `reports/retail_ops/v1/r9/round4/train-export-005` |
+| E-3 | dev_sft_export（本地 CPU，Oracle） | `data/private/retail_ops/v1/r2/retail_ops_v4_20260905/dev-sft/dev-sft-v4-005`；CLI output_dir 占位 `reports/retail_ops/v1/r9/round4/dev-sft-run-005` |
+| E-4 | 训练 sft-005（gpu-5090 GPU 0，~35 min） | `reports/retail_ops/v1/r9/round4/sft-005` |
+| E-5 | v4 dev 评测（GPU 0） | `reports/retail_ops/v1/r9/round4/dev-candidate-005` |
+| E-6 | OOD v2 评测（GPU 0） | `reports/retail_ops/v1/r9/round4/ood-v2-candidate-005` |
+| E-7 | OOD v4 评测（GPU 0） | `reports/retail_ops/v1/r9/round4/ood-v4-candidate-005` |
+
+**成本预估**：teacher 重采 640 任务（mimo，~1.9M tokens，按 v4-004 实测单任务
+~2.9K tok 推算）；训练 ~35 min GPU；三面评测 ~40 min GPU。
+
 ## 上一任务：质量收口第二轮——v1.3 绝对门 + 方差治理 + 全面审计（2026-09-04，CPU 部分完成）
 
 **输入**：`docs/handoffs/2026-09-04-quality-closeout-v13-and-audit-execution-prompt.md`（用户已批准）。
