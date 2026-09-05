@@ -815,11 +815,7 @@ def _parse_and_validate_private_rows(
         scenario
         for scenario in scenario_order
         for _ in range(evidence.category_counts[scenario.value])
-    ] + [
-        TaskScenario(key)
-        for key in extra_scenarios
-        for _ in range(evidence.category_counts[key])
-    ]
+    ] + [TaskScenario(key) for key in extra_scenarios for _ in range(evidence.category_counts[key])]
     records: list[FormalTaskRecord] = []
     for index, (row, expected_scenario) in enumerate(zip(rows, expected_scenarios, strict=True)):
         if row.task.split != evidence.split:

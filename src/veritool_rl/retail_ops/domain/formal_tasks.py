@@ -1008,9 +1008,7 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
                     family_fingerprint=stepwise_fingerprint,
                     variant_index=variant_index,
                 )
-                records[FormalSplit.TRAIN].append(
-                    FormalTaskRecord.from_task(task, variant_index)
-                )
+                records[FormalSplit.TRAIN].append(FormalTaskRecord.from_task(task, variant_index))
 
     task_set = FormalTaskSet(
         dataset_version=dataset_version,
