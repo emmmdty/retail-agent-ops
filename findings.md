@@ -1,5 +1,21 @@
 # Findings
 
+## 2026-09-05 — D1 第四轮判定：方案乙「修好」——rtc 0/10 → dev 9/10、OOD v4 8/10
+
+- **判读（round4 预注册表，阈值一个字未改）**：rtc dev **9/10 ≥ 8** ✓、OOD v4 rtc
+  **8/10 ≥ 5** ✓、OOD v2 pv **0 ≤ 7** ✓ → 三条全过，**修好**。
+- **三面对比**：sft-005（乙）v4 dev 0.9833/pv1（dev face 为 v4_20260905，同分布重抽，
+  与 sft-003/004 不可逐位比）、OOD v2 **1.0000**/pv0（invalid 1，schema 0.9899——与
+  前三任务集逐字节相同）、OOD v4 0.9583/pv3（pv 较甲 2→3，如实记录）。
+- **方法论结论**：rtc 复合动作的三条路径只有辅助课程生效（oversample 证伪、
+  family 覆盖 4/10 不够、课程 9/10 修复）；机制解读（未消融）：stepwise 给了
+  「第二订单请求 → cancel」的干净梯度，完整 RTC 的梯度被「提到的订单 → 退款」
+  强先验淹没。已写入 `R9_PHASE_B_RESULTS.md` §8 与 PROJECT_LOG。
+- 成本记账：teacher-v4-005 采集 640 任务 2.01M tokens（mimo-v2.5）；sft-005 训练
+  ~40 min GPU；三面评测 ~35 min GPU。sft-004/005 adapter 哈希分别
+  `43fd2477…` / `3aa24235…`。
+- **仍探索性**：不用于发布判定；发布候选仍是 sft-008；sft-005 未经过封存评测。
+
 ## 2026-09-05 — D1 方案乙（rtc_stepwise）实现发现
 
 - **formal manifest 读写链有三处隐含「场景序完备」假设**，rtc_stepwise（只进 train、

@@ -1224,3 +1224,25 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-09-04 | C2 训练 a（GPU 0，616.9 s） | train_loss 0.1596；adapter `c7e7f765…` |
 | 2026-09-04 | C2 训练 b（GPU 0，614.6 s） | train_loss 0.1597；adapter `4f4a4223…` |
 | 2026-09-04 | C2 判读：SHA-256 + loss 曲线 + 权重差 | 不逐位复现；mean 7.4e-4 / max 2.8e-3 |
+
+## 2026-09-05 — GPU 执行阶段第 2 步：D1 rtc 第四轮（方案甲判「方向对」，方案乙判「修好」）
+
+- **方案甲（用户选项 A：family 覆盖）**：新数据集 `retail_ops_v4_20260904`
+  （CANCEL_* 4 场景 10 态 × 5 语境，train family 20→35，总量 600/120/240）；
+  teacher-v4-004（mimo）600/600 接受率 0.987、2.01M tokens；sft-004（2400 行）三面
+  dev 0.95/pv0、OOD v2 0.9333/pv4、OOD v4 0.9417/pv2；rtc dev 4/10、OOD v4 5/10。
+  预注册判读 = 第二分支「方向对，力度不够」→ 用户确认上方案乙。
+- **方案乙（rtc_stepwise 辅助课程）**：新数据集 `retail_ops_v4_20260905`（+40 辅助
+  任务只进 train，1:1 配对，总量 640/120/240）；teacher-v4-005（mimo）640/640 接受率
+  0.980、2.01M tokens；sft-005（2560 行）dev 0.9833/pv1、OOD v2 1.0000/pv0、
+  OOD v4 0.9583/pv3；**rtc dev 9/10、OOD v4 8/10**。预注册判读三条全过 = **修好**。
+- 收口：`R9_PHASE_B_RESULTS.md` §8、findings、PROJECT_LOG。仍探索性，候选仍 sft-008。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-04 | teacher-v4-004 采集（mimo，600 任务，~3h） | 接受率 0.987；2.01M tokens（记账） |
+| 2026-09-04 | sft-004 训练（GPU 0，616+1963s 两段） | train_loss 0.179；eval 0.0937；adapter `43fd2477…` |
+| 2026-09-04 | sft-004 三面评测（GPU 0，~35 min） | 见上；rtc dev 4/10 → 第二分支 |
+| 2026-09-05 | teacher-v4-005 采集（mimo，640 任务，~2.5h） | 接受率 0.980；2.01M tokens（记账） |
+| 2026-09-05 | sft-005 训练（GPU 0，~40 min） | train_loss 0.1896；eval 0.0901；adapter `3aa24235…` |
+| 2026-09-05 | sft-005 三面评测（GPU 0，~35 min） | dev 0.9833/pv1；OOD v2 1.0000/pv0；OOD v4 0.9583/pv3；rtc 9/10、8/10 → **修好** |
