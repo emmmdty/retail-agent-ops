@@ -393,6 +393,10 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
             "batch_size": 1,
             "grad_accum": 1,
             "lr": 2e-4,
+            # 15 工具的 system prompt 使序列达 ~1784 tokens（2026-09-05 实测）；
+            # max_seq_len=1024 会把 assistant 段整段截掉 → assistant mask 全零
+            # → loss/grad 恒为 0 → LoRA 零更新（candidate 与 base 逐位相同的根因）。
+            "max_seq_len": 2048,
         },
     }
     run_dir = train_run_dir(out)
