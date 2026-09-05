@@ -351,6 +351,19 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
         msg = f"没有 SFT 数据：{sft_path}"
         raise RuntimeError(msg)
 
+    # P1-9（2026-08-28）给 run_sft 加了 train/eval task_id 重叠校验，而本 runner
+    # 的 smoke 装置此前把 eval_path 指向训练文件本身（2026-08-27 首跑时该校验
+    # 尚不存在）。smoke 断点没有独立的 dev SFT 导出，因此按行拆出不相交的
+    # 训练内 eval 子集（尾部 1/5，按 task_id 唯一的行整体搬移）；eval_loss 是
+    # 小样本诊断量，不属于退化曲线读数。
+    lines = sft_path.read_text(encoding="utf-8").splitlines()
+    eval_count = max(1, len(lines) // 5)
+    split_at = len(lines) - eval_count
+    train_file = out / "sft" / "sft-train.jsonl"
+    eval_file = out / "sft" / "sft-eval.jsonl"
+    train_file.write_text("\n".join(lines[:split_at]) + "\n", encoding="utf-8")
+    eval_file.write_text("\n".join(lines[split_at:]) + "\n", encoding="utf-8")
+
     model_dir = MODELS_ROOT / MODEL_NAME
     file_sha256 = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -372,8 +385,8 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
             "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
         },
         "data": {
-            "train_path": str(sft_path.relative_to(PROJECT_ROOT)),
-            "eval_path": str(sft_path.relative_to(PROJECT_ROOT)),
+            "train_path": str(train_file.relative_to(PROJECT_ROOT)),
+            "eval_path": str(eval_file.relative_to(PROJECT_ROOT)),
         },
         "training": {
             "epochs": PROFILES[profile]["epochs"],
