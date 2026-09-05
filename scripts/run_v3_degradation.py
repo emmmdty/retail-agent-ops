@@ -393,10 +393,12 @@ def stage_train(tool_count: int, profile: str, out: Path) -> dict[str, Any]:
             "batch_size": 1,
             "grad_accum": 1,
             "lr": 2e-4,
-            # 15 工具的 system prompt 使序列达 ~1784 tokens（2026-09-05 实测）；
-            # max_seq_len=1024 会把 assistant 段整段截掉 → assistant mask 全零
-            # → loss/grad 恒为 0 → LoRA 零更新（candidate 与 base 逐位相同的根因）。
-            "max_seq_len": 2048,
+            # 2026-09-05 两次实测（spy 钩住 TRL _tokenize）：训练时 chat template
+            # 渲染后的序列达 2398–2533 tokens（15 工具 schema 为主体），1024 与
+            # 2048 都会触发 keep_start 截断、把尾部 assistant 段整段切掉 →
+            # labels 全 -100 → loss/grad 恒 0 → LoRA 零更新（candidate 与 base
+            # 逐位相同的根因）。3072 = 实测最长 2533 + ~20% 余量。
+            "max_seq_len": 3072,
         },
     }
     run_dir = train_run_dir(out)
