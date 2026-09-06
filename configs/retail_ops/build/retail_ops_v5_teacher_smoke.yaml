@@ -1,0 +1,11 @@
+# B-4/v5（V5-2-smoke，预注册 task_plan 运行清单）：teacher_collect 最小探测——
+# 单 episode/单次尝试，用于在投入全量预算前核实 mimo 路由可用性与分场景措辞先验
+# （PITFALLS #5：DENY 类请求措辞会预设结论，先审接受率再放量）。
+# 可安全中断：checkpoint 精确哈希校验后续跑不重复计费。
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v5_20260906
+dataset_version: retail_ops_v5_20260906
+attempt_id: teacher-v5-smoke-001
+max_episodes_per_task: 1
+max_request_attempts: 1

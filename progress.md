@@ -1409,3 +1409,32 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-06 | 轨道 B（本地 CPU） | 平移图 + 双文档叙事落盘；治理测试全绿 |
 | 2026-09-06 | A-0（用户确认） | 四项裁定冻结 |
 | 2026-09-06 | A-1 预注册提交 | task_plan Current Task 重写为 v5 预注册 |
+
+## 2026-09-07 — A-2/A-3 完成：v5 生成器 + 冻结 + 覆盖表机器证明；A-4 被 mimo 周限阻断
+
+- **A-2（TDD，commit `d361972`）**：`formal_tasks.py` v5 生成器（分层档键 = margin 值、
+  档内 sha256 排序、档级配数、margin 0 档进三分）、`assert_exact_quotas_v5`
+  （全档覆盖 + margin-0 三分 + ≥10 占比 [0.8,1.25] + 指纹纪律）、口径 A
+  （事实从句请求 + `acceptable_reasons` metadata + `arguments_match` 集合语义，
+  旧任务逐位不变）、max_steps 6/7 + 评测 config Literal [5,7] 按 dataset_version
+  钉死 + 报告字段从 config 取值 + `_MAX_STEPS` 退役、manifests v5 登记。
+  测试：v5 契约 20 条（含 1032 任务 Oracle 全解零违规）；全量 1513 passed。
+- **A-3（V5-1/V5-1b）**：`formal_freeze` v5 落盘
+  （私有根 train/dev/holdout.jsonl + 公开 manifest 四件套）；
+  覆盖表机器证明 `reports/retail_ops/v1/r12-v5/coverage-v5-001/coverage.json`
+  （`scripts/ops/v5_coverage_report.py`）：refund_denied_window 占比比
+  **0.2 → 0.926**（原 5.0×）、refund_recovery 0.25 → 0.873（原 4.0×），全部 ∈ [0.8, 1.25]。
+- **干净 clone 实跑**（2026-09-07）：**1464 passed / 49 skipped / 0 failed**；
+  四文档基线同步 1513/1464+49（commit `30a1299`）。
+- **A-4 阻断**：V5-2-smoke（86 条）全部 `transport_exhausted`——opencode zen 的
+  mimo-v2.5 周用量达上限（429 GoUsageLimitError，~07:50 重置）；零费用零接受。
+  全量跑用独立 attempt_id 不受影响。三选项待用户：等重置 / 启用余额 / 切 DeepSeek。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-06 | A-1 预注册提交（ba463a6） | 判读规则 + V5 运行清单冻结 |
+| 2026-09-07 | A-2 v5 生成器 + 测试（d361972） | 20 契约测试 + 全量 1513 绿 |
+| 2026-09-07 | V5-1 formal_freeze（本地 CPU） | 私有根 + manifests 落盘 |
+| 2026-09-07 | V5-1b 覆盖表（本地 CPU） | 5.0×→~1.0× 机器证明落盘 |
+| 2026-09-07 | 干净 clone 实跑 | 1464/49/0，文档基线同步（30a1299） |
+| 2026-09-07 | V5-2-smoke（mimo，~4 min 后中断） | 86 条 transport_exhausted（周限），$0 |

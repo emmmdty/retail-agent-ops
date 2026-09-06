@@ -1,5 +1,44 @@
 # Findings
 
+## 2026-09-07 — A-2/A-3 收口：v5 生成器落地 + 覆盖表机器证明（5.0× → ~1.0×）+ smoke 被 mimo 周限阻断
+
+- **v5 任务集落成**（`build_v5_task_set`，20 条契约测试全绿 + 全量 1513）：
+  train 588 / dev 198 / holdout 246；1032 任务 Oracle 全解零违规（纯 CPU ~1.5s）。
+- **分层档键 = margin 值本身**（allow 侧 0/1/2/3/5/7/10/14「7+1 档」；deny 侧
+  1–14 不变；lookup/check = 状态下标；cancel = v4 十档）。档内 sha256 排序，
+  档级配数确定性分配（dev 每档 1、holdout 每档 1+降档序余量、≥10 档至多 1 余量）。
+  **与 B4 提案的已披露偏差**：「每场景 family 35 不变」与「dev/holdout 覆盖全部
+  档位」在档数 ≥7 时算术不相容（dev=5 < 7 档）——按验收优先改配额表
+  （`_V5_SPLIT_QUOTAS`），机器证明落盘 `reports/retail_ops/v1/r12-v5/
+  coverage-v5-001/coverage.json`。
+- **5.0× → ~1.0× 机器证明**（margin ≥10 family 占比 train:holdout）：
+  `refund_denied_window` **0.2 → 0.926**、`refund_recovery` 0.25 → 0.873、
+  `refund_denied_ownership` 0.833 → 0.926、`refund_denied_duplicate` 0.75 → 0.926、
+  `refund_eligible` 1.0 → 0.873、cancel 族全部 1.0——全部落 [0.8, 1.25]，
+  由 `assert_exact_quotas_v5` 机器守卫（不再是人工检查）。
+- **口径 A 实现形状**（A-0.2 冻结映射表）：请求陈述**事实从句**（如「商品存在破损」，
+  同一从句跨 allow/deny 场景复用——交接 §4.6 约束 2 的「措辞→结果」伪相关在构造上
+  打断，有测试断言）；gold `expected_calls` 保持规范枚举值（Oracle/渲染路径不变）；
+  `metadata["acceptable_reasons"]` 承载可接受集合；比对点两处（`core/metrics.py`
+  参数判定 + env milestone 计数）统一走 `arguments_match`——**任务携带该 metadata
+  才启用集合语义**，v1–v4 旧任务逐位不变（回归测试锁定）；env 的
+  `refund_reasons` 枚举校验不动（schema 层合法性 ≠ 任务侧判分契约）。
+- **max_steps 版本化**（C4 提案 1）：v5 任务 6（多步 7）；评测 config Literal
+  放宽为 [5, 7] 且 validator 按 dataset_version 钉死（v1–v4 必须 5、v5 必须 7）；
+  dev/sealed 报告字段同步放宽并**从 config 取值**（旧证据磁盘值 5 的加载与
+  report_id 复算不受影响——Literal 放宽不改存储值）；全局 `_MAX_STEPS` 常量退役
+  （改名 `_V1_V4_MAX_STEPS` 留注记 + 测试断言防复活）；配对字段 `max_steps`
+  逐字比较天然拒绝新旧口径混用（结构保护，C4 §变更内容 2）。
+- **V5-2-smoke 被 mimo 周限阻断**（86 条全部 `transport_exhausted`，零接受零费用）：
+  直接复测 = opencode zen 端点 429 `GoUsageLimitError`（weekly，~07:50 重置）；
+  urllib 指纹还会吃 Cloudflare 1010（测量时要用真实 SDK 客户端）。87 个失败
+  attempt 的 task_id 已记入 smoke-001 的 already_attempted——**全量跑用独立
+  attempt_id（teacher-v5-001），不受影响**。A-4 三个选项（等重置 / 用户启用
+  余额 / 切 DeepSeek）待用户裁决。
+- **工程注记**：`product_cli` 的 formal_freeze 分发按 dataset_version 先判 v5；
+  `_r2_private_root` 对 v5 版本名直接复用（`data/private/retail_ops/v1/r2/
+  retail_ops_v5_20260906`）；冻结管线内的 reload/holdout 回读校验全部原样生效。
+
 ## 2026-09-06 — B 轨道交付：探针三模型平移图（B-b）+ DPO 负结果叙事（B-a）
 
 - **B-b 平移图**（`scripts/ops/plot_policy_boundary_shift.py` →
