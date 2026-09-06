@@ -13,7 +13,7 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 放行侧前提成立）→ B-1 交叉面读数（sft-008 措辞分布外 −14 塌至 0.125）→
 R11-2 训练（12 步守卫通过）→ R11-3/4/5 三面评测 → **A-6 冻结判读 = 修坏**
 （探针 −14 校准至 1.00 的同时放行侧 8 点全 <0.90、dev 0.8833、ood_dev 0.6333；
-门禁守卫按设计拦下「平移不是校准」的 DPO 版）。**候选 sft-008 不变**；
+门禁守卫按设计拦下「平移不是校准」的 DPO 版）。**候选 sft-008 不变、D4 的 NO-GO 维持**；
 LOG-20260906-01。并行项：B-2 v1.4 路径、B-3 治理守卫、B-4 立项方案全部完成；
 CI 全绿（`1d449f5`）。
 
@@ -75,6 +75,8 @@ A-7（bank-006 + 封存观测 8 + release v1.3）只在「修好」分支且**�
 | R11-1 | 偏好对 GPU 采样（探针 120 + 交叉面 120，每任务 N=8，~1.5h） | `reports/retail_ops/v1/r11-dpo/sampling-001` |
 | R11-2-smoke | DPO 管线自检（4 对 1 步；**不进入任何判读**） | `reports/retail_ops/v1/r11-dpo/dpo-smoke-001` |
 | R11-2 | DPO 训练（gpu-5090 GPU 0，~30–60 min；epochs 3） | `reports/retail_ops/v1/r11-dpo/dpo-001` |
+
+（附属文件：`reports/retail_ops/v1/r11-dpo/pairs-smoke-001.jsonl` 为 R11-2-smoke 的输入子集，由 pairs.jsonl 前 4 行生成；`dpo-001.log`/`sampling-001.log` 为运行日志。均不进入判读。）
 | R11-3 | 探针评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/probe-dpo-001` |
 | R11-4 | dev 60 配对评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/dev-candidate-dpo-001` |
 | R11-5 | `ood_dev` 60 评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/ood-dev-candidate-dpo-001` |

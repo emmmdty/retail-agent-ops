@@ -888,7 +888,7 @@ Oracle 是确定性的（按 gold 序列执行），seed 不影响其行为。`r
   记录负结果；不重跑、不换采样素材再试。**
 - **机制读数（不是消融结论）**：单一方向（DENY-only，门禁守卫方案）的偏好对把
   目标格 −14 校准到满分，同时把「拒绝退款」泛化到放行侧——探针的横轴直接画出了
-  边界整体左移的形状（放行侧 7/8 点 ≤ 0.25，premature_final_response 58 条 =
+  边界整体左移的形状（放行侧 8 点全 ≤ 0.25，premature_final_response 58 条 =
   多拒绝行为的直接体现）。D2 §四预警的「DPO 在拒绝/执行二元边界上容易整体平移」
   被实测命中；预注册的「放行侧不塌」门禁正是为此存在——**它按设计拦下了这次候选**。
   两个因素（方向性平移 vs 27 对功效不足）不可分离：−14 被修到 1.00 说明信号
@@ -903,3 +903,8 @@ Oracle 是确定性的（按 gold 序列执行），seed 不影响其行为。`r
   README.md/training_args.bin——sha256sum 的 glob 盲区），补齐后通过；CI 连续失败
   ~1h（82fa8c2 加测后漏跑全量门禁就推送，基线算术守卫在 CI 生效），
   `1d449f5` 恢复全绿。
+
+## 2026-09-06 — bank-005 素材状态（指针条目；详见 task_plan Errors 表两条 + progress 2026-09-06 节）
+
+- **bank-004 从未丢失**：健在于 `data/private/retail_ops/v1/r2/retail_ops_v1_r2_20260722/phrasing/phrasing-bank-004/`（932 条，`bank_sha256 = f4b14e8d…` 与 D4 配置声明逐位吻合）。此前「丢失」是误判（find/布局假设缺陷），已更正并留痕（task_plan Errors 表 2026-09-06 两条）。
+- **bank-005**（同配方生成，947 条，$0.0244，`bank_sha256 = 10005d39…`）定性为**多余素材、永不进入任何评测面**：与 bank-002/ood_dev 有 1 条 status_inquiry 记录级重叠、与 bank-004 有 3 条 ood_sealed 记录级重叠、与训练集零重叠（记录级摘要留档 `manifests/retail_ops/v1/phrasing_exclusivity_bank005.json`，`--extended` 可复算）。
