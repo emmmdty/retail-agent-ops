@@ -1,0 +1,20 @@
+# B-1（r11 并行项）：C3 交叉面任务集构建——政策边界探针 × bank-004 `ood_dev` 分片。
+#
+# 任务面 = `build_policy_boundary_phrasing_tasks(seed=0, bank-004 ood_dev 分片)`，
+# 与 R11-1 DPO 偏好对采样的交叉面**逐字节相同**（同一 seed、同一分片）。
+# 该分片未用于任何训练与评测（交接 §4 A-2）；装置强制措辞只取评测分片
+# （train_aug 被拒绝）。构建产物（120 任务 + manifest）不封存，可反复读。
+#
+# 读数口径（预注册见 task_plan `eeec309` B-1 节）：交叉面同时看见边界型
+# （offset 轴）与措辞型（phrasing_id 维度）退化；读数写 findings，
+# 不用于发布判定。评测配置复用 `retail_ops_ood_v23_sealed_base.yaml`（零训练
+# 基座）与 `retail_ops_ood_v23_sealed_merged.yaml`（sft-008 合并形态）——
+# OOD 评测配置不声明 dataset_version（取自 manifest），跨任务面复用合法。
+pipeline: ood_build
+bundle_dir: domains/retail_ops/v1
+boundary: true
+phrasing:
+  dataset_version: retail_ops_policy_boundary_phrasing_v1_20260904
+  bank_relpath: phrasing/phrasing-bank-004/phrasings.jsonl
+  bank_sha256: "f4b14e8d7b38b4967dba2c93f4d70374470d61cc27a20f2387df8d6548b87d47"
+  partition: ood_dev
