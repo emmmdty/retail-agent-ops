@@ -268,8 +268,8 @@
       "e96edc18a83dfcfbbdd43322ebe4bd19e34e5240535406318f6f20fb6421057f"
     ]
   },
-  "missing_bank_note": "phrasing-bank-004 文件已丢失（task_plan Errors 2026-09-06），其条目取自已提交清单 v1.0 的面级摘要（仅 45 条，弱于记录级）",
   "normalization": "sha256(order_id -> <OID>); record 级含 {order_id}/{other_order_id} -> <OID>",
+  "note": "bank-005 为多余素材（bank-004 健在，2026-09-06 回退），永不进入任何评测面；本清单只留档其素材状态",
   "record_request_sha256": {
     "phrasing-bank-002/ood_dev": [
       "0adc1186ec293041122982228fe9818532665f841e89098f8239a9bd24763cdc",

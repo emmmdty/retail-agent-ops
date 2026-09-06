@@ -63,20 +63,28 @@ EVALUATION_SHARDS: tuple[tuple[str, str], ...] = (
     ("phrasing-bank-003", "ood_sealed"),
     # D4 一次性 v1.3 发布判定的封存分片（预注册 task_plan `9b1c61b`）。
     ("phrasing-bank-004", "ood_sealed"),
-    # bank-005（2026-09-06 生成，替代丢失的 bank-004；task_plan Errors 表当日条目）。
-    # 只用 `ood_dev`（DPO 采样面与 B-1 交叉面）；`ood_sealed` 一并纳入比对，
-    # 它在 A-7 前不得作为任何评测面出现。
+)
+
+#: `--extended` 追加的分片：bank-005（2026-09-06 生成，**多余素材**——bank-004
+#: 健在后经用户裁定回退，bank-005 永不进入任何评测面；其摘要只作为素材状态
+#: 的留档证据，见 task_plan Errors 表 2026-09-06 两条与
+#: `manifests/retail_ops/v1/phrasing_exclusivity_bank005.json`）。
+#: 追加 shard/记录级摘要会改变 build_manifest 的输出——**默认模式必须保持
+#: 与已提交清单逐字节可复算**（治理测试
+#: `test_the_committed_phrasing_digests_match_the_artifacts`），因此扩展只在
+#: 显式标志下生效。
+EVALUATION_SHARDS_EXTENDED: tuple[tuple[str, str], ...] = (
+    *EVALUATION_SHARDS,
     ("phrasing-bank-005", "ood_dev"),
     ("phrasing-bank-005", "ood_sealed"),
 )
 
-#: bank 的候选根目录（相对 `--input_dir`，按序找第一个存在的）：
-#: bank-005 在 v1 根的 `phrasing/` 下，bank-001/002/003 在 r2 私有根的
-#: `phrasing/` 下——两代素材不同布局，搜索覆盖两种。
+#: bank 的候选根目录（相对 `--input_dir`，按序找第一个存在的）。
+#: 默认模式的 4 个 shard 布局不变（`phrasing/` 直下）；搜索根只在 extended
+#: 模式需要（bank-005 在 v1 根的 `phrasing/` 下，而 --input_dir 通常是 r2 根）。
 _BANK_SEARCH_ROOTS: tuple[str, ...] = (
     "phrasing",
     "r2/retail_ops_v1_r2_20260722/phrasing",
-    # 以 r2 根为 --input_dir 时，v1 根的 bank-005 落在这里。
     "../../phrasing",
 )
 
@@ -140,9 +148,19 @@ def training_request_digests(private_root: Path) -> list[str]:
     return _sorted_digests(requests)
 
 
-def _shard_face_digests(private_root: Path, bank: str, partition: str) -> list[str]:
-    """任务面级摘要（v2 构建路径，与既有清单同一 digest 空间）。"""
-    bank_path = _bank_path(private_root, bank)
+def _shard_face_digests(
+    private_root: Path, bank: str, partition: str, *, extended: bool
+) -> list[str]:
+    """任务面级摘要（v2 构建路径，与既有清单同一 digest 空间）。
+
+    extended 模式才允许跨根搜索 bank 文件；默认模式的 4 个 shard 布局与
+    原实现逐字节一致（`<private_root>/phrasing/<bank>/phrasings.jsonl`）。
+    """
+    bank_path = (
+        _bank_path(private_root, bank)
+        if extended
+        else private_root / "phrasing" / bank / "phrasings.jsonl"
+    )
     if not bank_path.is_file():
         return _prior_manifest_shard_digests(bank, partition)
     index = intent_index(load_phrasing_bank(bank_path), partition)  # type: ignore[arg-type]
@@ -150,13 +168,15 @@ def _shard_face_digests(private_root: Path, bank: str, partition: str) -> list[s
     return _sorted_digests(task.user_request for task in tasks)
 
 
-def _shard_record_digests(private_root: Path, bank: str, partition: str) -> list[str]:
-    """记录级摘要：分片里每一条措辞，不只是 v2 任务面抽到的那几条。
-
-    DPO 采样面用整个 `ood_dev` 池（paraphrases_for_task 覆盖全池），泄漏检查
-    必须覆盖全部记录；bank 文件已丢失的 shard 只有面级证据可用（如实降级）。
-    """
-    bank_path = _bank_path(private_root, bank)
+def _shard_record_digests(
+    private_root: Path, bank: str, partition: str, *, extended: bool
+) -> list[str]:
+    """记录级摘要：分片里每一条措辞，不只是 v2 任务面抽到的那几条（仅 extended）。"""
+    bank_path = (
+        _bank_path(private_root, bank)
+        if extended
+        else private_root / "phrasing" / bank / "phrasings.jsonl"
+    )
     if not bank_path.is_file():
         return _prior_manifest_shard_digests(bank, partition)
     return _sorted_record_digests(_bank_records(private_root, bank, partition))
@@ -177,24 +197,46 @@ def _prior_manifest_shard_digests(bank: str, partition: str) -> list[str]:
     return digests
 
 
-def evaluation_request_digests(private_root: Path) -> dict[str, list[str]]:
+def evaluation_request_digests(
+    private_root: Path, *, extended: bool = False
+) -> dict[str, list[str]]:
+    shards = EVALUATION_SHARDS_EXTENDED if extended else EVALUATION_SHARDS
     return {
-        f"{bank}/{partition}": _shard_face_digests(private_root, bank, partition)
-        for bank, partition in EVALUATION_SHARDS
+        f"{bank}/{partition}": _shard_face_digests(private_root, bank, partition, extended=extended)
+        for bank, partition in shards
     }
 
 
-def record_request_digests(private_root: Path) -> dict[str, list[str]]:
+def record_request_digests(private_root: Path, *, extended: bool = False) -> dict[str, list[str]]:
+    shards = EVALUATION_SHARDS_EXTENDED if extended else EVALUATION_SHARDS
     return {
-        f"{bank}/{partition}": _shard_record_digests(private_root, bank, partition)
-        for bank, partition in EVALUATION_SHARDS
+        f"{bank}/{partition}": _shard_record_digests(
+            private_root, bank, partition, extended=extended
+        )
+        for bank, partition in shards
     }
 
 
-def build_manifest(private_root: Path) -> dict[str, Any]:
+def build_manifest(private_root: Path, *, extended: bool = False) -> dict[str, Any]:
+    """重建互斥性清单。
+
+    默认模式（extended=False）产出与已提交
+    `manifests/retail_ops/v1/phrasing_exclusivity.json`（v1.0）**逐字节可复算**
+    的内容——治理测试 `test_the_committed_phrasing_digests_match_the_artifacts`
+    绑定这一契约。`--extended` 追加 bank-005 分片与记录级摘要（v1.1，素材状态
+    留档专用），不改变默认输出。
+    """
     training = training_request_digests(private_root)
-    evaluation = evaluation_request_digests(private_root)
-    records = record_request_digests(private_root)
+    evaluation = evaluation_request_digests(private_root, extended=extended)
+    if not extended:
+        return {
+            "schema_version": "1.0",
+            "normalization": "sha256(order_id -> <OID>)",
+            "train_export_relpath": TRAIN_EXPORT_RELPATH,
+            "training_request_sha256": training,
+            "evaluation_request_sha256": evaluation,
+        }
+    records = record_request_digests(private_root, extended=True)
     return {
         "schema_version": "1.1",
         "normalization": (
@@ -204,9 +246,9 @@ def build_manifest(private_root: Path) -> dict[str, Any]:
         "training_request_sha256": training,
         "evaluation_request_sha256": evaluation,
         "record_request_sha256": records,
-        "missing_bank_note": (
-            "phrasing-bank-004 文件已丢失（task_plan Errors 2026-09-06），"
-            "其条目取自已提交清单 v1.0 的面级摘要（仅 45 条，弱于记录级）"
+        "note": (
+            "bank-005 为多余素材（bank-004 健在，2026-09-06 回退），"
+            "永不进入任何评测面；本清单只留档其素材状态"
         ),
     }
 
@@ -215,9 +257,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input_dir", type=Path, required=True, help="私有数据根目录")
     parser.add_argument("--output", type=Path, required=True, help="清单输出路径")
+    parser.add_argument(
+        "--extended",
+        action="store_true",
+        help="追加 bank-005 分片与记录级摘要（v1.1，素材状态留档专用；"
+        "默认输出与已提交 v1.0 清单逐字节可复算）",
+    )
     args = parser.parse_args(argv)
 
-    manifest = build_manifest(args.input_dir)
+    manifest = build_manifest(args.input_dir, extended=args.extended)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -226,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
 
     training = set(manifest["training_request_sha256"])
     failures: list[str] = []
-    records = manifest["record_request_sha256"]
+    records = manifest.get("record_request_sha256", {})
     for name, digests in manifest["evaluation_request_sha256"].items():
         overlap = training & set(digests)
         print(f"  [face]   {name}: {len(digests)} 条，与训练集交集 {len(overlap)}")
