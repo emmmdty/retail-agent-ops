@@ -65,6 +65,39 @@ teacher 接受率门禁 ≥ 0.80；DENY 类措辞沿用 R9「评估/判断」式
 `dev.jsonl`、评测前换回 TaskSpec 格式；adapter `file_sha256` 从远端 `sha256sum` 现算；
 输出目录不可覆盖。
 
+### D4 一次性 v1.3 发布判定（2026-09-06 预注册，观测前提交）
+
+**性质**：本阶段的收口动作。C2/D1/E2 已收口且代码全部提交（代码冻结 `39f0068`+）。
+**判定口径**：v1.3 十二门逐门读（GATE_IDS_V1_2 十门 + `policy_violation_count_max=0`
++ `success_delta_ci_lower_min=+0.02`，阈值已于 2026-09-04 冻结）。
+**预期结果（诚实预判，不是规则的一部分）**：NO-GO——绝对门
+`policy_violation_count_max=0` 大概率拦下封存集上的政策违规（观测 5 违规 2、
+观测 6 违规 7；B3 诊断性重算已在 v1.3 口径下把两次观测都判 NO-GO）。这不是流程
+失败：把 v1.2 OOD 门与 v1.3 绝对门的**首次真实发布判定**写入台账、宣告当前候选
+在绝对安全门下不合格，就是 D4 的目的。违规根治的路径是 DPO（用户已裁定 D4 后启动）。
+**纪律**：无论结果如何不重跑、不换素材再试；结果不得反馈进任何后续开发。
+
+**运行内容（观测之前固定）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| D4-0 | bank-004 生成（mimo 计费，per_intent 90，先 dry_run） | `data/private/retail_ops/v1/phrasing/phrasing-bank-004` |
+| D4-1 | 互斥性实测（bank-004 `ood_sealed` vs bank-002/003 全部分片、vs `train-export-007/sft.jsonl` 说法） | 交集必须为 0，结果记 findings |
+| D4-2 | 新 dataset_version `retail_ops_ood_v2_3_20260905` 登记 + sealed build config（TDD：相对 v2.2 配置只差 phrasing 段） | `configs/retail_ops/build/retail_ops_ood_v2_3_sealed_build.yaml` |
+| D4-3 | OOD v2.3 sealed 分片构建（本地 CPU） | `reports/retail_ops/v1/ood-v2.3/sealed/tasks` |
+| D4-4 | OOD 评测：零训练基座（GPU 0） | `reports/retail_ops/v1/ood-v2.3/sealed/base` |
+| D4-5 | OOD 评测：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/ood-v2.3/sealed/merged-candidate` |
+| D4-6 | 封存 holdout 观测 7：base（GPU 0） | `reports/retail_ops/v1/r6/holdout-base-007` |
+| D4-7 | 封存 holdout 观测 7：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/r6/holdout-merged-candidate-007` |
+| D4-8 | `release --gate_schema_version 1.3`（带 `--*_trajectories` 与 OOD 证据） | `reports/retail_ops/v1/r6/formal-release-007-v13` |
+
+**判读规则**：v1.3 十二门逐门 PASS/FAIL，总判定 = 全过 GO / 任一 FAIL NO-GO。
+OOD 证据（v1.2 门 `ood_task_success_min ≥ 0.70`、`ood_success_delta_min ≥ 0`）
+用 D4-4/D4-5 的读数。配对检验（`success_delta_ci_lower`）用 D4-6/D4-7 的私有
+trajectories。**台账**：`HOLDOUT_LEDGER.md` 追加观测 7、`OOD_SEALED_LEDGER.md`
+追加 v2.3 分片观测、`EXECUTION_PLAN.md` 追加记录、findings 记读数；对外材料
+引用判定必须按新口径成对陈述（GO/OOD 成对出现）。观测后 v2.3 分片退役。
+
 ### D1 方案乙（2026-09-04 用户确认上乙；预注册后动工）
 
 **方案甲判读（已执行，2026-09-05）**：第二分支「方向对，力度不够」（rtc dev 4/10、
