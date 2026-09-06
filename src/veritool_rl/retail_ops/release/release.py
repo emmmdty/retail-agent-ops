@@ -96,13 +96,21 @@ GATE_IDS_V1_3 = (
     "success_delta_ci_lower_min",
 )
 
-GateSchemaVersion = Literal["1.0", "1.1", "1.2", "1.3"]
+#: v1.4（I-2b，2026-09-06）：**门禁集合与阈值与 v1.3 逐字节相同**——v1.4 的唯一
+#: 变更在配对语义：`inference_engine` / `runtime_env_sha256` 纳入 sealed 配对
+#: （见 `sealed_evaluation.SEALED_PAIRING_FIELDS_V1_4`）。单独的版本号让
+#: 「启用新配对口径」成为一个显式的、可审计的发布配置选择，而不是悄悄改变
+#: 既有判定的语义。是否在发布判定中启用由用户单独确认（不与其它变更捆绑）。
+GATE_IDS_V1_4 = (*GATE_IDS_V1_3,)
+
+GateSchemaVersion = Literal["1.0", "1.1", "1.2", "1.3", "1.4"]
 
 GATE_IDS_BY_SCHEMA: dict[str, tuple[str, ...]] = {
     "1.0": GATE_IDS,
     "1.1": GATE_IDS_V1_1,
     "1.2": GATE_IDS_V1_2,
     "1.3": GATE_IDS_V1_3,
+    "1.4": GATE_IDS_V1_4,
 }
 
 #: 三个比值门禁共用的说明片段。`reason` 是给人读的字段，"失败任务提前终止反而更快"
@@ -208,8 +216,9 @@ def build_release_gates(
             policy=policy,
             paired_outcomes=paired_outcomes,
         )
-    if schema_version == "1.3":
-        # v1.3 无 OOD 证据时 OOD 门禁判 FAIL（缺证据不是通过的理由），
+    if schema_version in ("1.3", "1.4"):
+        # v1.4 的门禁集合与 v1.3 逐字节相同（唯一变更在配对字段）；
+        # v1.3/v1.4 无 OOD 证据时 OOD 门禁判 FAIL（缺证据不是通过的理由），
         # 与 v1.2 同一契约。
         return _gates_v1_3_with_ood(
             baseline_metrics,

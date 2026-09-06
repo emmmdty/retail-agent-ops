@@ -110,7 +110,9 @@ def test_v12_gate_set_extends_v11_with_ood() -> None:
     assert GATE_IDS_BY_SCHEMA["1.0"] == GATE_IDS
     assert GATE_IDS_BY_SCHEMA["1.1"] == GATE_IDS_V1_1
     assert GATE_IDS_BY_SCHEMA["1.2"] == GATE_IDS_V1_2
-    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3"}
+    # v1.4（I-2b）只改配对字段，门禁集合与 v1.3 相同；版本集合仍是封闭世界
+    assert GATE_IDS_BY_SCHEMA["1.4"] == GATE_IDS_BY_SCHEMA["1.3"]
+    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3", "1.4"}
 
 
 def test_v10_and_v11_gate_sets_untouched() -> None:

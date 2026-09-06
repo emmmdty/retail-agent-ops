@@ -94,7 +94,7 @@ def test_v10_gate_set_is_untouched() -> None:
     )
     assert GATE_IDS_BY_SCHEMA["1.0"] == GATE_IDS
     assert GATE_IDS_BY_SCHEMA["1.1"] == GATE_IDS_V1_1
-    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3"}
+    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3", "1.4"}
 
 
 def test_v11_splits_the_latency_gate_and_adds_a_paired_test() -> None:

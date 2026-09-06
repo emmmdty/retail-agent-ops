@@ -151,10 +151,10 @@ def decide_formal_release(
     `ood_evidence` 是 v1.2 的可选参数：`(base_ood_metrics, candidate_ood_metrics)`。
     传入时计算 OOD 门禁；不传时 OOD 门禁判 FAIL（缺证据不是通过的理由）。
     """
-    require_comparable_sealed_runs(base, candidate)
+    require_comparable_sealed_runs(base, candidate, gate_schema_version=gate_schema_version)
 
     evidence_complete = base.evidence_complete and candidate.evidence_complete
-    if gate_schema_version in ("1.2", "1.3") and ood_evidence is not None:
+    if gate_schema_version in ("1.2", "1.3", "1.4") and ood_evidence is not None:
         base_ood, cand_ood = ood_evidence
         gates = (
             _gates_v1_3_with_ood(
@@ -166,7 +166,7 @@ def decide_formal_release(
                 baseline_ood_metrics=base_ood,
                 candidate_ood_metrics=cand_ood,
             )
-            if gate_schema_version == "1.3"
+            if gate_schema_version in ("1.3", "1.4")
             else _gates_v1_2_with_ood(
                 base.metrics,
                 candidate.metrics,

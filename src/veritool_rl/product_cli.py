@@ -596,9 +596,9 @@ def _load_ood_evidence(
     ood_config = config.get("ood_evidence")
     if ood_config is None:
         return None
-    if gate_schema_version not in ("1.2", "1.3"):
+    if gate_schema_version not in ("1.2", "1.3", "1.4"):
         raise ValueError(
-            "ood_evidence 配置仅在 gate_schema_version=1.2/1.3 下有效，"
+            "ood_evidence 配置仅在 gate_schema_version=1.2/1.3/1.4 下有效，"
             f"收到 {gate_schema_version!r}"
         )
     if not isinstance(ood_config, dict):

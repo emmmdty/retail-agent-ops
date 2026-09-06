@@ -573,6 +573,27 @@ SEALED_PAIRING_FIELDS = (
     "uv_lock_sha256",
 )
 
+#: v1.4（I-2b，2026-09-06）：把运行时溯源纳入配对。同一份权重跑在 transformers
+#: 与 vLLM 上是两个不同的推理条件——旧口径下引擎/运行时差异会被静默当成模型效果
+#: 算进配对 delta。修法照 `GATE_IDS` v1.2→v1.3 的模式**新增版本化集合**：
+#: 上面的 `SEALED_PAIRING_FIELDS`（v1.0–v1.3 口径）逐字节不动，启用时机由发布
+#: 配置的 `gate_schema_version: "1.4"` 选择；未启用时比较行为与历史逐字节相同。
+SEALED_PAIRING_FIELDS_V1_4 = (
+    *SEALED_PAIRING_FIELDS,
+    "inference_engine",
+    "runtime_env_sha256",
+)
+
+
+def pairing_fields_for_release_schema(schema_version: str) -> tuple[str, ...]:
+    """发布口径 → 配对字段集合；未知版本拒绝，不给静默回落。"""
+    if schema_version == "1.4":
+        return SEALED_PAIRING_FIELDS_V1_4
+    if schema_version in ("1.0", "1.1", "1.2", "1.3"):
+        return SEALED_PAIRING_FIELDS
+    msg = f"未知的 gate_schema_version: {schema_version!r}，可选 1.0-1.4"
+    raise ValueError(msg)
+
 
 def _candidate_form(report: SealedEvaluationReport) -> DeploymentForm:
     """报告没有显式声明形态时（v1.0），从 `adapter` 推断——那正是 v1.0 的原语义。"""
@@ -648,8 +669,13 @@ def _require_merged_lineage(
 def require_comparable_sealed_runs(
     base: SealedEvaluationReport,
     candidate: SealedEvaluationReport,
+    *,
+    gate_schema_version: str = "1.3",
 ) -> None:
     """证明两份 sealed 报告确实跑在同一条件下，否则拒绝把它们放进发布门禁。
+
+    配对字段集合由发布口径选择（v1.0–v1.3 用既有集合，v1.4 额外要求运行时
+    溯源一致）；默认 v1.3 保证既有调用行为逐字节不变。
 
     契约不一致时直接抛错而不是给出带警告的 delta：一个"看起来能用"的无效比较
     比没有比较更危险，它会被直接抄进发布报告。这里只校验可比性，不做 GO/NO-GO
@@ -658,7 +684,7 @@ def require_comparable_sealed_runs(
     _require_compatible_schema_versions(base, candidate)
     _require_valid_forms(base, candidate)
 
-    for field in SEALED_PAIRING_FIELDS:
+    for field in pairing_fields_for_release_schema(gate_schema_version):
         base_value = getattr(base, field)
         candidate_value = getattr(candidate, field)
         if base_value != candidate_value:

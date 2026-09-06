@@ -126,7 +126,7 @@ def test_v13_gate_set_extends_v12_with_two_absolute_gates() -> None:
         "success_delta_ci_lower_min",
     ) == GATE_IDS_V1_3
     assert GATE_IDS_BY_SCHEMA["1.3"] == GATE_IDS_V1_3
-    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3"}
+    assert set(GATE_IDS_BY_SCHEMA) == {"1.0", "1.1", "1.2", "1.3", "1.4"}
 
 
 def test_v10_v11_v12_gate_sets_are_byte_identical() -> None:
