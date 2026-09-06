@@ -52,3 +52,4 @@
 - 当前 BFCL Base/SFT 为 163/200 与 167/200，差值置信区间跨 0，不能声称稳定改善。
 - 质量门为 `pytest` / `ruff check` / **`ruff format --check`** / `mypy` / `uv lock --check` / `git diff --check` / `scripts/ci/audit_public_release.py`，全部必须通过。
 - 仓库形态：唯一 `main` 分支、remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（CI 2026-08-20 首次真跑通过，证据见 `docs/CI_EVIDENCE.md`）、对原 `veritool-rl` 工作区零依赖；目录职责见 `docs/REPO_MAP.md`。
+- 远程 GPU 经 cpolar 隧道访问（`ssh gpu-5090`）。隧道地址/端口变化导致拒连时，运行本地命令 **`cpolar-ssh-update`**（读 `~/.config/cpolar/tunnels.conf`，自动改写 `~/.ssh/config` 对应 Host 的 HostName/Port），再重试连接；远端 nohup 长任务不受隧道中断影响。
