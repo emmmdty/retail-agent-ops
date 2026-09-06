@@ -288,11 +288,14 @@ def _token_count(tokenizer: Any, text: str) -> int:
     return len(input_ids)
 
 
-def require_nonzero_declining_losses(losses: Sequence[float]) -> None:
+def require_nonzero_declining_losses(losses: Sequence[float], *, smoke: bool = False) -> None:
     """训练曲线守卫：有限、非零、末端低于起点。
 
     全零/恒零 = mask 全零 = LoRA 零更新（LOG-20260905-02 的静默失败签名）；
     末端高于起点 = 本轮没有正向信号，都不允许落盘成「完成」。
+
+    `smoke=True`（≤4 对的管线自检）只要求有限且非零——单/双步的 smoke 曲线
+    没有「趋势」可言，把下降判据加在 smoke 上会让自检必然失败。
     """
     if not losses:
         msg = "训练未产生任何 loss 读数"
@@ -306,7 +309,7 @@ def require_nonzero_declining_losses(losses: Sequence[float]) -> None:
     if any(value <= 0.0 for value in losses):
         msg = "训练 loss 必须全为正数"
         raise RuntimeError(msg)
-    if losses[-1] >= losses[0]:
+    if not smoke and losses[-1] >= losses[0]:
         msg = f"训练 loss 末端未下降（首 {losses[0]} → 末 {losses[-1]}）"
         raise RuntimeError(msg)
 
@@ -405,7 +408,7 @@ def run_dpo(config: dict[str, Any], seed: int, output_dir: Path) -> dict[str, An
         for entry in log_history
         if isinstance(entry, Mapping) and "loss" in entry
     ]
-    require_nonzero_declining_losses(losses)
+    require_nonzero_declining_losses(losses, smoke=resolved.training.smoke)
     metrics = {
         "train": _json_metrics(train_result.metrics),
         "losses": losses,

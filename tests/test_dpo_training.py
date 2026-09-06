@@ -256,6 +256,11 @@ def test_loss_guard_requires_nonzero_and_declining_curve() -> None:
     with pytest.raises(RuntimeError, match="正数"):
         require_nonzero_declining_losses([0.7, 0.5, 0.0])
 
+    # smoke（≤4 对自检）没有趋势可言：只要求有限非零，不要求下降
+    require_nonzero_declining_losses([0.7, 0.69], smoke=True)
+    with pytest.raises(RuntimeError, match="全零"):
+        require_nonzero_declining_losses([0.0, 0.0], smoke=True)
+
 
 def test_run_dpo_source_locks_the_ref_model_and_determinism_contract() -> None:
     """ref model 不得显式传入（TRL peft 模式自动处理 = 禁用 adapter 的基座 =
