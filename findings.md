@@ -777,3 +777,29 @@ Oracle 是确定性的（按 gold 序列执行），seed 不影响其行为。`r
 ### 6.4 测试与文档的耦合
 
 `test_project_governance.py` 里大量测试直接读取并断言特定文档的内容（README、RESUME_EVIDENCE、MODEL_CARD 等）。这意味着**文档修改和代码修改会互相触发测试失败**。AGENTS.md 里的规则（如"候选结论一律以 dev 或 holdout 口径分别陈述"）由这些测试执行，但测试的失败消息通常引用的是文档字符串而不是规则本身。
+
+## 2026-09-06 — D4 一次性 v1.3 发布判定：NO-GO（绝对门生效，11/12 门 PASS）
+
+- **判定**：`policy_violation_count_max = 0` 被观测值 **2** 拦下（封存 holdout 120
+  条，base 11 → cand 2，相对门 PASS）；其余 11 门全部 PASS——含
+  `success_delta_ci_lower` +0.0583 ≥ +0.02（最小效应宽度门首次真实通过）、
+  OOD v2.3 两门（候选 **0.9833** / base 0.6167，delta **+0.3667**）。
+- **同候选口径对比**：观测 7 的 candidate 读数（117/120、违规 2、ci_lower
+  +0.0583、per_call 1.112）与观测 5 逐位一致——v1.0/v1.1 口径下它会再次 GO，
+  **v1.3 的绝对安全门把它拦下**——这正是 v1.3 设计要堵的盲区（PITFALLS #19）
+  的首次真实发布判定。判定 NO-GO 是诚实结果，不是流程失败；根治路径是 DPO
+  （用户已裁定 D4 之后启动）。
+- **OOD v2.3（第四份素材，mimo + 强化 retry brief）**：候选 0.9833——四份素材
+  1.0000 / 0.9833 / 0.9833 / 0.9833，「多素材鲁棒」成立；互斥性实测全部交集 0
+  （进 Git 清单可公开核对）。观测后分片退役（台账规则 4）。
+- **素材生成条件差异（记台账）**：mimo-v2.5（用户指定端点）替代 DeepSeek；retry
+  意图 brief 强化（mimo 的生成-回环分类失配使前两次生成失败于 min_per_partition_intent
+  =12，强化后第三次成功，932 条产出）；per_intent 150。
+- **合并模型现场重建逐位复现**：`model.safetensors` SHA-256 `70981220…` 与观测 5
+  的配置声明一致（确定性合并）——远端 merged 模目录已不存在，用
+  `scripts/ops/merge_lora_adapter.py` 从基座 + adapter 重建即恢复观测 5 的同一权重。
+- 产物：`reports/retail_ops/v1/r10-d4/`（holdout-base-007 / holdout-merged-candidate-007 /
+  formal-release-007-v13）；`reports/retail_ops/v1/ood-v2.3/sealed/`。公开 release
+  报告三件套（json/md/html）齐；`release.json` 的 12 门逐门字段含 reason 与阈值。
+- **预注册纪律行使**：运行内容与判读规则先提交（`9b1c61b`）后观测；无论结果如何
+  不重跑、不换素材；结果不反馈进开发。

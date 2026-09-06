@@ -482,3 +482,26 @@ mimo teacher、Qwen3-4B 上成立；探索性结论，不用于发布判定。
   `uv lock --check` / `git diff --check` / qualification chain / audit 全绿；
   干净 clone 实跑 **1397 passed / 38 skipped / 0 failed**（2026-09-04）。
 - **未消耗**：GPU、商业 API、封存 holdout 观测（诊断性重算只复算既有证据）。
+
+### GPU 执行阶段收口（2026-09-05/06；执行入口 `docs/handoffs/2026-09-04-gpu-phase-c2-d1-e2-d4-execution-prompt.md`）
+
+- **C2（方差验证）**：同 seed 双跑实测——随机源治理后**仍不逐位复现**（bitsandbytes
+  原子操作不可消），loss 方差 mean 7.4e-4 / max 2.8e-3；表述收紧为带边界实测结论
+  （`REBUILD_VERIFICATION.md` 追加节）。
+- **D1（rtc 第四轮）**：方案甲（family 覆盖 20→35）判「方向对，力度不够」（rtc
+  0/10 → dev 4/10）；方案乙（rtc_stepwise 辅助课程，用户确认）判「**修好**」（rtc
+  dev **9/10**、OOD v4 **8/10**、pv 不升）。探索性结论（LOG-20260905-01）。
+- **E2（退化曲线真读数）**：smoke 四轮装置修复（P1-9 拆分、max_seq_len 3072——
+  训练序列实测 2398–2533 被 1024/2048 截断致 assistant mask 全零/LoRA 零更新、
+  v3 任务集 DENY-window 状态方向矛盾 + 三场景请求缺 reason、门禁语义修订）；
+  full 真读数：base 0.65→0.425 单调退化、candidate 干扰调用率 0.03→0.117 上升、
+  tc=12 边界内政策崩溃 8 次（LOG-20260905-02）。
+- **D4（一次性 v1.3 发布判定）**：**NO-GO**——11/12 门 PASS，绝对门
+  `policy_violation_count_max=0` 被观测值 2 拦下（候选在 v1.0/v1.1 口径下会 GO，
+  读数与观测 5 逐位一致）。OOD v2.3（第四份素材）候选 0.9833、delta +0.3667。
+  台账：HOLDOUT_LEDGER 观测 7、OOD_SEALED_LEDGER v2.3（观测后退役）。
+  LOG-20260905-03。**结果不反馈进任何后续开发；根治路径 DPO 待用户启动。**
+- **消耗**：GPU ~10h、mimo teacher/bank 生成 ~6M tokens（逐次记账见 progress.md）、
+  封存 holdout 观测 1 次（观测 7）、OOD v2.3 分片观测 1 次。
+- **验收**：`pytest` 1451 passed、ruff/format/mypy/lock/diff/qualification/audit
+  全绿；干净 clone 实跑 **1402 passed / 49 skipped / 0 failed**（2026-09-06）。

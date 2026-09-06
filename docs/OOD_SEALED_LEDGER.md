@@ -154,3 +154,36 @@ bank-003 上是 **0.9833**。同一份权重、同一套判定逻辑、同一个
 **退役方式**：换一份**全新生成**的措辞池（`phrasing-bank-002`，与 `bank-001` 的训练措辞
 零重叠、与真实训练文件零重叠，均已实测），而不是拿修正后的状态空间去复读同一批措辞。
 需要第二次测量时生成新素材，才是「只观测一次」该有的做法。
+
+## 观测 3 — 2026-09-06（LOG-20260905-03）：`phrasing-bank-004` / `retail_ops_ood_v2_3_20260905`（观测后退役）
+
+代码冻结于 `656ce20`。运行内容在观测前固定（task_plan `9b1c61b`：零训练基座 +
+`sft-008` 合并形态两次评测，判定走 v1.3 十二门）。
+
+**素材（bank-004）的生成条件与 bank-002/003 的真实差异**：
+- **provider/model：mimo-v2.5**（用户指定端点）；bank-002/003 是 DeepSeek。
+- 生成 prompt 的两个 retry 意图 brief 做了强化（要求字面可见的重试指令句）：
+  mimo 的生成-回环分类失配使前两次生成失败于 min_per_partition_intent=12
+  （7/12、10/12），强化后第三次成功。bank-002/003 用原始 brief。
+- per_intent 150，产出 932 条（v2.2 是 268 条）；三分 459/247/226；八风格全部在场。
+- `bank_sha256` `f4b14e8d7b38b4967dba2c93f4d70374470d61cc27a20f2387df8d6548b87d47`。
+- **互斥性实测**：`ood_sealed` 226 条归一化措辞与 bank-002/003 的全部分片
+  （dev/sealed/train_aug）、与 `train-export-007/sft.jsonl` 的 184 种说法，交集
+  **全部为 0**（`manifests/retail_ops/v1/phrasing_exclusivity.json`，进 Git 可公开核对）。
+
+| 运行 | 总计 | 政策违规 | 非法调用 |
+|---|---|---|---|
+| 零训练基座 | 0.6167 | — | — |
+| **`sft-008` 合并形态** | **0.9833** | — | — |
+
+`run_id`：基座 `a4debcd5229fee34…`、合并候选 `24f1c871905c4930…`；`code_commit`
+`656ce20`；两侧 `replayable` 均 60/60，`dataset_version` `retail_ops_ood_v2_3_20260905`。
+task_success 由公开 ood-report.json 的 metrics 段承载，逐场景细分见同目录 ood-report.json。
+
+**判读**：B1 = 0.9833 − 0.6167 = **+0.3667**（≥ +0.15）——第四份独立素材（新
+provider、强化 brief）上候选依然 +0.37。四份素材上的候选读数现在是
+1.0000 / 0.9833 / 0.9833 / 0.9833。
+
+**这一份参与了发布判定**：与观测 5/6 不同，v2.3 的读数不是独立探索——它是 v1.3
+十二门里 `ood_task_success_min` / `ood_success_delta_min` 两门的证据（都 PASS）。
+观测后本分片退役；下一次测量按规则 4 生成新素材。

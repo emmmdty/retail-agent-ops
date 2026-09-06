@@ -393,8 +393,12 @@ def test_every_release_report_on_disk_still_loads() -> None:
 
     for path in formal:
         report = load_formal_release_report(path)
-        if "v13-diagnostic" in path.name or "v13-diagnostic" in path.parent.name:
-            # Phase B3 的诊断报告是 v1.3 代码产出的新报告，带自哈希
+        if (
+            "v13-diagnostic" in path.name
+            or "v13-diagnostic" in path.parent.name
+            or "formal-release-007-v13" in path.parent.name
+        ):
+            # v1.3 代码产出的新报告（B3 诊断 + D4 一次性判定）带自哈希
             assert report.report_id is not None, path
             assert report.schema_version == "1.3"
         else:
