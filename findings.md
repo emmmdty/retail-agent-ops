@@ -1,5 +1,39 @@
 # Findings
 
+## 2026-09-06 — DPO 轨道 CPU 部分：采样器/训练管线的装置发现（无读数）
+
+- **探针 DENY 任务 Oracle 轨迹的真实形状**（A-2 实测）：`RetailOpsEnv.verify_final_state`
+  对 DENY/INFORM 任务额外要求 `_terminal_response` 非空——Oracle DENY 轨迹 =
+  `get_order` → 终局答复「任务已完成。」（SUCCESS 终止）。即冻结训练分布里拒绝类
+  样本的「拒绝」= 不执行退款 + 程序化终局文本；DPO 的 chosen 用同一条
+  `trajectory_messages` 链路产出，与 SFT 数据形状逐字节同构（`core/generators.py`
+  重构抽出 `trajectory_messages`，SFT 行为不变）。
+- **pydantic strict 模式的 JSON 往返陷阱**：`Trajectory.model_validate`（python mode）
+  不把字符串回落成 `ExpectedDecision`/`TerminationReason` 枚举——断点续跑的样本
+  文件必须走 `Trajectory.model_validate_json`（与 `load_ood_tasks` 的 TaskSpec 同一
+  纪律）。测试 `test_sample_files_round_trip_through_json` 锁定。
+- **PEP 586 限制**：float 不能进 `Literal`（`Literal[0.8]` 被 mypy 拒绝）——预注册
+  采样温度/top_p/top_k 的机器锁用 pydantic `field_validator` 精确相等实现
+  （`SamplingSettings`，构造 0.7 直接 ValidationError）。
+- **温度采样的真实默认值陷阱**：Qwen3 的 `generation_config.json` 带采样默认
+  （non-thinking 0.7/0.8/20）——`do_sample=True` 只传温度不传 top_p/top_k 的话，
+  「temperature 0.8 采样」名不副实。`TransformersBackend` 新增可选
+  `generate_kwargs`（默认 None 时 generate 调用与既有评测路径逐字节相同，
+  冻结的 `GenerationSettings` 一个字段没动），采样协议三值显式传递。
+- **TRL DPO 三列文本格式的 pre-render 语义**（A-4 设计决策）：不做「messages 直接
+  丢给 DPOTrainer」的赌注（工具 schema 是否进模板、completion 从哪剥起都依赖 TRL
+  内部行为），改为训练前自己预渲染：prompt 列 = 模板(带 tools, add_generation_
+  prompt=True)；chosen/rejected 列 = 完整对话渲染**剥离带 GEN 的 prompt 前缀**。
+  该剥离成立的前提——gen-prompt 的 assistant 头与完整渲染里 assistant 消息头的
+  逐字节相同——由渲染函数的前缀断言机器守卫（前缀不一致直接失败，不错位截断）；
+  同时在渲染层做 max_length 守卫（LOG-20260905-02 的截断教训变成机器守卫）。
+- **v1.4（I-2b）实现要点**：`GATE_IDS_V1_4 = GATE_IDS_V1_3`（门禁集合/阈值零变化，
+  唯一变更在配对字段）；`pairing_fields_for_release_schema()` 未知版本拒绝不给
+  静默回落；`require_comparable_sealed_runs` 默认 `gate_schema_version="1.3"` 保证
+  既有调用行为逐字节不变。既有「版本集合封闭」治理测试按设计内扩展点更新
+  （封闭集 +1 版本，非放宽）。
+
+
 ## 2026-09-05/06 — E2 退化曲线真读数（full 五断点，修复后装置）
 
 - **曲线**（full 60–120 dev 任务/断点，mimo-v2.5 teacher，Qwen3-4B；只在这些条件

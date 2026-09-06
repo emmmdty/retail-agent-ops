@@ -1293,3 +1293,49 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-09-06 | OOD v2.3 base / merged | 0.6167 / 0.9833（delta +0.3667） |
 | 2026-09-06 | holdout 观测 7 base / merged | 0.8583(11 违规) / 0.9750(2 违规) |
 | 2026-09-06 | release v1.3 十二门 | 11 PASS + 1 FAIL（绝对门）→ **NO-GO** |
+
+## 2026-09-06 — DPO 主线 + 并行项：CPU 部分完成（A-0/A-1/A-2/A-3 装置/A-4/B-2/B-3/B-4；GPU 待用户确认命令清单）
+
+**输入**：交接 `docs/handoffs/2026-09-06-dpo-and-parallel-execution-prompt.md`
+（用户已裁定启动 DPO；并行项一并纳入本窗口）。
+**A-0 三个方案点用户确认（2026-09-06）**：判读规则按 A-6 草案逐字冻结；
+对冲对设计选门禁守卫方案（高温诱导被否）；超参按建议冻结（beta 0.1 / lr 5e-7 /
+epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非零守卫）。
+
+- **A-1 预注册**（`eeec309`）：判读规则正式稿 + R11/B1 运行清单（产物目录逐字
+  声明）进 task_plan.md，先于一切运行提交。
+- **A-2 偏好对采样器**（`1c121c7`）：`retail_ops/build/dpo_sampling.py` ——
+  采样面 = 探针 120 + C3 交叉面 120（bank-004 `ood_dev` 分片）；配对规则
+  （DENY 任务 chosen=Oracle / rejected=真实 `refund_not_eligible` 采样、同任务
+  内内容去重、task_id+sample_index 溯源）；放行侧前提检查（`premise_ok`，
+  执行类违规 → 停下回用户决策）；`SamplingSettings` 契约锁（温度 0.8/top_p 1.0/
+  top_k 0，PEP 586 限制下用 validator 锁定）；逐样本确定性播种 `sample_seed`。
+  测试 18 条（夹具全部走真实 run_episode + RetailOpsEnv，不手工捏轨迹）。
+- **A-3 GPU 采样脚本**：`scripts/retail_ops/run_dpo_sampling.py`（进 mypy files）
+  + `configs/retail_ops/build/retail_ops_dpo_sampling.yaml`（模型/adapter/bank
+  三段 pin 与既有配置同源）。断点续跑（每任务一个样本文件 + 任务指纹）、
+  完成态不可覆盖、bank 声明哈希校验、premise 违规退出码 3。
+- **A-4 DPO 训练管线**：`training/dpo.py` + CLI `pipeline: dpo` +
+  `configs/retail_ops/build/retail_ops_dpo.yaml`。起始权重 =
+  `models/Qwen3-4B-sft-008-merged`（D4 重建的合并形态 pin）；ref model =
+  初始策略冻结副本（TRL peft 模式自动处理，源码结构测试锁定 ref_model 不出现）；
+  messages → 三列文本 pre-render（前缀剥离断言 + max_length 守卫）；
+  `require_nonzero_declining_losses` 机器守卫（全零/非有限/未下降全部拒绝落盘）；
+  `configure_training_determinism` 复用进 metrics。
+- **B-2 gate schema v1.4**（`3d99e5b`）：`SEALED_PAIRING_FIELDS_V1_4` =
+  既有配对字段 + `inference_engine`/`runtime_env_sha256`（v1.0–1.3 逐字节不动）；
+  `GATE_IDS_V1_4 = GATE_IDS_V1_3`（门禁零变化）；`pairing_fields_for_release_schema`
+  版本选择；`decide_formal_release`/`build_release_gates`/`_load_ood_evidence`
+  接受 "1.4"。**启用与否在 A-7 单独问用户，不捆绑。**
+- **B-3 发布配置治理**：治理测试锁定「新发布配置的 gate_schema_version 必须等于
+  最新版本」；历史配置（r3/r4/r45/d4/v1_release）封闭白名单，只减不增。
+- **B-4 合并数据重建立项方案**：`docs/PROPOSAL_DATA_REBUILD_B4.md`
+  （分层算法、新配额、teacher 预算 ~700 任务/2.0M tokens、判读草案、可比性断裂
+  清单、三个决策门）——**只立项不出工**，等用户裁决。
+- **A-5 备料**：评测配置需 dpo-001 adapter 的远端现算 SHA-256（D4 先例），
+  在 GPU 训练完成后填配置；评测命令清单并入 GPU 阶段清单。
+- **测试基线**：1451 → **1492**（+41：dpo_sampling 18、dpo_training 12、
+  gate_schema_v14 10、qwen generate_kwargs 1）；干净 clone 实跑 **1443 passed /
+  49 skipped / 0 failed**（2026-09-06，当前提交实测）；文档同步
+  （README/README.en/CLAUDE/RESUME_EVIDENCE）。
+- **未消耗**：GPU、商业 API、封存 holdout 观测（本窗口纯 CPU）。
