@@ -1339,3 +1339,25 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
   49 skipped / 0 failed**（2026-09-06，当前提交实测）；文档同步
   （README/README.en/CLAUDE/RESUME_EVIDENCE）。
 - **未消耗**：GPU、商业 API、封存 holdout 观测（本窗口纯 CPU）。
+
+## 2026-09-06 — bank-005 误生成事件：素材「丢失」误判的更正与回退（含 bank-005 互斥实测留档）
+
+- **起因**：R11-1 采样预检发现远端无 `phrasing-bank-004`；本地搜索（`find` maxdepth 7
+  + 只查 `v1/phrasing/` 一处布局）未见 → 误判「丢失且无备份」。用户裁定照原配方生成
+  bank-005（mimo-v2.5、per_intent 150、retry brief 强化）：136 次请求、947 条
+  （480/239/228）、$0.0244、`bank_sha256 = 10005d39…`（一次通过分片覆盖断言）。
+- **更正**：bank-005 记录级互斥实测暴露 bank-004 健在于本地
+  `r2/retail_ops_v1_r2_20260722/phrasing/phrasing-bank-004/`（932 条，
+  `bank_sha256 = f4b14e8d…` 与 D4 配置声明逐位吻合）——「丢失」是误判（深度受限的
+  find + 单一布局假设）。用户裁定**回退到 bank-004**：预注册恢复原状（采样/交叉面
+  配置本就 pin 它，零变更）；bank-005 定性为多余素材、永不进入任何评测面。
+- **互斥实测（脚本扩展 + 留档）**：`export_phrasing_exclusivity.py` 升级（bank 多根
+  搜索、bank-005 分片、**记录级**全量摘要——v2 任务面每分片只产 60 条任务，DPO 面
+  用整个 ood_dev 池，泄漏检查必须覆盖全部记录）；bank 文件缺失的 shard 用已提交
+  清单的面级摘要作参照（bank-004 此前的情形）。产物
+  `manifests/retail_ops/v1/phrasing_exclusivity_bank005.json`：训练集 ∩ 各分片
+  （面级 + 记录级）全 0；bank-005 与既有素材记录级重叠 4 条（1 条 status_inquiry
+  vs bank-002/ood_dev、3 条 vs bank-004/ood_sealed）——回退后 bank-005 不用，重叠
+  无后果。
+- **费用记账**：bank-005 生成 $0.0244（prompt 76,385 tok / completion 49,097 tok，
+  mimo-v2.5）。bank-004 同步到远端走 rsync（本地→远端，非 API）。
