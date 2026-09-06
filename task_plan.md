@@ -15,7 +15,7 @@ v1.3 发布判定（**NO-GO**，绝对门拦下违规 2；LOG-20260905-01/02/03�
 
 **下一窗口执行入口**：`docs/handoffs/2026-09-06-dpo-and-parallel-execution-prompt.md`
 ——轨道 A 主线 **DPO**（A-0 三个方案点先与用户确认 → 预注册 → 采样器 TDD →
-GPU 采样 → DPO 训练 → 三面评测 → 三分支判读 → 若修好走观测 8 + bank-005 +
+GPU 采样 → DPO 训练 → 三面评测 → 三分支判读 → 若修好走观测 8 + bank-006 +
 release v1.3）；轨道 B 并行（C3 交叉面读数、I-2b 走 v1.4 路径、gate schema 政策
 明文化、C4+难度分层合并数据重建**只立项不出工**）。
 D4 读数不得反馈进 DPO 的任何决策。
@@ -32,11 +32,15 @@ D4 读数不得反馈进 DPO 的任何决策。
    per_device_batch 2 + grad_accum 4、max_length 2048；训练前按实际渲染长度
    实测留余量，训练后自动断言 loss 曲线非零（LOG-20260905-02 教训变机器守卫）。
 
-**实现说明（预注册的一部分，先于运行声明）**：
+**实现说明（预注册的一部分，先于运行声明；2026-09-06 修订：bank-004 丢失后经
+用户裁定改用新 bank-005，见 Errors 表当日条目）**：
 - 偏好对采样器的输入任务面 = `build_policy_boundary_tasks(seed=0)`（120 条）+
-  `build_policy_boundary_phrasing_tasks(seed=0, bank-004 ood_dev 分片, partition="ood_dev")`
-  （120 条）；采样协议 = 每任务 temperature 0.8（top_p 1.0、top_k 0、逐样本
-  确定性播种）采 N=8 条轨迹，逐条过环境执行 + verifier。
+  `build_policy_boundary_phrasing_tasks(seed=0, bank-005 ood_dev 分片, partition="ood_dev")`
+  （120 条）；bank-005 照 bank-004 同配方生成（mimo-v2.5、per_intent 150、retry
+  brief 强化），生成后实测与全部既有分片及训练集的互斥性；采样配置的 bank
+  pin（relpath/sha256）在生成后登记并提交，先于 R11-1 运行。原 bank-004 的
+  `ood_dev` 分片不可恢复（Errors 表），其 `ood_sealed` 分片已在 v2.3 观测中
+  消耗并退役——bank-005 只用 `ood_dev`，与已消耗内容零重叠由互斥实测保证。
 - 配对规则：DENY 任务（offset < 0）chosen = Oracle 轨迹（逐位确定）、
   rejected = 该任务采样中真实发生的 `refund_not_eligible` 违规轨迹；无此类样本
   的任务跳过；同任务内按内容去重；配对携带 `task_id` + `sample_index` 溯源。
@@ -57,7 +61,7 @@ D4 读数不得反馈进 DPO 的任何决策。
 | **没动** | `offset −14` 仍 < 0.5 且其余不变 | 假设错（SFT 停滞假设的 DPO 版被证伪），停 |
 
 无论哪种结果：不重跑、不换采样素材再试、判读只用可迭代面（探针/dev/`ood_dev`）。
-A-7（bank-005 + 封存观测 8 + release v1.3）只在「修好」分支且**单独预注册提交后**
+A-7（bank-006 + 封存观测 8 + release v1.3）只在「修好」分支且**单独预注册提交后**
 才执行；v1.4 schema 是否在判定启用单独问用户。
 
 **运行清单（产物目录逐字声明）**：
@@ -74,7 +78,7 @@ A-7（bank-005 + 封存观测 8 + release v1.3）只在「修好」分支且**�
 
 | # | 运行 | 产物目录 |
 |---|---|---|
-| B1-0 | C3 交叉面任务集构建（远端 CPU，bank-004 `ood_dev` 分片） | `reports/retail_ops/v1/policy-boundary-phrasing/tasks` |
+| B1-0 | C3 交叉面任务集构建（远端 CPU，bank-005 `ood_dev` 分片） | `reports/retail_ops/v1/policy-boundary-phrasing/tasks` |
 | B1-1 | 交叉面评测：零训练基座（GPU 0） | `reports/retail_ops/v1/policy-boundary-phrasing/base` |
 | B1-2 | 交叉面评测：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/policy-boundary-phrasing/sft-008` |
 
@@ -505,6 +509,7 @@ GPU **是**、商业 API **是**、封存 holdout 观测**不限次数**（用�
 | 2026-08-17 | 规则第 3 条的括号里写了对结果的预期，预期落空导致规则自相矛盾 | 判读规则只写判据与阈值，不写「预计会怎样」；偏离规则时把事实与理由写进本文件而不是只在对话里说 |
 | 2026-08-17 | 预注册的 R-8 产物目录写成 shell brace 简写，与实际目录名不字面相等 | `test_every_declared_run_directory_is_actually_declared` 当场变红。预注册里的路径要写成能被逐字匹配的形式，简写会让「声明过」这件事无法机械核对 |
 | 2026-08-19 | cpolar 隧道换端口后 `ssh gpu-5090` 报 `Host key verification failed` | 新地址的三把主机密钥与 `known_hosts` 里旧隧道地址的指纹逐一相同（同一台机器），核对后再 `ssh-keyscan -H` 追加；不是关掉 `StrictHostKeyChecking` |
+| 2026-09-06 | **bank-004 丢失**：R11-1 采样预检发现 `phrasing-bank-004` 在本地与 gpu-5090 均不存在（本地 `phrasing/` 目录为空，mtime 当日 11:50；全盘/回收站/远端 `/mnt/aidata` 均无备份）。`ood_dev` 247 条内容不可恢复；ood_sealed 226 条中 60 条任务文本留存于已退役的 v2.3 任务集 | 用户裁定（2026-09-06）：照原配方（mimo、per_intent 150、retry brief 强化）生成新素材 **bank-005**，DPO 采样面与 B-1 交叉面改用其 `ood_dev` 分片，预注册在此修订留痕；**A-7 的封存素材顺延为 bank-006**。生成后跑与全部分片及训练集的互斥实测（机器断言）。教训：私有根里的已声明素材是预注册的组成部分，收口清理不得触碰 `data/private` |
 
 （R0–R4.5 的历史错误台账已归档到 `progress.md`。）
 
