@@ -119,6 +119,7 @@ from veritool_rl.retail_ops.release.release import (
 )
 from veritool_rl.retail_ops.serve.observability import configure_service_logging
 from veritool_rl.retail_ops.serve.service import BackendFactory, create_app, create_formal_app
+from veritool_rl.training.dpo import run_dpo
 from veritool_rl.training.sft import run_sft
 
 _R2_PRIVATE_ROOT = Path("data/private/retail_ops/v1/r2")
@@ -250,6 +251,8 @@ def _run_build(args: argparse.Namespace) -> None:
         _run_dev_sft_export(args, config)
     elif pipeline == "sft":
         _run_sft(args, config)
+    elif pipeline == "dpo":
+        _run_dpo(args, config)
     else:
         raise ValueError(f"未知 build pipeline: {pipeline!r}")
 
@@ -1714,6 +1717,58 @@ def _run_sft(
         "training": training_value,
     }
     (trainer_factory or _default_sft_trainer)(sft_config, args.seed, args.output_dir)
+
+
+# ---------------------------------------------------------------------------
+# R11 pipeline: dpo (build)
+# ---------------------------------------------------------------------------
+
+_DPO_KEYS = {"pipeline", "model", "lora", "data", "training"}
+_DPO_DATA_REQUIRED_KEYS = {"train_relpath"}
+_DPO_DATA_OPTIONAL_KEYS: set[str] = set()
+
+_default_dpo_trainer = run_dpo
+
+
+def _run_dpo(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    trainer_factory: Callable[[dict[str, Any], int, Path], dict[str, Any]] | None = None,
+) -> None:
+    """执行一次单卡 QLoRA-DPO；偏好对路径是**项目内相对路径**。
+
+    与 sft 的差别：偏好对产在 `reports/` 公开树（采样脚本的产物），不在私有根，
+    因此 config 直接写项目内相对路径（逐分量校验，拒绝穿越/绝对路径），
+    不需要 `--input_dir`。`trainer_factory` 是 CPU 测试注入缝，与 `_run_sft` 同一
+    约定：模型逐文件哈希校验、不可覆盖输出目录、渲染长度守卫与 loss 曲线守卫
+    都在 `training.dpo.run_dpo` 里，本函数不复制也不放宽任何一条。
+    """
+    _require_config_keys(config, _DPO_KEYS)
+    model_value = _config_mapping(config, "model")
+    lora_value = _config_mapping(config, "lora")
+    data_value = _config_mapping(config, "data")
+    training_value = _config_mapping(config, "training")
+
+    missing = _DPO_DATA_REQUIRED_KEYS - set(data_value)
+    unknown = set(data_value) - _DPO_DATA_REQUIRED_KEYS - _DPO_DATA_OPTIONAL_KEYS
+    if missing or unknown:
+        raise ValueError(
+            f"data 字段不符合 dpo 契约: missing={sorted(missing)}, unknown={sorted(unknown)}"
+        )
+
+    train_relpath = _config_str(data_value, "train_relpath")
+    parts = train_relpath.split("/")
+    for part in parts:
+        _validate_path_component(part, label="data.train_relpath 路径分量")
+
+    dpo_config = {
+        "model": model_value,
+        "lora": lora_value,
+        "data": {"train_path": train_relpath},
+        "training": training_value,
+    }
+    (trainer_factory or _default_dpo_trainer)(dpo_config, args.seed, args.output_dir)
 
 
 def _private_data_path(data: dict[str, Any], key: str, private_root: Path) -> Path:

@@ -1,0 +1,38 @@
+# DPO 训练（r11 主线 R11-2，预注册见 task_plan.md `eeec309`）。
+#
+# 起始权重 = `models/Qwen3-4B-sft-008-merged`：sft-008 的确定性合并部署形态
+# （SHA-256 与观测 5 逐位一致）——它就是「NF4 基座 + sft-008 adapter」的初始策略，
+# 也是发布判定的候选形态。ref model = 禁用 adapter 的该基座（TRL peft 模式自动
+# 处理，源码结构测试锁定），即初始策略冻结副本。
+#
+# 超参（2026-09-06 用户确认冻结）：beta 0.1、lr 5e-7、epochs 1、
+# per_device_batch 2 + grad_accum 4、max_length 2048。训练数据 = R11-1 采样产物
+# `pairs.jsonl`（messages 形式），训练前由 `training.dpo.render_dpo_pairs` 用
+# Qwen chat template（带 tools）预渲染并做 max_length 守卫（LOG-20260905-02）。
+pipeline: dpo
+model:
+  name: models/Qwen3-4B-sft-008-merged
+  revision: "b0fce237cb2659a500858bb02081d768eced3b09a93dcb8b84e84d1a20a686d0"
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "70981220774eca22b208f16255cefa733b5151affe083a64d88deed994ab3edd"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+data:
+  train_relpath: reports/retail_ops/v1/r11-dpo/sampling-001/pairs.jsonl
+training:
+  beta: 0.1
+  epochs: 1
+  batch_size: 2
+  grad_accum: 4
+  lr: 5.0e-7
+  max_length: 2048
+  bf16: true
+  gradient_checkpointing: true
