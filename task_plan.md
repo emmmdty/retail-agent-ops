@@ -87,9 +87,9 @@ teacher 接受率门禁 ≥ 0.80；DENY 类措辞沿用 R9「评估/判断」式
 | D4-3 | OOD v2.3 sealed 分片构建（本地 CPU） | `reports/retail_ops/v1/ood-v2.3/sealed/tasks` |
 | D4-4 | OOD 评测：零训练基座（GPU 0） | `reports/retail_ops/v1/ood-v2.3/sealed/base` |
 | D4-5 | OOD 评测：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/ood-v2.3/sealed/merged-candidate` |
-| D4-6 | 封存 holdout 观测 7：base（GPU 0） | `reports/retail_ops/v1/r6/holdout-base-007` |
-| D4-7 | 封存 holdout 观测 7：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/r6/holdout-merged-candidate-007` |
-| D4-8 | `release --gate_schema_version 1.3`（带 `--*_trajectories` 与 OOD 证据） | `reports/retail_ops/v1/r6/formal-release-007-v13` |
+| D4-6 | 封存 holdout 观测 7：base（GPU 0） | `reports/retail_ops/v1/r10-d4/holdout-base-007` |
+| D4-7 | 封存 holdout 观测 7：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/r10-d4/holdout-merged-candidate-007` |
+| D4-8 | `release --gate_schema_version 1.3`（带 `--*_trajectories` 与 OOD 证据） | `reports/retail_ops/v1/r10-d4/formal-release-007-v13` |
 
 **判读规则**：v1.3 十二门逐门 PASS/FAIL，总判定 = 全过 GO / 任一 FAIL NO-GO。
 OOD 证据（v1.2 门 `ood_task_success_min ≥ 0.70`、`ood_success_delta_min ≥ 0`）
