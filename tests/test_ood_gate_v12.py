@@ -511,9 +511,9 @@ def test_load_ood_evidence_rejects_non_v12() -> None:
             "candidate_metrics_path": "b.json",
         }
     }
-    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3 下有效"):
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3/1\.4 下有效"):
         _load_ood_evidence(config, "1.0")
-    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3 下有效"):
+    with pytest.raises(ValueError, match=r"仅在 gate_schema_version=1\.2/1\.3/1\.4 下有效"):
         _load_ood_evidence(config, "1.1")
 
 
