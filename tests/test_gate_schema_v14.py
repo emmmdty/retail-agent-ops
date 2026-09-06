@@ -69,11 +69,11 @@ def test_v14_pairing_fields_only_extend_the_legacy_set() -> None:
         SEALED_PAIRING_FIELDS_V1_4,
     )
 
-    assert SEALED_PAIRING_FIELDS_V1_4 == (
+    assert (
         *_LEGACY_PAIRING_FIELDS,
         "inference_engine",
         "runtime_env_sha256",
-    )
+    ) == SEALED_PAIRING_FIELDS_V1_4
     assert set(SEALED_PAIRING_FIELDS) < set(SEALED_PAIRING_FIELDS_V1_4)
 
 
@@ -129,7 +129,10 @@ def test_v13_pairing_still_ignores_the_engine_and_runtime_env() -> None:
 
 
 def test_v14_pairing_rejects_engine_mismatch() -> None:
-    from veritool_rl.retail_ops.evaluate.sealed_evaluation import ComparisonError, require_comparable_sealed_runs
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
+        ComparisonError,
+        require_comparable_sealed_runs,
+    )
 
     base, _ = _paired_reports("transformers", "a" * 64)
     vllm_candidate = build_sealed_report(
@@ -144,7 +147,10 @@ def test_v14_pairing_rejects_engine_mismatch() -> None:
 
 
 def test_v14_pairing_rejects_runtime_env_mismatch() -> None:
-    from veritool_rl.retail_ops.evaluate.sealed_evaluation import ComparisonError, require_comparable_sealed_runs
+    from veritool_rl.retail_ops.evaluate.sealed_evaluation import (
+        ComparisonError,
+        require_comparable_sealed_runs,
+    )
 
     base, _ = _paired_reports("transformers", "a" * 64)
     other_env = build_sealed_report(
@@ -208,9 +214,7 @@ def test_build_release_gates_accepts_v14_and_matches_v13_shape() -> None:
         "average_tool_calls": 2.0,
     }
 
-    paired_outcomes = (
-        [(True, True)] * 103 + [(False, True)] * 14 + [(False, False)] * 3
-    )
+    paired_outcomes = [(True, True)] * 103 + [(False, True)] * 14 + [(False, False)] * 3
 
     v14 = build_release_gates(
         base_metrics,
