@@ -1,0 +1,16 @@
+# D4 一次性 v1.3 发布判定（第七次封存 holdout 观测 + OOD v2.3 封存分片）。
+#
+# 判读规则与运行内容预注册于 task_plan `9b1c61b`（观测之前），阈值
+# policy_violation_count_max=0 / success_delta_ci_lower_min=+0.02 于 2026-09-04
+# 经用户确认冻结（LOG-20260904-02）。预期结果（诚实预判）：NO-GO——绝对门大概率
+# 拦下封存集上的政策违规。无论结果如何不重跑、不换素材再试；结果不得反馈进
+# 任何后续开发。台账：HOLDOUT_LEDGER 观测 7、OOD_SEALED_LEDGER v2.3 条目。
+#
+# ood_evidence 指向两份**平铺导出**的 OOD 指标（从各自 ood-report.json 的 metrics
+# 段逐字段导出，格式转换、内容不变）。
+pipeline: formal_release
+bundle_dir: domains/retail_ops/v1
+gate_schema_version: "1.3"
+ood_evidence:
+  base_metrics_path: reports/retail_ops/v1/ood-v2.3/sealed/base/ood-metrics.json
+  candidate_metrics_path: reports/retail_ops/v1/ood-v2.3/sealed/merged-candidate/ood-metrics.json

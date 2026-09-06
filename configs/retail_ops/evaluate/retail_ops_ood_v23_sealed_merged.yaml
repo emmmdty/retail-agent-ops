@@ -1,0 +1,20 @@
+# D4 一次性 v1.3 发布判定：OOD v2.3 封存分片（bank-004）上的 **sft-008 合并形态**评测。
+#
+# 与 base 侧（retail_ops_ood_v23_sealed_base.yaml）同分片同参数，唯一变量是模型权重。
+# 走 ood_base 通道：合并之后模型里已经没有 adapter，它就是一份新的基座权重。
+pipeline: ood_base
+bundle_dir: domains/retail_ops/v1
+models_root: models
+model:
+  repo: local/Qwen3-4B-sft-008-merged
+  revision: "b0fce237cb2659a500858bb02081d768eced3b09a93dcb8b84e84d1a20a686d0"
+  local_dir: Qwen3-4B-sft-008-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "70981220774eca22b208f16255cefa733b5151affe083a64d88deed994ab3edd"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
