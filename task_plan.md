@@ -20,6 +20,74 @@ release v1.3）；轨道 B 并行（C3 交叉面读数、I-2b 走 v1.4 路径、
 明文化、C4+难度分层合并数据重建**只立项不出工**）。
 D4 读数不得反馈进 DPO 的任何决策。
 
+### DPO 预注册（2026-09-06 A-0 三个方案点经用户确认，先于一切运行提交）
+
+**A-0 裁定（2026-09-06，用户确认）**：
+
+1. **判读规则**：按 A-6 草案逐字冻结（见下表）。
+2. **对冲对设计**：**门禁守卫方案**——采样确认放行侧（offset > 0）零错误后，
+   偏好对为 DENY 方向单一来源；防平移由预注册的「放行侧不塌」门禁（修坏分支：
+   任一放行侧偏移 < 0.90 即判负）承担。高温诱导方案被否。
+3. **DPO 超参**：TRL 1.8.0 DPOTrainer、beta 0.1、lr 5e-7、epochs 1、
+   per_device_batch 2 + grad_accum 4、max_length 2048；训练前按实际渲染长度
+   实测留余量，训练后自动断言 loss 曲线非零（LOG-20260905-02 教训变机器守卫）。
+
+**实现说明（预注册的一部分，先于运行声明）**：
+- 偏好对采样器的输入任务面 = `build_policy_boundary_tasks(seed=0)`（120 条）+
+  `build_policy_boundary_phrasing_tasks(seed=0, bank-004 ood_dev 分片, partition="ood_dev")`
+  （120 条）；采样协议 = 每任务 temperature 0.8（top_p 1.0、top_k 0、逐样本
+  确定性播种）采 N=8 条轨迹，逐条过环境执行 + verifier。
+- 配对规则：DENY 任务（offset < 0）chosen = Oracle 轨迹（逐位确定）、
+  rejected = 该任务采样中真实发生的 `refund_not_eligible` 违规轨迹；无此类样本
+  的任务跳过；同任务内按内容去重；配对携带 `task_id` + `sample_index` 溯源。
+  ALLOW 任务（offset > 0）不产对，只进前提检查与报告。
+- **偏离路径（先写定）**：放行侧采样若出现执行类错误，采样报告如实记录、
+  **停止并回用户决策**——不得悄悄构造对冲对。
+- DPO 起始权重 = `models/Qwen3-4B-sft-008-merged`（合并部署形态，SHA-256
+  `70981220…` 与观测 5 逐位一致）——它是「NF4 基座 + sft-008 adapter」的确定性
+  合并形态，也是发布候选的部署形态；在其上加新 LoRA（TRL peft 模式下
+  ref model = 禁用 adapter 的基座 = 初始策略冻结副本，写测试锁定）。
+
+**判读规则正式稿（冻结，一个字不改地用）**：
+
+| 分支 | 判据 | 后续 |
+|---|---|---|
+| **修好** | 探针 `offset −14` 恢复 ≥ 0.9 且其余 14 偏移保持 1.00 且 dev 60 ≥ 58/60 且 `ood_dev` ≥ 0.95（现 0.9833） | 换候选 `sft-008-dpo-001`；代价（如有）成对报告 |
+| **修坏** | 任一放行侧偏移跌破 1.00 − 0.1，或 dev/`ood_dev` 退化 | 不换候选；记录负结果 |
+| **没动** | `offset −14` 仍 < 0.5 且其余不变 | 假设错（SFT 停滞假设的 DPO 版被证伪），停 |
+
+无论哪种结果：不重跑、不换采样素材再试、判读只用可迭代面（探针/dev/`ood_dev`）。
+A-7（bank-005 + 封存观测 8 + release v1.3）只在「修好」分支且**单独预注册提交后**
+才执行；v1.4 schema 是否在判定启用单独问用户。
+
+**运行清单（产物目录逐字声明）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| R11-1 | 偏好对 GPU 采样（探针 120 + 交叉面 120，每任务 N=8，~1.5h） | `reports/retail_ops/v1/r11-dpo/sampling-001` |
+| R11-2 | DPO 训练（gpu-5090 GPU 0，~30–60 min） | `reports/retail_ops/v1/r11-dpo/dpo-001` |
+| R11-3 | 探针评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/probe-dpo-001` |
+| R11-4 | dev 60 配对评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/dev-candidate-dpo-001` |
+| R11-5 | `ood_dev` 60 评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/ood-dev-candidate-dpo-001` |
+
+**B-1（并行）运行清单（产物目录逐字声明）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| B1-0 | C3 交叉面任务集构建（远端 CPU，bank-004 `ood_dev` 分片） | `reports/retail_ops/v1/policy-boundary-phrasing/tasks` |
+| B1-1 | 交叉面评测：零训练基座（GPU 0） | `reports/retail_ops/v1/policy-boundary-phrasing/base` |
+| B1-2 | 交叉面评测：`sft-008` 合并形态（GPU 0） | `reports/retail_ops/v1/policy-boundary-phrasing/sft-008` |
+
+**输入**：交接 §4/§5；`DPO_ENTRY_EVIDENCE_D2.md`（设计宪法）；POLICY_BOUNDARY §4–§6
+（探针基线：`sft-008` 14/15 偏移 1.00、`offset −14` 塌 0.375）；两个装置源码。
+**输出**：偏好对采样器（CPU TDD）、GPU 采样产物与采样报告（实际配对数与方向分布）、
+DPO 训练产物、三面评测读数、三分支判读落盘。
+**非目标**：不改 v1/v2 冻结契约；不碰 rtc（机制不同，D1 已修）；D4 读数不反馈进
+DPO 的数据选择/调参/候选选择；已证伪方向 8 条不得变相复活；A-7 不在本预注册内。
+**影响文件**：`src/veritool_rl/retail_ops/build/dpo_sampling.py`（新）、
+`src/veritool_rl/training/dpo.py`（新）、`scripts/retail_ops/run_dpo_sampling.py`（新）、
+`configs/retail_ops/build/`（dpo 配置，新）、`tests/test_dpo_*.py`（新）。
+
 ### 上一任务：GPU 执行阶段 C2/D1/E2/D4（2026-09-04 → 2026-09-06，已完成）
 
 **纯 CPU 部分**（9 个 commit，`3121e7d` 止）：Phase A 审计与修复（5C+7I）、
