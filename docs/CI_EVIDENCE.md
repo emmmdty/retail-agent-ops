@@ -100,3 +100,35 @@ skip 数差 1（ffprobe），是环境差异不是代码差异。
   qualification 全链路在 GitHub 托管 runner 上可复现」，**不**说明模型可上线、
   不说明候选泛化、不说明发布门禁阈值合理——那些是 `RESUME_EVIDENCE.md` 的口径。
 - 后续若 CI 出现失败，本文件追加新行；**不删改首次运行这一行**（历史不得改写）。
+
+## 2026-09-06：GPU 执行阶段收口后的 CI 记录（两次失败 + 恢复全绿）
+
+GPU 执行阶段（C2/D1/E2/D4）的大量提交期间，CI 出现两次失败并随后恢复全绿。
+按本文档约定追加记录，不改写首次运行。
+
+| 字段 | 值 |
+|---|---|
+| 失败 run | https://github.com/emmmdty/retail-agent-ops/actions/runs/34010688249（`34010688249`）与 34010764389 |
+| commit | 1451 基线修正期间的两个中间态 commit（`175bf41`、`a814ba0` 前后） |
+| 失败步骤 | pytest（governance 算术守卫） |
+| 失败原因 | 干净 clone 基线数字的迭代中间态：`README.en.md` 披露 1403 + 49 = 1452，而 runner 实际收集 1451——**算术守卫在 CI 上把带病数字拦下** |
+| 恢复 | `656ce20`（CLAUDE.md 基线同步）起 CI 转绿 |
+
+**当前状态（追加时点）**：
+
+| 字段 | 值 |
+|---|---|
+| 最新 run | https://github.com/emmmdty/retail-agent-ops/actions/runs/34014169821 |
+| commit | `c6d1969`（D4 台账收口） |
+| 总时长 | 2m31s |
+| conclusion | **success**（job「CPU 质量门与全链路复现」） |
+| CI 上的收集数 | 1451（与作者环境一致——含私有产物兼容的路径；skip 集与本地 clone 相同） |
+
+**值得说的**：这两次失败不是回归，是**发布证据链的守卫在 CI 上真实工作**——
+「passed + skipped 必须等于收集总数」的算术守卫把一次数字不一致的提交拦在了
+main 的历史里可见的位置，随后被下一个 commit 修复。这与 RESUME_EVIDENCE
+「判定系统在本地之外可复现」的声称一致。
+
+**仍未处理（记录在案）**：Node.js 20 deprecation annotation（`actions/checkout@v4`
+/ `astral-sh/setup-uv@v5` 被 runner 强制升 Node.js 24）——仍是 annotation 不是
+failure，升级 action 版本属独立维护项。
