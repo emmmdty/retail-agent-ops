@@ -505,3 +505,20 @@ mimo teacher、Qwen3-4B 上成立；探索性结论，不用于发布判定。
   封存 holdout 观测 1 次（观测 7）、OOD v2.3 分片观测 1 次。
 - **验收**：`pytest` 1451 passed、ruff/format/mypy/lock/diff/qualification/audit
   全绿；干净 clone 实跑 **1402 passed / 49 skipped / 0 failed**（2026-09-06）。
+
+### DPO 主线 + 并行项（2026-09-06 启动；CPU 部分完成，GPU 待用户确认命令清单）
+
+执行入口 `docs/handoffs/2026-09-06-dpo-and-parallel-execution-prompt.md`（用户裁定
+启动 DPO，决策门 #4 关闭）。A-0 三个方案点（判读规则正式稿 / 门禁守卫方案 /
+DPO 超参）经用户确认冻结，预注册提交（`eeec309`）先于一切运行。
+
+- **已完成（纯 CPU）**：A-1 预注册；A-2 偏好对采样器（真实链路夹具 TDD，
+  门禁守卫方案的前提检查进装置）；A-3 GPU 采样脚本与配置（断点续跑 + premise
+  退出码 3）；A-4 QLoRA-DPO 训练管线（merged sft-008 起始、ref=初始策略锁定、
+  渲染长度守卫、loss 非零守卫）；B-2 gate schema v1.4 路径（只加版本不改历史）；
+  B-3 发布配置治理守卫；B-4 合并数据重建立项方案（`PROPOSAL_DATA_REBUILD_B4.md`，
+  待用户裁决预算，独立窗口执行）。
+- **待执行（GPU，命令清单逐条待用户确认）**：R11-1 采样（~1.5h）→ R11-2 DPO
+  训练（~30–60min）→ R11-3/4/5 三面评测；并行 B-1 C3 交叉面读数（与 R11-1
+  共会话）。A-7（bank-005 + 观测 8 + release）仅在判读「修好」后单独预注册。
+- **状态**：进行中。测试基线 1492（干净 clone 1443/49，2026-09-06 实测）。
