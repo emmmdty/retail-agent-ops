@@ -73,7 +73,8 @@ A-7（bank-006 + 封存观测 8 + release v1.3）只在「修好」分支且**�
 | # | 运行 | 产物目录 |
 |---|---|---|
 | R11-1 | 偏好对 GPU 采样（探针 120 + 交叉面 120，每任务 N=8，~1.5h） | `reports/retail_ops/v1/r11-dpo/sampling-001` |
-| R11-2 | DPO 训练（gpu-5090 GPU 0，~30–60 min） | `reports/retail_ops/v1/r11-dpo/dpo-001` |
+| R11-2-smoke | DPO 管线自检（4 对 1 步；**不进入任何判读**） | `reports/retail_ops/v1/r11-dpo/dpo-smoke-001` |
+| R11-2 | DPO 训练（gpu-5090 GPU 0，~30–60 min；epochs 3） | `reports/retail_ops/v1/r11-dpo/dpo-001` |
 | R11-3 | 探针评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/probe-dpo-001` |
 | R11-4 | dev 60 配对评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/dev-candidate-dpo-001` |
 | R11-5 | `ood_dev` 60 评测：`sft-008-dpo-001` | `reports/retail_ops/v1/r11-dpo/ood-dev-candidate-dpo-001` |
