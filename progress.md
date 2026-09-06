@@ -1386,3 +1386,26 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-06 | bank-005 生成（mimo，$0.0244，记账） | 947 条；定性多余素材（bank-004 健在回退） |
 | 2026-09-06 | R11-2-smoke + R11-2（GPU 0） | 12 步 loss 守卫通过；dpo-001 |
 | 2026-09-06 | R11-3/4/5 三面评测（GPU 0） | 修坏；候选不变 |
+
+## 2026-09-06 — B-4 窗口：轨道 B 完成（负结果叙事 + 平移图）+ A-0 裁定 + A-1 预注册
+
+- **轨道 B（不进入判读）**：B-b 探针三模型平移图
+  （`scripts/ops/plot_policy_boundary_shift.py` → `reports/retail_ops/v1/r11-dpo/
+  probe_shift_curve.png` + `.csv`；数据源与文本版曲线脚本同源，直接读
+  `kind_success`）。形状读数：dpo-001 放行侧 8 点与零训练基座几乎同形
+  （放行侧均值 base 0.125 / dpo-001 0.109 / sft-008 1.00）——单一方向 DPO 把
+  放行侧塌回「不执行」基线。B-a 叙事：RESUME_EVIDENCE §1.5 第 10 行被推翻判断
+  （9→10）+ 新增 §1.10（四段骨架）+ §2 不可写新行；INTERVIEW_PREP §2.3 DPO
+  问答改写实测版 + §3 失败案例 #12。治理测试 64 passed。
+- **A-0 裁定（用户逐项确认）**：沿用 v4 场景集；口径 A 草案四行（受损→{damaged}、
+  发错货→{wrong_item}、不符描述→{not_as_described, damaged}、不想要→
+  {changed_mind}；cancel 类保持精确匹配）；判读阈值按 A-6 草案冻结；v1.4 配对
+  schema 不启用（发布判定沿用 1.3）。
+- **A-1 预注册**：判读规则正式稿 + 运行清单（V5-1…V5-11，产物目录逐字声明，
+  含 teacher smoke）写进 task_plan.md 并先于一切运行提交。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-06 | 轨道 B（本地 CPU） | 平移图 + 双文档叙事落盘；治理测试全绿 |
+| 2026-09-06 | A-0（用户确认） | 四项裁定冻结 |
+| 2026-09-06 | A-1 预注册提交 | task_plan Current Task 重写为 v5 预注册 |

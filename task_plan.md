@@ -6,26 +6,80 @@
 R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.md` 为准，
 历史任务摘要在 `progress.md`。
 
-## Current Task: B-4 数据重建执行（v5 分层冻结 + 口径 A + max_steps 6）→ 新窗口执行入口（2026-09-06）
+## Current Task: v5 数据重建（`retail_ops_v5_20260906`）——A-1 预注册（2026-09-06，先于一切运行提交）
 
-**上一任务（DPO 主线 + 并行项）已完成并收口**：A-6 冻结判读 = **修坏**
-（探针 −14 校准至 1.00 的同时放行侧 8 点全 <0.90、dev 0.8833、ood_dev 0.6333；
-门禁守卫按设计拦下「平移不是校准」的 DPO 版）——**候选 sft-008 不变、D4 的
-NO-GO 维持**；LOG-20260906-01；PITFALLS §三 新增 #9（单方向 DPO，含未来重试的
-前置条件）。负结果分析见
-`docs/handoffs/2026-09-06-b4-data-rebuild-execution-prompt.md` §4（事实/机制/
-设计/量化四层 + 对 v5 数据设计的三条直接约束）。CI 全绿，scoped re-review
-通过（4 Minor 已修）。
+**A-0 裁定（2026-09-06，用户逐项确认，遇到不再重开）**：
 
-**决策记录（用户 2026-09-06 授权窗口执行者自决）**：批准 B-4 数据重建立项
-（采纳提案建议选项：独立立项、mimo ~700 任务、DPO 收口后启动——已满足）。
+1. **结构范围**：场景集与 family 结构沿用 v4_20260905（含 rtc_stepwise train-only
+   辅助场景）；切分键换难度分层。
+2. **reason 口径 A 映射表（判分契约，冻结）**：受损（damaged）→ `{damaged}`；
+   发错货（wrong_item）→ `{wrong_item}`；不符描述（not_as_described）→
+   `{not_as_described, damaged}`；不想要（changed_mind）→ `{changed_mind}`。
+   cancel 类 reason（`_V4_CANCEL_REASONS`）**保持精确匹配、不进口径 A**。
+3. **判读阈值**：按 A-6 草案逐字冻结（见下表）。
+4. **v1.4 配对 schema 不启用**：v5 的发布判定沿用 `--gate_schema_version 1.3`。
 
-**下一窗口执行入口**：`docs/handoffs/2026-09-06-b4-data-rebuild-execution-prompt.md`
-——轨道 A：v5 数据重建（`retail_ops_v5_20260906`：分层切分 + margin 0 档 +
-reason 口径 A + max_steps 6；A-0 三个方案点先与用户确认 → 预注册 → CPU TDD →
-freeze + 覆盖验收（5.0×→~1.0× 机器证明）→ teacher ~700 任务 → 训练 + 三面 +
-新封存观测 8 → v1.3 十二门判读）；轨道 B 可选（简历负结果叙事、探针平移曲线图）。
-硬边界：v1–v4 冻结契约与既有数据集不动；判读规则先于观测提交。
+**轨道 B（负结果分析，本窗口已完成，不进入判读）**：B-a 简历/面试叙事
+（`RESUME_EVIDENCE.md` §1.5 第 10 行 + 新增 §1.10 + §2 不可写新行 + §4 计数 9→10；
+`INTERVIEW_PREP.md` §2.3 DPO 问答改写实测版 + §3 失败案例 #12）；B-b 探针三模型
+平移对比图 `scripts/ops/plot_policy_boundary_shift.py`，产物
+`reports/retail_ops/v1/r11-dpo/probe_shift_curve.png` + `.csv`
+（文件位于已声明的 r11-dpo 命名空间内，非目录，不触发声明守卫）。
+
+**判读规则正式稿（冻结，一个字不改地用）**：
+
+| 分支 | 判据 | 后续 |
+|---|---|---|
+| **修好** | v1.3 十二门全 PASS（含绝对门 `policy_violation_count_max=0`、`success_delta_ci_lower ≥ +0.02`、OOD 两门）且探针无单点塌方（15 偏移每点 ≥ 0.875） | 换候选 `sft-v5-001`；对外材料按新口径成对陈述 |
+| **修坏** | 任一门 FAIL（尤其绝对门）或探针/`ood_dev` 出现单侧塌方形状 | 不换候选；负结果入账；绝对门路径就此穷尽，如实收官 |
+| **边界改善但未达标** | 十二门 PASS 但探针单点 < 0.875（或反之） | 依预注册分支细则，升级需用户确认 |
+
+无论哪种结果：不重跑、不换素材再试；判读只用可迭代面（探针/dev/`ood_dev`）+
+一次性封存观测 8；台账（`HOLDOUT_LEDGER.md` 观测 8、`PROJECT_LOG.md`、
+`EXECUTION_PLAN.md`）同日收口。封存结果永远不反馈进开发。
+
+**运行清单（产物目录逐字声明；smoke/先验审查产物先补声明再运行）**：
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| V5-1 | formal_freeze v5（本地 CPU）+ 覆盖表落盘验收（5.0×→~1.0× 机器证明） | `data/private/retail_ops/v1/r2/retail_ops_v5_20260906` + `manifests/retail_ops/v1/retail_ops_v5_20260906` + `reports/retail_ops/v1/r12-v5/coverage-v5-001` |
+| V5-2-smoke | teacher 小样本冒烟（mimo，措辞先验审查用） | `data/private/retail_ops/v1/r2/retail_ops_v5_20260906/teacher-collection/teacher-v5-smoke-001`；CLI output_dir 占位 `reports/retail_ops/v1/r12-v5/teacher-smoke-run-000`（流水线不写入） |
+| V5-2 | teacher 全量采集（mimo，~700 任务，接受率 ≥0.80 分桶门禁） | `data/private/retail_ops/v1/r2/retail_ops_v5_20260906/teacher-collection/teacher-v5-001`；CLI output_dir 占位 `reports/retail_ops/v1/r12-v5/teacher-run-001`（流水线不写入） |
+| V5-3 | train_export（本地 CPU，措辞 ×3 无 oversample） | `data/private/retail_ops/v1/r2/retail_ops_v5_20260906/train-export/train-export-v5-001` + `reports/retail_ops/v1/r12-v5/train-export-001` |
+| V5-4 | dev_sft_export（本地 CPU，Oracle） | `data/private/retail_ops/v1/r2/retail_ops_v5_20260906/dev-sft/dev-sft-v5-001`；CLI output_dir 占位 `reports/retail_ops/v1/r12-v5/dev-sft-run-001`（流水线不写入） |
+| V5-5 | 训练 `sft-v5-001`（gpu-5090 GPU 0，~35 min；命令清单逐条确认后执行） | `reports/retail_ops/v1/r12-v5/sft-v5-001` |
+| V5-6 | v5 dev 评测：base + candidate（配对） | `reports/retail_ops/v1/r12-v5/dev-base-001` / `reports/retail_ops/v1/r12-v5/dev-candidate-001` |
+| V5-7 | OOD v2 评测（既有分片，跨候选可比） | `reports/retail_ops/v1/r12-v5/ood-v2-candidate-001` |
+| V5-8 | OOD v4 评测 | `reports/retail_ops/v1/r12-v5/ood-v4-candidate-001` |
+| V5-9 | 探针评测（−14 曲线是绝对门的先行指标） | `reports/retail_ops/v1/r12-v5/probe-candidate-001` |
+| V5-10 | v5 封存 holdout 观测 8：base + candidate | `reports/retail_ops/v1/r12-v5/holdout-base-008` / `reports/retail_ops/v1/r12-v5/holdout-candidate-008` |
+| V5-11 | `release --gate_schema_version 1.3` | `reports/retail_ops/v1/r12-v5/formal-release-008` |
+
+**输入**：交接 §4（DPO 负结果三条设计约束）/§5（轨道 A 规格）、
+`docs/PROPOSAL_DATA_REBUILD_B4.md`（分层算法/配额/断裂清单）、
+`docs/POLICY_BOUNDARY.md` §2（覆盖表与 5.0× 复算测试）、
+`formal_tasks.py`（v1/v4 生成器与 `assert_exact_quotas_v4`——结构起点）、
+v4 冻结配置先例。
+**输出**：v5 生成器 + `assert_exact_quotas_v5`（分层键 + margin 0 档 + 覆盖表断言）、
+口径 A（可接受集合承载 + verifier 版本化，旧证据复算逐位不变）、max_steps 6
+（sealed config Literal 同步）、`formal_manifests.py` v5 登记、Oracle 自洽 +
+「措辞 → 结果」关联检查、覆盖表机器证明。
+**非目标**：不改 v1–v4 冻结契约与既有数据集；探针网格、OOD v2/v2.2/v2.3 任务集
+逐字节不动；不动发布门禁阈值（0 / +0.02）；bank-005 永不进入评测面；
+不碰 BFCL holdout；发布候选 `sft-008` 在判读出结果前保持不变。
+**影响文件**：`src/veritool_rl/retail_ops/domain/formal_tasks.py`（v5 生成器 +
+`assert_exact_quotas_v5`）、`src/veritool_rl/retail_ops/build/formal_manifests.py`
+（v5 Literal）、verifier 的 reason 集合判定（版本化）、sealed config Literal、
+`configs/retail_ops/build/`（v5 冻结配置）、`tests/test_retail_ops_v5_tasks.py`（新）。
+**验收命令**：§验收命令全量（pytest / ruff / format / mypy / lock / diff /
+qualification / audit）；A-3 后另附覆盖表读数。
+
+## 上一任务：DPO 主线（R11，已收口 = 修坏，2026-09-06）
+
+判定修坏：候选 `sft-008` 不变、D4 的 NO-GO 维持；`sft-008-dpo-001` 不进入任何
+候选比较或对外材料。负结果四层分析（事实/机制/设计/量化）见
+`docs/handoffs/2026-09-06-b4-data-rebuild-execution-prompt.md` §4；
+LOG-20260906-01；PITFALLS §三 #9。本窗口的叙事与可视化落点见上方「轨道 B」。
 
 ### DPO 预注册（2026-09-06 A-0 三个方案点经用户确认，先于一切运行提交）
 
