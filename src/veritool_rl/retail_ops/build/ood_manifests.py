@@ -84,6 +84,9 @@ OodDatasetVersion = Literal[
     # 二维迭代面（Phase C3）：探针网格 × 措辞池分片。措辞不再与冻结数据集同源，
     # 使同一次迭代同时看见边界型与措辞型退化（R7 失败机制的根治）。
     "retail_ops_policy_boundary_phrasing_v1_20260904",
+    # D4 一次性 v1.3 发布判定的封存分片：bank-004 素材（mimo 生成）、v2.2 同款
+    # 状态空间与配额。只观测一次，观测后退役。见 docs/OOD_SEALED_LEDGER.md。
+    "retail_ops_ood_v2_3_20260905",
 ]
 
 _ALLOWED_DATASET_VERSIONS: tuple[str, ...] = get_args(OodDatasetVersion)

@@ -373,6 +373,7 @@ def test_the_committed_phrasing_digests_are_disjoint() -> None:
         "phrasing-bank-002/ood_dev",
         "phrasing-bank-002/ood_sealed",
         "phrasing-bank-003/ood_sealed",
+        "phrasing-bank-004/ood_sealed",
     }, "评测分片清单与已提交的构建配置对不上"
 
     for name, digests in evaluation.items():

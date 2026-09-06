@@ -61,6 +61,8 @@ EVALUATION_SHARDS: tuple[tuple[str, str], ...] = (
     ("phrasing-bank-002", "ood_dev"),
     ("phrasing-bank-002", "ood_sealed"),
     ("phrasing-bank-003", "ood_sealed"),
+    # D4 一次性 v1.3 发布判定的封存分片（预注册 task_plan `9b1c61b`）。
+    ("phrasing-bank-004", "ood_sealed"),
 )
 
 _ORDER_ID_PATTERN = re.compile(r"O-[A-Z0-9]+")

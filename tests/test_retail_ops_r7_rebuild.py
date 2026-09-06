@@ -335,3 +335,31 @@ def test_the_built_v22_artifacts_match_the_generator() -> None:
     if old_manifest_path.is_file():
         old = json.loads(old_manifest_path.read_text(encoding="utf-8"))
         assert old["tasks_file_sha256"] != manifest.tasks_file_sha256
+
+
+def test_the_v23_sealed_config_differs_from_v22_only_by_the_bank() -> None:
+    """D4 的封存分片配置相对 v2.2 只允许差措辞池那一段（先例：v2.2 vs v2.1）。
+
+    唯一的自变量是「措辞池是哪一份」——bundle、pipeline、partition 逐字段相同。
+    """
+    old = _load(BUILD / "retail_ops_ood_v2_2_sealed_build.yaml")
+    new = _load(BUILD / "retail_ops_ood_v2_3_sealed_build.yaml")
+    assert set(old) == set(new)
+    differing = {key for key in old if old[key] != new[key]}
+    assert differing == {"phrasing"}
+    assert old["phrasing"]["partition"] == new["phrasing"]["partition"] == "ood_sealed"
+    assert new["phrasing"]["bank_relpath"] == (
+        "phrasing/phrasing-bank-004/phrasings.jsonl"
+    )
+    assert new["phrasing"]["dataset_version"] == "retail_ops_ood_v2_3_20260905"
+
+
+def test_the_bank004_is_never_used_for_training() -> None:
+    """bank-004 只允许出现在评测构建配置里，绝不能进任何训练导出配置。"""
+    for path in sorted(BUILD.glob("*.yaml")):
+        config = _load(path)
+        paraphrase = config.get("sft_paraphrase")
+        if isinstance(paraphrase, dict):
+            assert "phrasing-bank-004" not in str(paraphrase.get("bank_relpath", "")), (
+                f"{path.name}: 训练增强引用了本轮的评测素材"
+            )
