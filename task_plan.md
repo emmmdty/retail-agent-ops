@@ -8,6 +8,14 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 
 ## Current Task: v5 数据重建（`retail_ops_v5_20260906`）——A-1 预注册（2026-09-06，先于一切运行提交）
 
+**执行状态（2026-09-07）**：A-2/A-3 已完成（`d361972`、`c96512b`）——v5 生成器
+20 条契约测试 + 全量 1513 绿；formal_freeze 落盘（私有根 + manifests）；
+覆盖表机器证明 `reports/retail_ops/v1/r12-v5/coverage-v5-001/coverage.json`
+（refund_denied_window 占比比 0.2 → 0.926，原 5.0×；全部场景 ∈ [0.8, 1.25]）。
+**A-4 阻断**：V5-2-smoke 86 条全部 `transport_exhausted`——opencode zen 的
+mimo-v2.5 周用量上限（429 GoUsageLimitError，~07:50 重置）；零费用零接受；
+全量跑用独立 attempt_id 不受影响。三选项待用户：等重置 / 启用余额 / 切 DeepSeek。
+
 **A-0 裁定（2026-09-06，用户逐项确认，遇到不再重开）**：
 
 1. **结构范围**：场景集与 family 结构沿用 v4_20260905（含 rtc_stepwise train-only
