@@ -75,6 +75,7 @@ class OodEvaluationConfig(StrictModel):
         "retail_ops_policy_boundary_v1_20260819",
         "retail_ops_ood_v4_20260823",
         "retail_ops_policy_boundary_phrasing_v1_20260904",
+        "retail_ops_ood_v2_3_20260905",
     ] = "retail_ops_ood_v1_20260815"
     seed: Literal[0] = 0
     model: ModelArtifact

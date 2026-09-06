@@ -348,9 +348,7 @@ def test_the_v23_sealed_config_differs_from_v22_only_by_the_bank() -> None:
     differing = {key for key in old if old[key] != new[key]}
     assert differing == {"phrasing"}
     assert old["phrasing"]["partition"] == new["phrasing"]["partition"] == "ood_sealed"
-    assert new["phrasing"]["bank_relpath"] == (
-        "phrasing/phrasing-bank-004/phrasings.jsonl"
-    )
+    assert new["phrasing"]["bank_relpath"] == ("phrasing/phrasing-bank-004/phrasings.jsonl")
     assert new["phrasing"]["dataset_version"] == "retail_ops_ood_v2_3_20260905"
 
 
