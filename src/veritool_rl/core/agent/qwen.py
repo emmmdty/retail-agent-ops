@@ -280,6 +280,7 @@ class TransformersBackend:
         adapter_path: str | None = None,
         settings: GenerationSettings | None = None,
         quantization: Quantization = "nf4",
+        generate_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
@@ -292,6 +293,10 @@ class TransformersBackend:
         # 公开声明本实例真正加载了什么：正式评测据此拒绝与锁定不符的后端。
         # adapter_path 非 None 表示模型被 PEFT 包装过，不再是 base 模型。
         self.adapter_path = adapter_path
+        # 额外的 model.generate kwargs。默认 None 时 generate 调用与既有评测
+        # 路径逐字节相同；DPO 偏好对采样（r11）用它打开温度采样——预注册协议
+        # 由 `SamplingSettings`（retail_ops.build.dpo_sampling）冻结成机器守卫。
+        self._generate_kwargs = dict(generate_kwargs) if generate_kwargs else None
 
     @classmethod
     def from_pretrained(
@@ -303,6 +308,7 @@ class TransformersBackend:
         expected_file_sha256: Mapping[str, str] | None = None,
         settings: GenerationSettings | None = None,
         quantization: Quantization = "nf4",
+        generate_kwargs: Mapping[str, Any] | None = None,
     ) -> TransformersBackend:
         """按固定本地路径加载；给定 revision/文件哈希时先做防篡改校验。
 
@@ -365,6 +371,7 @@ class TransformersBackend:
             adapter_path=adapter_path,
             settings=generation,
             quantization=quantization,
+            generate_kwargs=generate_kwargs,
         )
 
     def generate(
@@ -386,14 +393,17 @@ class TransformersBackend:
         ).to(self._model.device)
         input_length = int(inputs["input_ids"].shape[-1])
         started = time.perf_counter()
+        generate_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "use_cache": True,
+            "pad_token_id": self._tokenizer.eos_token_id,
+        }
+        if self._generate_kwargs is None:
+            generate_kwargs["do_sample"] = self.settings.do_sample
+        else:
+            generate_kwargs.update(self._generate_kwargs)
         with torch.inference_mode():
-            output = self._model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=self.settings.do_sample,
-                use_cache=True,
-                pad_token_id=self._tokenizer.eos_token_id,
-            )
+            output = self._model.generate(**inputs, **generate_kwargs)
         latency_ms = (time.perf_counter() - started) * 1000
         generated_ids = output[0][input_length:]
         text = self._tokenizer.decode(generated_ids, skip_special_tokens=False)

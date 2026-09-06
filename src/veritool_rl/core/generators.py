@@ -26,15 +26,17 @@ def build_success_trajectories(
     return trajectories
 
 
-def trajectory_to_sft_example(trajectory: Trajectory) -> dict[str, Any]:
-    """转换为 TRL 原生 messages + tools 的 tool-calling 样本。"""
-    if not trajectory.success:
-        msg = f"SFT 只接受 verifier 通过的成功轨迹: {trajectory.task.task_id}"
-        raise ValueError(msg)
+def trajectory_messages(trajectory: Trajectory) -> list[dict[str, Any]]:
+    """轨迹 → chat messages（system + user + 逐步 assistant/tool 消息）。
+
+    SFT 样本与 DPO 偏好对**共用同一条格式链路**：偏好对的 chosen/rejected 与
+    SFT 训练数据必须是同一种消息形状，否则两条训练分布不可比。DPO 侧允许
+    失败轨迹进入（rejected 正是失败采样），因此成功性检查留在
+    `trajectory_to_sft_example`，不在这里。
+    """
     system_prompt = trajectory.metadata.get("system_prompt")
-    tools = trajectory.metadata.get("tools")
-    if not isinstance(system_prompt, str) or not isinstance(tools, list):
-        msg = f"轨迹缺少训练所需的 system_prompt/tools: {trajectory.task.task_id}"
+    if not isinstance(system_prompt, str):
+        msg = f"轨迹缺少训练所需的 system_prompt: {trajectory.task.task_id}"
         raise ValueError(msg)
 
     messages: list[dict[str, Any]] = [
@@ -80,7 +82,20 @@ def trajectory_to_sft_example(trajectory: Trajectory) -> dict[str, Any]:
             )
         elif step.final_response is not None:
             messages.append({"role": "assistant", "content": step.final_response})
+    return messages
 
+
+def trajectory_to_sft_example(trajectory: Trajectory) -> dict[str, Any]:
+    """转换为 TRL 原生 messages + tools 的 tool-calling 样本。"""
+    if not trajectory.success:
+        msg = f"SFT 只接受 verifier 通过的成功轨迹: {trajectory.task.task_id}"
+        raise ValueError(msg)
+    tools = trajectory.metadata.get("tools")
+    if not isinstance(tools, list):
+        msg = f"轨迹缺少训练所需的 tools: {trajectory.task.task_id}"
+        raise ValueError(msg)
+
+    messages = trajectory_messages(trajectory)
     return {
         "task_id": trajectory.task.task_id,
         "scenario": trajectory.task.scenario.value,

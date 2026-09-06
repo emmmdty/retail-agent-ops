@@ -103,6 +103,93 @@ def test_transformers_backend_requires_local_model_directory(
         TransformersBackend.from_pretrained("models/Qwen3-1.7B", None)
 
 
+def test_generate_kwargs_open_sampling_without_touching_the_frozen_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DPO 采样经 generate_kwargs 打开温度采样；默认 None 时 generate 调用不变。"""
+    from types import ModuleType
+
+    from veritool_rl.core.agent.qwen import TransformersBackend
+
+    captured: dict[str, Any] = {}
+
+    class FakeIds:
+        shape = (1, 2)
+
+    class FakeSeq:
+        shape = (1, 4)
+
+        def __getitem__(self, item: Any) -> FakeTail:
+            del item
+            return FakeTail()
+
+    class FakeTail:
+        shape = (1, 2)
+
+    class FakeInputs:
+        def to(self, device: Any) -> dict[str, Any]:
+            del device
+            return {"input_ids": FakeIds()}
+
+    class FakeTokenizer:
+        pad_token = None
+        eos_token = "eos"
+        eos_token_id = 7
+
+        def apply_chat_template(self, messages: Any, **kwargs: Any) -> FakeInputs:
+            del messages
+            captured["template"] = kwargs
+            return FakeInputs()
+
+        def decode(self, ids: Any, skip_special_tokens: bool) -> str:
+            del ids, skip_special_tokens
+            return "ok"
+
+    class FakeOut:
+        def __getitem__(self, item: Any) -> FakeSeq:
+            del item
+            return FakeSeq()
+
+    class FakeModel:
+        device = "cpu"
+
+        def generate(self, **kwargs: Any) -> FakeOut:
+            captured["generate"] = kwargs
+            return FakeOut()
+
+    torch = ModuleType("torch")
+
+    class _InferenceMode:
+        def __enter__(self) -> _InferenceMode:
+            return self
+
+        def __exit__(self, *args: Any) -> bool:
+            return False
+
+    torch.inference_mode = _InferenceMode  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    del tmp_path
+
+    sampling_backend = TransformersBackend(
+        FakeModel(),
+        FakeTokenizer(),
+        generate_kwargs={"do_sample": True, "temperature": 0.8, "top_p": 1.0, "top_k": 0},
+    )
+    sampling_backend.generate([{"role": "user", "content": "hi"}], [], 64)
+    assert captured["generate"]["do_sample"] is True
+    assert captured["generate"]["temperature"] == 0.8
+    assert captured["generate"]["top_p"] == 1.0
+    assert captured["generate"]["top_k"] == 0
+    assert captured["generate"]["max_new_tokens"] == 64
+
+    default_backend = TransformersBackend(FakeModel(), FakeTokenizer())
+    default_backend.generate([{"role": "user", "content": "hi"}], [], 64)
+    assert captured["generate"]["do_sample"] is False
+    assert "temperature" not in captured["generate"]
+    assert "top_p" not in captured["generate"]
+
+
 def _install_fake_transformers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
