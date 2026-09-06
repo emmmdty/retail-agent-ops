@@ -1,0 +1,34 @@
+# R11-2-smoke：DPO 管线自检（≤4 对、1 个优化步）——只验证 TRL DPOTrainer 接线、
+# 渲染守卫与 loss 守卫的端到端形状，产物 `dpo-smoke-001` **不进入任何判读**。
+#
+# 相对 `retail_ops_dpo.yaml` 的差别只有四处：data.train_relpath 指向 4 对子集、
+# training.smoke: true、epochs 1、grad_accum 2（4 对 = 2 个 micro-batch = 恰好
+# 1 个优化步，loss 曲线恰 1 个读数；smoke 感知守卫只要求有限非零，不要求下降）。
+pipeline: dpo
+model:
+  name: models/Qwen3-4B-sft-008-merged
+  revision: "b0fce237cb2659a500858bb02081d768eced3b09a93dcb8b84e84d1a20a686d0"
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "70981220774eca22b208f16255cefa733b5151affe083a64d88deed994ab3edd"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+data:
+  train_relpath: reports/retail_ops/v1/r11-dpo/pairs-smoke-001.jsonl
+training:
+  beta: 0.1
+  epochs: 1
+  batch_size: 2
+  grad_accum: 2
+  lr: 5.0e-7
+  max_length: 2048
+  bf16: true
+  gradient_checkpointing: true
+  smoke: true

@@ -382,7 +382,7 @@ def test_the_committed_dpo_config_matches_the_preregistration() -> None:
     training = raw["training"]
     assert training["beta"] == 0.1
     assert training["lr"] == 5e-7
-    assert training["epochs"] == 1
+    assert training["epochs"] == 3  # 2026-09-06 观测前修订（27 对功效，用户裁定）
     assert training["batch_size"] == 2
     assert training["grad_accum"] == 4
     assert training["max_length"] == 2048

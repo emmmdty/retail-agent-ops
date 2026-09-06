@@ -5,8 +5,10 @@
 # 也是发布判定的候选形态。ref model = 禁用 adapter 的该基座（TRL peft 模式自动
 # 处理，源码结构测试锁定），即初始策略冻结副本。
 #
-# 超参（2026-09-06 用户确认冻结）：beta 0.1、lr 5e-7、epochs 1、
-# per_device_batch 2 + grad_accum 4、max_length 2048。训练数据 = R11-1 采样产物
+# 超参（2026-09-06 用户确认；epochs 1→3 为观测前修订，用户裁定——R11-1 实际
+# 产出 27 对，epochs 1 仅 ~4 个优化步功效不足；判读规则与阈值不动）。：
+# beta 0.1、lr 5e-7、epochs 3、per_device_batch 2 + grad_accum 4、max_length 2048。
+# 训练数据 = R11-1 采样产物
 # `pairs.jsonl`（messages 形式），训练前由 `training.dpo.render_dpo_pairs` 用
 # Qwen chat template（带 tools）预渲染并做 max_length 守卫（LOG-20260905-02）。
 pipeline: dpo
@@ -29,7 +31,7 @@ data:
   train_relpath: reports/retail_ops/v1/r11-dpo/sampling-001/pairs.jsonl
 training:
   beta: 0.1
-  epochs: 1
+  epochs: 3
   batch_size: 2
   grad_accum: 4
   lr: 5.0e-7
