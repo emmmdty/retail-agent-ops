@@ -860,7 +860,13 @@ def _run_formal_freeze(args: argparse.Namespace, config: dict[str, Any]) -> None
     bundle_dir = _bundle_dir(config)
     dataset_version = _dataset_version(config)
     bundle = load_bundle(bundle_dir)
-    if bundle.bundle.bundle_version == "4.0.0":
+    from veritool_rl.retail_ops.domain.formal_tasks import _V5_VERSIONS
+
+    if dataset_version in _V5_VERSIONS:
+        from veritool_rl.retail_ops.domain.formal_tasks import build_v5_task_set
+
+        task_set = build_v5_task_set(dataset_version, args.seed)
+    elif bundle.bundle.bundle_version == "4.0.0":
         from veritool_rl.retail_ops.domain.formal_tasks import build_v4_task_set
 
         task_set = build_v4_task_set(dataset_version, args.seed)

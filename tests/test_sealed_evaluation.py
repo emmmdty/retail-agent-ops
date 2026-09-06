@@ -492,19 +492,27 @@ def test_sealed_evaluation_rolls_back_private_evidence_when_public_write_fails(
 
 
 # ---------------------------------------------------------------------------
-# findings #7：步数预算常量的单源绑定
+# findings #7：步数预算的版本化绑定（B-4/v5 起 config 驱动，不再有全局常量）
 # ---------------------------------------------------------------------------
 
 
 def test_sealed_step_budget_is_bound_to_the_base_config_literal() -> None:
-    """`_MAX_STEPS` 必须是 `BaseEvaluationConfig.max_steps` 的默认值本身。
+    """步数预算随 dataset_version 版本化，全局常量不得复活。
 
     三处 5（config Literal、_MAX_STEPS、冻结数据集）曾经互相独立：改 config 而
     忘改 _MAX_STEPS 时，sealed 路径会按旧预算拒收合法任务。绑定后 config 是
-    唯一改动点；数据集那一路仍由 `_require_step_budget` 运行时校验。
+    唯一改动点；数据集那一路由 `_require_step_budget` 运行时校验。
+    B-4/v5 起预算本身也版本化（v1–v4=5、v5=7，validator 钉死），sealed 路径
+    从运行 config 读取预算——全局常量若被加回来，说明有人在绕过版本化。
     """
     from veritool_rl.retail_ops.evaluate import sealed_evaluation
     from veritool_rl.retail_ops.evaluate.base_evaluation import BaseEvaluationConfig
 
-    assert BaseEvaluationConfig.model_fields["max_steps"].default == sealed_evaluation._MAX_STEPS
-    assert sealed_evaluation._MAX_STEPS == 5
+    assert (
+        BaseEvaluationConfig.model_fields["max_steps"].default == sealed_evaluation._V1_V4_MAX_STEPS
+    )
+    assert sealed_evaluation._V1_V4_MAX_STEPS == 5
+    assert not hasattr(sealed_evaluation, "_MAX_STEPS"), (
+        "全局步数预算常量已由 config 驱动取代（B-4/v5）；"
+        "若要恢复它，必须同时恢复它的单源绑定语义并说明 v5 预算如何表达"
+    )

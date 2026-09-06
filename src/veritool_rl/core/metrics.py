@@ -36,6 +36,34 @@ def split_headline_and_diagnostic(metrics: dict[str, Any]) -> tuple[dict[str, An
     return headline, diagnostic
 
 
+def arguments_match(expected: Any, actual: Any, task_metadata: dict[str, Any] | None) -> bool:
+    """逐参数判定一次工具调用是否命中 gold。
+
+    默认语义是**逐字段精确相等**（v1–v4 冻结契约，任何行为变化都会破坏
+    既有证据的复算）。任务 metadata 携带 `acceptable_reasons`（口径 A，
+    B-4/v5 独有的判分契约）时，`reason` 参数按**集合成员**判定：
+    模型给出集合内任一可接受理由即命中，其余参数仍须精确相等。
+    旧任务不携带该字段 → 行为逐位不变。
+    """
+    if actual == expected:
+        return True
+    if not task_metadata:
+        return False
+    acceptable = task_metadata.get("acceptable_reasons")
+    if not isinstance(acceptable, list) or not acceptable:
+        return False
+    if not isinstance(expected, dict) or not isinstance(actual, dict):
+        return False
+    if set(actual) != set(expected):
+        return False
+    for key, value in expected.items():
+        if key == "reason" and actual.get(key) in acceptable:
+            continue
+        if actual.get(key) != value:
+            return False
+    return True
+
+
 #: 发布门禁里配对 bootstrap 的固定预算与种子。发布判定必须可复现——同一份配对证据
 #: 两次运行要给出逐位相同的下界，否则"门禁通过"就成了一次抽样的运气。
 RELEASE_BOOTSTRAP_SAMPLES = 10000
@@ -98,6 +126,7 @@ def compute_metrics(
     for trajectory in trajectories:
         actual_calls = [step.tool_call for step in trajectory.steps if step.tool_call is not None]
         expected_calls = trajectory.task.expected_calls
+        task_metadata = trajectory.task.metadata
         tool_denominator += max(len(actual_calls), len(expected_calls))
         argument_denominator += len(expected_calls)
         for index, expected in enumerate(expected_calls):
@@ -106,7 +135,7 @@ def compute_metrics(
             actual = actual_calls[index]
             if actual.name == expected.name:
                 correct_tools += 1
-                if actual.arguments == expected.arguments:
+                if arguments_match(expected.arguments, actual.arguments, task_metadata):
                     correct_arguments += 1
         for step in trajectory.steps:
             is_attempt = step.tool_call is not None or step.parse_error is not None

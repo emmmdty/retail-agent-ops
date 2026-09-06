@@ -36,6 +36,14 @@ _LOOKUP_STATUSES = (
     "refunded",
 )
 _REASONS = ("damaged", "wrong_item", "not_as_described", "changed_mind")
+#: gold 序列含多次工具调用的场景（v1 冻结语义：步数预算多一档）。
+_MULTI_CALL_SCENARIOS = frozenset(
+    {
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+        TaskScenario.CANCEL_RECOVERY,
+    }
+)
 _SCENARIOS = (
     TaskScenario.LOOKUP_STATUS,
     TaskScenario.REFUND_ELIGIBLE,
@@ -258,6 +266,134 @@ class FormalTaskSet(StrictModel):
             ):
                 raise ValueError(f"v4 {field} 跨 split 重叠")
 
+    def assert_exact_quotas_v5(self) -> None:
+        """Verify v5 totals, per-scenario quotas, stratified coverage, and isolation.
+
+        v5 契约（B-4，`retail_ops_v5_20260906`）：
+        - 总量 train 588 / dev 198 / holdout 246（family 配额表 `_V5_SPLIT_QUOTAS`，
+          任务数 = family × 2 variant）；
+        - **分层覆盖**：每个场景的每个难度档（margin 值或状态轴下标）在三个 split
+          都有 family——根因 1 的验收（对照 v1 的 dev 4/7、2/7 档覆盖缺口）；
+        - **判定分界日**：allow 侧三个场景的 margin 0 档在三个 split 都在场；
+        - **难度偏移**：margin ≥10 family 占比 train:holdout ∈ [0.8, 1.25]
+          （对照现状 refund_denied_window 5.0×、refund_recovery 4.0×）；
+        - family 指纹跨 split 互斥 + 逐记录指纹复算（与 v1/v4 同强度）。
+        """
+        expected_total = {
+            FormalSplit.TRAIN: 588,
+            FormalSplit.DEV: 198,
+            FormalSplit.HOLDOUT: 246,
+        }
+        for split in (FormalSplit.TRAIN, FormalSplit.DEV, FormalSplit.HOLDOUT):
+            records = self.records(split)
+            if len(records) != expected_total[split]:
+                raise ValueError(f"v5 {split} 任务总数不符合冻结配额")
+            if any(record.task.split != split.value for record in records):
+                raise ValueError(f"v5 {split} 容器与任务 split 不一致")
+            scenario_counts = Counter(record.task.scenario for record in records)
+            expected_counts = {
+                scenario: _V5_SPLIT_QUOTAS[scenario][
+                    {FormalSplit.TRAIN: 0, FormalSplit.DEV: 1, FormalSplit.HOLDOUT: 2}[split]
+                ]
+                * 2
+                for scenario in _V4_SCENARIOS
+            }
+            if split is FormalSplit.TRAIN:
+                expected_counts = {**expected_counts, TaskScenario.RTC_STEPWISE: 42}
+            if scenario_counts != expected_counts:
+                raise ValueError(f"v5 {split} 类别配额不符合冻结契约")
+
+            families: dict[str, list[FormalTaskRecord]] = {}
+            for record in records:
+                expected = FormalTaskRecord.from_task(record.task, record.variant_index)
+                if any(
+                    getattr(record, field) != getattr(expected, field)
+                    for field in _FINGERPRINT_FIELDS
+                ):
+                    raise ValueError(f"v5 {split} 记录指纹与 task/variant 不一致")
+                if record.task.metadata.get("variant_index") != record.variant_index:
+                    raise ValueError(f"v5 {split} task 与 record 的 variant_index 不一致")
+                families.setdefault(record.family_fingerprint, []).append(record)
+
+            if not families:
+                raise ValueError(f"v5 {split} 不包含 semantic family")
+            for family_records in families.values():
+                if len(family_records) != 2:
+                    raise ValueError(f"v5 {split} 的每个 semantic family 必须恰有两个变体")
+                if {record.variant_index for record in family_records} != {0, 1}:
+                    raise ValueError(f"v5 {split} family 的 variant_index 必须精确为 0 和 1")
+
+        for field in (
+            "task_fingerprint",
+            "family_fingerprint",
+            "content_fingerprint",
+            "source_fingerprint",
+            "derivation_fingerprint",
+        ):
+            values = {
+                split: {getattr(record, field) for record in self.records(split)}
+                for split in FormalSplit
+            }
+            if (
+                not values[FormalSplit.TRAIN].isdisjoint(values[FormalSplit.DEV])
+                or not values[FormalSplit.TRAIN].isdisjoint(values[FormalSplit.HOLDOUT])
+                or not values[FormalSplit.DEV].isdisjoint(values[FormalSplit.HOLDOUT])
+            ):
+                raise ValueError(f"v5 {field} 跨 split 重叠")
+
+        self._assert_stratified_coverage()
+
+    def _assert_stratified_coverage(self) -> None:
+        """分层验收：全档覆盖 + margin 0 三分 + 远超期占比比值。"""
+        for scenario in _V4_SCENARIOS:
+            buckets_by_split: dict[FormalSplit, set[int]] = {}
+            families_by_split: dict[FormalSplit, dict[str, int]] = {}
+            for split in (FormalSplit.TRAIN, FormalSplit.DEV, FormalSplit.HOLDOUT):
+                buckets: set[int] = set()
+                family_margins: dict[str, int] = {}
+                for record in self.records(split):
+                    if record.task.scenario is not scenario:
+                        continue
+                    buckets.add(_v5_bucket_key(record.task.metadata["formal_family"]))
+                    family_margins[record.family_fingerprint] = _v5_bucket_key(
+                        record.task.metadata["formal_family"]
+                    )
+                buckets_by_split[split] = buckets
+                families_by_split[split] = family_margins
+            expected_keys = set(_v5_scenario_bucket_keys(scenario))
+            for split in (FormalSplit.TRAIN, FormalSplit.DEV, FormalSplit.HOLDOUT):
+                if buckets_by_split[split] != expected_keys:
+                    missing = sorted(expected_keys - buckets_by_split[split])
+                    raise ValueError(
+                        f"v5 {scenario.value} 的 {split} 未覆盖全部难度档：缺 {missing}"
+                    )
+            margin_based = scenario not in (
+                TaskScenario.LOOKUP_STATUS,
+                TaskScenario.CHECK_REFUND_STATUS,
+            )
+            if not margin_based:
+                continue
+            allow_side = scenario in _V5_ALLOW_MARGIN_SCENARIOS
+            if allow_side:
+                for split in (FormalSplit.TRAIN, FormalSplit.DEV, FormalSplit.HOLDOUT):
+                    if 0 not in buckets_by_split[split]:
+                        raise ValueError(f"v5 {scenario.value} 的 {split} 缺 margin 0 档")
+            far_train = sum(1 for m in families_by_split[FormalSplit.TRAIN].values() if m >= 10)
+            far_holdout = sum(1 for m in families_by_split[FormalSplit.HOLDOUT].values() if m >= 10)
+            if far_holdout == 0 or far_train == 0:
+                raise ValueError(f"v5 {scenario.value} 的远超期档在某侧为零")
+            ratio = (far_train / len(families_by_split[FormalSplit.TRAIN])) / (
+                far_holdout / len(families_by_split[FormalSplit.HOLDOUT])
+            )
+            if not 0.8 <= ratio <= 1.25:
+                share_train = far_train / len(families_by_split[FormalSplit.TRAIN])
+                share_holdout = far_holdout / len(families_by_split[FormalSplit.HOLDOUT])
+                raise ValueError(
+                    f"v5 {scenario.value} 的 margin≥10 占比 "
+                    f"train {share_train:.3f} : holdout {share_holdout:.3f} = {ratio:.3f}"
+                    " 超出 [0.8, 1.25]"
+                )
+
 
 def build_formal_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
     """Build the approved 240/60/120 family-first R2 task contract."""
@@ -418,6 +554,7 @@ def _materialize_task(
     family: dict[str, Any],
     family_fingerprint: str,
     variant_index: int,
+    max_steps: int | None = None,
 ) -> TaskSpec:
     identity = _sha256(
         {
@@ -507,33 +644,37 @@ def _materialize_task(
         else:
             target_state["orders"][order_id]["refund_status"] = "refunded"
 
-    _multi_call_scenarios = {
-        TaskScenario.REFUND_RECOVERY,
-        TaskScenario.REFUND_THEN_CANCEL,
-        TaskScenario.CANCEL_RECOVERY,
+    _multi_call_scenarios = _MULTI_CALL_SCENARIOS
+    metadata: dict[str, Any] = {
+        "dataset_version": dataset_version,
+        "generator_id": _GENERATOR_ID,
+        "family_id": f"F-{family_fingerprint[:16].upper()}",
+        "formal_family": copy.deepcopy(family),
+        "customer_id": customer_id,
+        "order_id": order_id,
+        "reason": reason,
+        "variant_index": variant_index,
     }
+    if "reason_fact" in family:
+        metadata["reason_fact"] = str(family["reason_fact"])
+        metadata["acceptable_reasons"] = list(family["acceptable_reasons"])
     return TaskSpec(
         task_id=_sha256({"task_identity": identity}),
         split=split.value,
         scenario=scenario,
-        user_request=_user_request(scenario, order_id, reason, variant_index, other_order_id),
+        user_request=_user_request_for(
+            family, scenario, order_id, reason, variant_index, other_order_id
+        ),
         initial_state=initial_state,
         target_state=target_state,
         expected_calls=expected_calls,
         expected_decision=decision,
         required_reads=[other_order_id if scenario is TaskScenario.RTC_STEPWISE else order_id],
         transient_failures=dict(family["transient_failure_rule"]),
-        max_steps=5 if scenario in _multi_call_scenarios else 4,
-        metadata={
-            "dataset_version": dataset_version,
-            "generator_id": _GENERATOR_ID,
-            "family_id": f"F-{family_fingerprint[:16].upper()}",
-            "formal_family": copy.deepcopy(family),
-            "customer_id": customer_id,
-            "order_id": order_id,
-            "reason": reason,
-            "variant_index": variant_index,
-        },
+        max_steps=max_steps
+        if max_steps is not None
+        else (5 if scenario in _multi_call_scenarios else 4),
+        metadata=metadata,
     )
 
 
@@ -1018,4 +1159,388 @@ def build_v4_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
         holdout=tuple(records[FormalSplit.HOLDOUT]),
     )
     task_set.assert_exact_quotas_v4()
+    return task_set
+
+
+# ---------------------------------------------------------------------------
+# v5 (B-4): difficulty-stratified rebuild — margin 0 bucket + reason set
+# semantics + max_steps 6/7. See `assert_exact_quotas_v5` for the contract.
+# ---------------------------------------------------------------------------
+
+_V5_VERSIONS = frozenset({"retail_ops_v5_20260906"})
+
+#: allow 侧 margin 网格：v1 的 7 档 + 判定分界日 0（「7+1 档」）。
+_V5_ALLOW_MARGINS = (0, 1, 2, 3, 5, 7, 10, 14)
+#: deny 侧网格不变：offset 0 由政策判放行，与 DENY 语义矛盾，永不生成。
+_V5_DENY_MARGINS = _MARGINS
+#: allow 侧 margin 网格的场景（含 rtc：退款项 A 的 deadline 是任务状态的一部分）。
+#: RTC_STEPWISE 与 rtc 同参派生，网格随 rtc（state 0–7）；它不进 margin-0 覆盖
+#: 断言（train-only 辅助场景，dev/holdout 无此场景）。
+_V5_ALLOW_MARGIN_GRIDS = frozenset(
+    {
+        TaskScenario.REFUND_ELIGIBLE,
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+        TaskScenario.RTC_STEPWISE,
+    }
+)
+_V5_ALLOW_MARGIN_SCENARIOS = frozenset(
+    {
+        TaskScenario.REFUND_ELIGIBLE,
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+    }
+)
+#: 状态轴分档的场景（deadline 是装饰性的，难度档 = 状态下标）。
+_V5_STATUS_AXIS_SCENARIOS = frozenset(
+    {TaskScenario.LOOKUP_STATUS, TaskScenario.CHECK_REFUND_STATUS}
+)
+
+#: 口径 A（A-0.2 用户裁定，判分契约）：用户事实 → 可接受理由集合。
+#: cancel 类 reason（`_V4_CANCEL_REASONS`）保持精确匹配，不进口径 A。
+_V5_REASON_ACCEPTABLE: dict[str, tuple[str, ...]] = {
+    "damaged": ("damaged",),
+    "wrong_item": ("wrong_item",),
+    "not_as_described": ("not_as_described", "damaged"),
+    "changed_mind": ("changed_mind",),
+}
+#: 用户事实从句（自然语言；同一从句跨 allow/deny 场景复用，
+#: 打断「措辞 → 结果」伪相关——交接 §4.6 约束 2）。
+_V5_REASON_FACTS: dict[str, str] = {
+    "damaged": "商品存在破损",
+    "wrong_item": "商家发错了货",
+    "not_as_described": "商品与页面描述不符",
+    "changed_mind": "不想要这件商品了",
+}
+#: 请求携带退款事实从句的场景。
+_V5_FACT_SCENARIOS = frozenset(
+    {
+        TaskScenario.REFUND_ELIGIBLE,
+        TaskScenario.REFUND_DENIED_WINDOW,
+        TaskScenario.REFUND_DENIED_OWNERSHIP,
+        TaskScenario.REFUND_DENIED_DUPLICATE,
+        TaskScenario.REFUND_RECOVERY,
+        TaskScenario.REFUND_THEN_CANCEL,
+    }
+)
+
+#: 每场景 family 配额 (train/dev/holdout)。任务数 = family × 2 variant。
+#:
+#: 与 B4 提案「每场景 family 35 不变」的偏差（已披露）：「dev/holdout 覆盖全部
+#: 难度档」要求 dev family ≥ 档数（7–10），dev=5 在算术上不可能。本表按验收
+#: 优先：dev 每档 1 family、holdout 每档 1 family（余量按降档序分配，≥10 档
+#: 至多 1 个余量）、train 取余。总量 588/198/246。
+_V5_SPLIT_QUOTAS: dict[TaskScenario, tuple[int, int, int]] = {
+    TaskScenario.LOOKUP_STATUS: (18, 7, 10),
+    TaskScenario.REFUND_ELIGIBLE: (21, 8, 11),
+    TaskScenario.REFUND_DENIED_WINDOW: (18, 7, 10),
+    TaskScenario.REFUND_DENIED_OWNERSHIP: (18, 7, 10),
+    TaskScenario.REFUND_DENIED_DUPLICATE: (18, 7, 10),
+    TaskScenario.REFUND_RECOVERY: (21, 8, 11),
+    TaskScenario.CHECK_REFUND_STATUS: (18, 7, 10),
+    TaskScenario.CANCEL_ELIGIBLE: (30, 10, 10),
+    TaskScenario.CANCEL_DENIED_RECENT: (30, 10, 10),
+    TaskScenario.CANCEL_DENIED_IN_USE: (30, 10, 10),
+    TaskScenario.REFUND_THEN_CANCEL: (21, 8, 11),
+    TaskScenario.CANCEL_RECOVERY: (30, 10, 10),
+}
+
+#: v5 任务步数预算：默认 6（多步场景 7）——C4 提案 1（B4 §三「6（rtc 7）」）。
+_V5_MAX_STEPS_DEFAULT = 6
+_V5_MAX_STEPS_MULTI_CALL = 7
+
+
+def _v5_scenario_margins(scenario: TaskScenario) -> tuple[int, ...]:
+    if scenario in _V5_ALLOW_MARGIN_GRIDS:
+        return _V5_ALLOW_MARGINS
+    if scenario in _V5_STATUS_AXIS_SCENARIOS:
+        return _MARGINS
+    if scenario in _V4_CANCEL_SCENARIOS:
+        return _V4_TASK_MARGINS
+    return _V5_DENY_MARGINS
+
+
+def _v5_scenario_bucket_keys(scenario: TaskScenario) -> tuple[int, ...]:
+    """场景的难度档键全集（分层验收与配额推演的共同来源）。
+
+    状态轴场景（lookup/check）的档键是状态的下标 0–6，不是装饰性 deadline 的
+    margin 值；其余场景的档键 = margin 值本身。
+    """
+    if scenario in _V5_STATUS_AXIS_SCENARIOS:
+        return tuple(range(7))
+    return _v5_scenario_margins(scenario)
+
+
+def _v5_bucket_key(family: dict[str, Any]) -> int:
+    scenario = TaskScenario(str(family["scenario"]))
+    if scenario in _V5_STATUS_AXIS_SCENARIOS:
+        return int(family["state_variant"])
+    deadline = int(family["primary_policy_state"].get("refund_deadline", _CURRENT_DAY))
+    return abs(deadline - _CURRENT_DAY)
+
+
+def _v5_holdout_extras(bucket_keys: tuple[int, ...], extras: int) -> dict[int, int]:
+    """holdout 档外余量的确定性分配：降档序，≥10 档至多 1 个余量。
+
+    ≥10 cap 让 margin≥10 占比 train:holdout 落进 [0.8, 1.25]
+    （对照现状 refund_denied_window 5.0×）。
+    """
+    assigned: dict[int, int] = {}
+    ge10_extras = 0
+    for key in sorted(bucket_keys, reverse=True):
+        if extras <= 0:
+            break
+        if key >= 10 and ge10_extras >= 1:
+            continue
+        assigned[key] = 1
+        extras -= 1
+        if key >= 10:
+            ge10_extras += 1
+    if extras > 0:
+        raise ValueError("holdout 余量分配不完（≥10 cap 过紧）")
+    return assigned
+
+
+def _v5_bucket_allocation(
+    scenario: TaskScenario,
+) -> dict[int, tuple[int, int, int]]:
+    """每难度档的 (train, dev, holdout) family 配数。
+
+    dev 每档 1（全档覆盖进入迭代面）、holdout 每档 1 + 降档序余量、
+    train 取余；逐档合计等于 `_V5_SPLIT_QUOTAS[scenario]`。
+    """
+    keys = _v5_scenario_bucket_keys(scenario)
+    train_total, dev_total, holdout_total = _V5_SPLIT_QUOTAS[scenario]
+    per_bucket = 5  # 每档 context_variant 数（v1 冻结生成器沿袭）
+    extras = holdout_total - len(keys)
+    holdout_extra = _v5_holdout_extras(keys, extras)
+    allocation: dict[int, tuple[int, int, int]] = {}
+    train_sum = dev_sum = holdout_sum = 0
+    for key in keys:
+        dev = 1
+        holdout = 1 + holdout_extra.get(key, 0)
+        train = per_bucket - dev - holdout
+        if train <= 0:
+            raise ValueError(f"v5 {scenario.value} 档 {key} 的 train 配数非正")
+        allocation[key] = (train, dev, holdout)
+        train_sum += train
+        dev_sum += dev
+        holdout_sum += holdout
+    if (train_sum, dev_sum, holdout_sum) != (train_total, dev_total, holdout_total):
+        raise ValueError(
+            f"v5 {scenario.value} 档级配数合计 "
+            f"({train_sum}, {dev_sum}, {holdout_sum}) != {_V5_SPLIT_QUOTAS[scenario]}"
+        )
+    return allocation
+
+
+def _v5_reason_for(
+    scenario: TaskScenario, scenario_index: int, state_variant: int, context_variant: int
+) -> str:
+    if scenario in _V4_CANCEL_SCENARIOS:
+        return _V4_CANCEL_REASONS[
+            (scenario_index + state_variant * 5 + context_variant) % len(_V4_CANCEL_REASONS)
+        ]
+    return _REASONS[(scenario_index + state_variant * 5 + context_variant) % 4]
+
+
+def _v5_family_spec(
+    dataset_version: str,
+    scenario: TaskScenario,
+    scenario_index: int,
+    state_variant: int,
+    context_variant: int,
+) -> dict[str, Any]:
+    margins = _v5_scenario_margins(scenario)
+    margin = margins[state_variant]
+    reason = _v5_reason_for(scenario, scenario_index, state_variant, context_variant)
+    decision, call_sequence, transient_rule, policy_state = _v4_scenario_contract_dispatch(
+        scenario, state_variant, margin, reason
+    )
+    family: dict[str, Any] = {
+        "dataset_version": dataset_version,
+        "scenario": scenario.value,
+        "state_variant": state_variant,
+        "context_variant": context_variant,
+        "primary_policy_state": policy_state,
+        "reason": reason,
+        "distractor_count": context_variant,
+        "expected_decision": decision.value,
+        "required_reads": ["primary_order"],
+        "call_sequence": call_sequence,
+        "transient_failure_rule": transient_rule,
+    }
+    if scenario in _V5_FACT_SCENARIOS:
+        family["reason_fact"] = _V5_REASON_FACTS[reason]
+        family["acceptable_reasons"] = list(_V5_REASON_ACCEPTABLE[reason])
+    return family
+
+
+def _user_request_for(
+    family: dict[str, Any],
+    scenario: TaskScenario,
+    order_id: str,
+    reason: str,
+    variant_index: int,
+    other_order_id: str = "",
+) -> str:
+    if "reason_fact" in family:
+        return _v5_user_request(
+            scenario,
+            order_id,
+            str(family["reason_fact"]),
+            variant_index,
+            other_order_id,
+        )
+    return _user_request(scenario, order_id, reason, variant_index, other_order_id)
+
+
+def _v5_user_request(
+    scenario: TaskScenario,
+    order_id: str,
+    fact: str,
+    variant_index: int,
+    other_order_id: str = "",
+) -> str:
+    """v5 用户请求：陈述**事实**，不出现枚举词（口径 A 的任务侧前提）。"""
+    if scenario is TaskScenario.REFUND_ELIGIBLE:
+        return (
+            f"订单 {order_id} 需要退款：{fact}，请先检查后处理。"
+            if variant_index == 0
+            else f"我想为 {order_id} 申请退款，{fact}，请核实。"
+        )
+    if scenario is TaskScenario.REFUND_DENIED_WINDOW:
+        return (
+            f"请检查订单 {order_id} 是否能办理退款：{fact}。"
+            if variant_index == 0
+            else f"请核实订单 {order_id}，{fact}，我需要办理退款。"
+        )
+    if scenario is TaskScenario.REFUND_DENIED_OWNERSHIP:
+        return (
+            f"请查询订单 {order_id} 并判断能否退款：{fact}。"
+            if variant_index == 0
+            else f"麻烦核实 {order_id} 的订单信息，{fact}，我想办理退款。"
+        )
+    if scenario is TaskScenario.REFUND_DENIED_DUPLICATE:
+        return (
+            f"请查看订单 {order_id}，我需要办理退款：{fact}。"
+            if variant_index == 0
+            else f"请核验 {order_id} 后处理一笔退款：{fact}。"
+        )
+    if scenario is TaskScenario.REFUND_RECOVERY:
+        return (
+            f"请为订单 {order_id} 办理退款：{fact}；临时失败时重试一次。"
+            if variant_index == 0
+            else f"订单 {order_id} 需要退款：{fact}；如服务暂时失败请再试一次。"
+        )
+    if scenario is TaskScenario.REFUND_THEN_CANCEL:
+        return (
+            f"请先为订单 {order_id} 办理退款（{fact}），再取消订单 {other_order_id}。"
+            if variant_index == 0
+            else f"订单 {order_id} 需要先退款（{fact}），退款完成后请取消订单 {other_order_id}。"
+        )
+    msg = f"v5 场景不携带退款事实从句: {scenario}"
+    raise ValueError(msg)
+
+
+def build_v5_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
+    """Build the v5 difficulty-stratified task set (B-4, `retail_ops_v5_20260906`).
+
+    分层切分键：难度档 = margin 值（allow 侧 0–14 八档；deny 侧 1–14 七档；
+    状态轴场景 = 状态下标；cancel = v4 十档）。档内按 `sha256(family)` 排序，
+    按档级配数（`_v5_bucket_allocation`）确定性分配 train/dev/holdout——
+    无人工挑选，消除 v1 哈希切分的 5.0× 难度偏移。
+    """
+    if dataset_version not in _V5_VERSIONS:
+        raise ValueError(f"dataset_version 不是 v5 版本: {dataset_version}")
+
+    records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
+    rtc_train_specs: list[dict[str, Any]] = []
+    rtc_scenario_index = -1
+    for scenario_index, scenario in enumerate(_V4_SCENARIOS):
+        margins = _v5_scenario_margins(scenario)
+        allocation = _v5_bucket_allocation(scenario)
+        families_by_bucket: dict[int, list[dict[str, Any]]] = {}
+        for state_variant in range(len(margins)):
+            for context_variant in range(5):
+                family = _v5_family_spec(
+                    dataset_version, scenario, scenario_index, state_variant, context_variant
+                )
+                families_by_bucket.setdefault(_v5_bucket_key(family), []).append(family)
+        for bucket_key in sorted(families_by_bucket):
+            ordered = sorted(
+                families_by_bucket[bucket_key],
+                key=lambda family: _sha256({"family": family}),
+            )
+            train_count, dev_count, _ = allocation[bucket_key]
+            assigned: list[tuple[dict[str, Any], FormalSplit]] = []
+            assigned.extend((family, FormalSplit.TRAIN) for family in ordered[:train_count])
+            assigned.extend(
+                (family, FormalSplit.DEV)
+                for family in ordered[train_count : train_count + dev_count]
+            )
+            assigned.extend(
+                (family, FormalSplit.HOLDOUT) for family in ordered[train_count + dev_count :]
+            )
+            for family, split in assigned:
+                if scenario is TaskScenario.REFUND_THEN_CANCEL and split is FormalSplit.TRAIN:
+                    rtc_train_specs.append(
+                        _v5_family_spec(
+                            dataset_version,
+                            TaskScenario.REFUND_THEN_CANCEL,
+                            scenario_index,
+                            int(family["state_variant"]),
+                            int(family["context_variant"]),
+                        )
+                    )
+                family_fingerprint = _sha256({"family": family})
+                for variant_index in range(2):
+                    task = _materialize_task(
+                        dataset_version=dataset_version,
+                        seed=seed,
+                        split=split,
+                        family=family,
+                        family_fingerprint=family_fingerprint,
+                        variant_index=variant_index,
+                        max_steps=(
+                            _V5_MAX_STEPS_MULTI_CALL
+                            if scenario in _MULTI_CALL_SCENARIOS
+                            else _V5_MAX_STEPS_DEFAULT
+                        ),
+                    )
+                    records[split].append(FormalTaskRecord.from_task(task, variant_index))
+        if scenario is TaskScenario.REFUND_THEN_CANCEL:
+            rtc_scenario_index = scenario_index
+
+    # 方案乙沿袭：每个 rtc train family 派生一个 rtc_stepwise 辅助 family
+    # （同 state/context/reason，gold = 查 B + 取消 B），只进 train。
+    for family in rtc_train_specs:
+        stepwise_family = _v5_family_spec(
+            dataset_version,
+            TaskScenario.RTC_STEPWISE,
+            rtc_scenario_index,
+            int(family["state_variant"]),
+            int(family["context_variant"]),
+        )
+        stepwise_fingerprint = _sha256({"family": stepwise_family})
+        for variant_index in range(2):
+            task = _materialize_task(
+                dataset_version=dataset_version,
+                seed=seed,
+                split=FormalSplit.TRAIN,
+                family=stepwise_family,
+                family_fingerprint=stepwise_fingerprint,
+                variant_index=variant_index,
+                max_steps=_V5_MAX_STEPS_DEFAULT,
+            )
+            records[FormalSplit.TRAIN].append(FormalTaskRecord.from_task(task, variant_index))
+
+    task_set = FormalTaskSet(
+        dataset_version=dataset_version,
+        seed=seed,
+        train=tuple(records[FormalSplit.TRAIN]),
+        dev=tuple(records[FormalSplit.DEV]),
+        holdout=tuple(records[FormalSplit.HOLDOUT]),
+    )
+    task_set.assert_exact_quotas_v5()
     return task_set

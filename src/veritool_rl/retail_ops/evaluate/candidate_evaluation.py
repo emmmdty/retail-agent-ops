@@ -175,6 +175,7 @@ def evaluate_formal_dev_candidate(
                 bundle_sha256=public_manifest.bundle_sha256,
                 parser_id=public_manifest.parser_id,
                 evaluator_id=public_manifest.evaluator_id,
+                max_steps=config.max_steps,
                 dev_manifest_sha256=run.manifest_sha256,
                 dev_artifact_sha256=public_manifest.artifact_sha256,
                 system_prompt_sha256=run.prompt_sha256,

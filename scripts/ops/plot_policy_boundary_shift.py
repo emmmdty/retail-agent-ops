@@ -148,7 +148,14 @@ def _plot_left(ax: plt.Axes, offsets: list[int], series: dict[str, list[float]])
 
 
 def _plot_right(ax: plt.Axes, offsets: list[int], series: dict[str, list[float]]) -> None:
-    deltas = [d - s for d, s in zip(series["sft-008-dpo-001（R11，修坏）"], series["sft-008（发布候选）"])]
+    deltas = [
+        d - s
+        for d, s in zip(
+            series["sft-008-dpo-001（R11，修坏）"],
+            series["sft-008（发布候选）"],
+            strict=True,
+        )
+    ]
     colors = ["#15803d" if v > 0 else "#b91c1c" if v < 0 else "#9ca3af" for v in deltas]
     ax.bar(range(len(offsets)), deltas, color=colors, alpha=0.85, zorder=3)
     ax.axhline(0, color="#374151", linewidth=1)
@@ -165,7 +172,9 @@ def _plot_right(ax: plt.Axes, offsets: list[int], series: dict[str, list[float]]
             ax.text(i, v + (0.04 if v > 0 else -0.09), f"{v:+.2f}", ha="center", fontsize=8)
 
 
-def _write_csv(offsets: list[int], series: dict[str, list[float]], reports: dict[str, dict[str, Any]]) -> None:
+def _write_csv(
+    offsets: list[int], series: dict[str, list[float]], reports: dict[str, dict[str, Any]]
+) -> None:
     with CSV_PATH.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(

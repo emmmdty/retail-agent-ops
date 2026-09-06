@@ -113,19 +113,35 @@ class BaseEvaluationConfig(StrictModel):
     """dev base 运行的冻结契约：seed 0、五步预算、无采样、非思考、4-bit NF4。
 
     这里没有 adapter 字段：R2 不存在任何合法的 adapter 调用路径。
+
+    **步数预算按 dataset_version 版本化**（B-4/v5，C4 提案 1）：v1–v4 的冻结
+    预算是 5 且只有 5；`retail_ops_v5_*` 的任务步数是 6（多步场景 7），评测
+    预算必须同步为 7。validator 把两者都钉死——旧数据集配 7 或 v5 配 5
+    都是构造错误，而不是运行时才爆的隐患。
     """
 
     model_config = ConfigDict(frozen=True)
 
     dataset_version: str = Field(min_length=1)
     seed: Literal[0] = 0
-    max_steps: Literal[5] = 5
+    max_steps: Literal[5, 7] = 5
     model: ModelArtifact
     generation: GenerationSettings
     code_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     uv_lock_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bootstrap_samples: Literal[1000] = 1000
     episode_timeout: float = Field(default=30.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def _step_budget_follows_dataset_version(self) -> BaseEvaluationConfig:
+        is_v5 = self.dataset_version.startswith("retail_ops_v5_")
+        if is_v5 and self.max_steps != 7:
+            msg = f"v5 数据集的评测步数预算必须是 7（任务步数 6/7），got {self.max_steps}"
+            raise ValueError(msg)
+        if not is_v5 and self.max_steps != 5:
+            msg = f"v1–v4 数据集的评测步数预算冻结为 5，got {self.max_steps}"
+            raise ValueError(msg)
+        return self
 
     @property
     def config_sha256(self) -> str:
@@ -162,7 +178,9 @@ class BaseRunEvidence(StrictModel):
     parser_id: str = Field(min_length=1)
     evaluator_id: str = Field(min_length=1)
     seed: Literal[0] = 0
-    max_steps: Literal[5] = 5
+    #: 步数预算随 dataset_version 版本化（v1–v4 = 5；v5 = 7）。取值来自运行
+    #: config，不是字段默认——旧证据磁盘值 5 的加载与 run_id 复算不受影响。
+    max_steps: Literal[5, 7] = 5
     dev_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     dev_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     system_prompt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -305,6 +323,7 @@ def evaluate_formal_dev_base(
                 bundle_sha256=public_manifest.bundle_sha256,
                 parser_id=public_manifest.parser_id,
                 evaluator_id=public_manifest.evaluator_id,
+                max_steps=config.max_steps,
                 dev_manifest_sha256=run.manifest_sha256,
                 dev_artifact_sha256=public_manifest.artifact_sha256,
                 system_prompt_sha256=run.prompt_sha256,

@@ -33,6 +33,10 @@ _V4_DATASET_VERSIONS = (
     "retail_ops_v4_20260904",
     "retail_ops_v4_20260905",
 )
+# v5（B-4）正式数据集轨道：难度分层 + margin 0 档 + reason 口径 A + max_steps 6/7。
+# 复用 v4 bundle（工具/政策/类别序不变）；评测语义差异由 dataset_version、
+# config.max_steps（v5=7）与任务侧 acceptable_reasons metadata 承载。
+_V5_DATASET_VERSIONS = ("retail_ops_v5_20260906",)
 _GENERATOR_ID = "family_sha256_v1"
 _PARSER_ID = "hermes-single-call-v1"
 _EVALUATOR_ID = "retail_ops_v1"
@@ -70,13 +74,24 @@ _EXPECTED_PER_CATEGORY = {
 def _expected_per_scenario(split: FormalSplit, dataset_version: str) -> dict[str, int]:
     """每场景任务配额：默认冻结常量；方案甲版本（`_V4_EXTENDED_CANCEL_VERSIONS`）
     的 train split 上 CANCEL_* 4 场景为 70（35 family × 2 variant）；方案乙版本
-    （`_V4_STEPWISE_VERSIONS`）的 train split 另有 RTC_STEPWISE 40（只进 train）。"""
+    （`_V4_STEPWISE_VERSIONS`）的 train split 另有 RTC_STEPWISE 40（只进 train）；
+    v5 版本（`_V5_SPLIT_QUOTAS`）三个 split 都是逐场景分层配额表。"""
     from veritool_rl.retail_ops.domain.formal_tasks import (
         _V4_CANCEL_SCENARIOS,
         _V4_EXTENDED_CANCEL_VERSIONS,
         _V4_STEPWISE_VERSIONS,
+        _V5_SPLIT_QUOTAS,
+        _V5_VERSIONS,
     )
 
+    if dataset_version in _V5_VERSIONS:
+        split_index = {FormalSplit.TRAIN: 0, FormalSplit.DEV: 1, FormalSplit.HOLDOUT: 2}[split]
+        expected = {
+            scenario.value: quotas[split_index] * 2 for scenario, quotas in _V5_SPLIT_QUOTAS.items()
+        }
+        if split is FormalSplit.TRAIN:
+            expected["rtc_stepwise"] = 42
+        return expected
     if split is not FormalSplit.TRAIN or dataset_version not in _V4_EXTENDED_CANCEL_VERSIONS:
         base = _EXPECTED_PER_CATEGORY[split]
         expected = {scenario.value: base for scenario in _V4_SCENARIO_ORDER}
@@ -120,6 +135,7 @@ class _FormalSplitEvidence(StrictModel):
         "retail_ops_v4_20260822",
         "retail_ops_v4_20260904",
         "retail_ops_v4_20260905",
+        "retail_ops_v5_20260906",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -198,6 +214,7 @@ class FormalDatasetReceipt(StrictModel):
         "retail_ops_v4_20260822",
         "retail_ops_v4_20260904",
         "retail_ops_v4_20260905",
+        "retail_ops_v5_20260906",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -289,6 +306,7 @@ class _FormalPrivateTaskRow(StrictModel):
         "retail_ops_v4_20260822",
         "retail_ops_v4_20260904",
         "retail_ops_v4_20260905",
+        "retail_ops_v5_20260906",
     ] = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
@@ -316,6 +334,7 @@ class _FormalPrivateTaskRow(StrictModel):
             "retail_ops_v4_20260822",
             "retail_ops_v4_20260904",
             "retail_ops_v4_20260905",
+            "retail_ops_v5_20260906",
         ] = ("retail_ops_v1_r2_20260722"),
         bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0",
         evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = (
@@ -360,8 +379,15 @@ def write_formal_task_set(
     is_v4 = bundle.bundle.bundle_version == "4.0.0"
     scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
     expected_evaluator = _V4_EVALUATOR_ID if is_v4 else _EVALUATOR_ID
-    task_set.assert_exact_quotas_v4() if is_v4 else task_set.assert_exact_quotas()
-    if is_v4:
+    is_v5 = task_set.dataset_version in _V5_DATASET_VERSIONS
+    if is_v5:
+        task_set.assert_exact_quotas_v5()
+    else:
+        task_set.assert_exact_quotas_v4() if is_v4 else task_set.assert_exact_quotas()
+    if is_v5:
+        if not is_v4:
+            raise ValueError("v5 正式数据必须复用 v4 bundle（bundle_version 4.0.0）")
+    elif is_v4:
         if task_set.dataset_version not in _V4_DATASET_VERSIONS:
             raise ValueError("正式数据 dataset_version 不符合冻结契约")
     elif task_set.dataset_version != _DATASET_VERSION:
@@ -448,7 +474,13 @@ def _write_staged_task_set(
     split_evidence: dict[FormalSplit, FormalTaskManifest | FormalHoldoutReceipt] = {}
     is_v4_bundle = bundle.bundle.bundle_version == "4.0.0"
     row_dataset_version = cast(
-        Literal["retail_ops_v1_r2_20260722", "retail_ops_v4_20260822", "retail_ops_v4_20260904"],
+        Literal[
+            "retail_ops_v1_r2_20260722",
+            "retail_ops_v4_20260822",
+            "retail_ops_v4_20260904",
+            "retail_ops_v4_20260905",
+            "retail_ops_v5_20260906",
+        ],
         task_set.dataset_version,
     )
     row_evaluator_id = bundle.bundle.evaluator_id
@@ -490,19 +522,21 @@ def _write_staged_task_set(
         public_output_dir / "holdout-receipt.json",
         split_evidence[FormalSplit.HOLDOUT].model_dump(mode="json"),
     )
-    # 正式数据集轨道：v1 和 v4 各自使用冻结 receipt。v4 允许
-    # `_V4_DATASET_VERSIONS` 里的任一版本（write 路径已校验）。
+    # 正式数据集轨道：v1/v4/v5 各自使用冻结 receipt。v4/v5 允许各自
+    # 已登记版本（write 路径已校验）。
     if bundle.bundle.bundle_version not in ("1.0.0", "4.0.0"):
         raise ValueError("正式数据集 receipt 只接受 v1 或 v4 bundle")
     expected_dataset = task_set.dataset_version
-    if is_v4_bundle and expected_dataset not in _V4_DATASET_VERSIONS:
-        raise ValueError("正式数据集 receipt 只接受已登记的 v4 dataset_version")
+    if is_v4_bundle and expected_dataset not in (*_V4_DATASET_VERSIONS, *_V5_DATASET_VERSIONS):
+        raise ValueError("正式数据集 receipt 只接受已登记的 v4/v5 dataset_version")
     receipt = FormalDatasetReceipt(
         dataset_version=cast(
             Literal[
                 "retail_ops_v1_r2_20260722",
                 "retail_ops_v4_20260822",
                 "retail_ops_v4_20260904",
+                "retail_ops_v4_20260905",
+                "retail_ops_v5_20260906",
             ],
             expected_dataset,
         ),

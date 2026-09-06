@@ -71,9 +71,11 @@ from veritool_rl.retail_ops.release.formal_governance import (
 # sealed 评测写出与 dev base 完全相同的四份私有产物。
 SEALED_ARTIFACT_NAMES = BASE_ARTIFACT_NAMES
 
-#: findings #7：与 `BaseEvaluationConfig.max_steps` 单源绑定，改步数预算只需改
-#: config 的 Literal 一处；冻结数据集那一路由 `_require_step_budget` 运行时校验。
-_MAX_STEPS = BaseEvaluationConfig.model_fields["max_steps"].default
+#: findings #7 的单源绑定已升级为**随 dataset_version 版本化**（B-4/v5）：
+#: 步数预算现在从运行 config 读取（`config.max_steps`，由
+#: `BaseEvaluationConfig._step_budget_follows_dataset_version` 钉死 v1–v4=5、
+#: v5=7），不再有全局常量。保留此注记防止有人把全局预算加回来。
+_V1_V4_MAX_STEPS = BaseEvaluationConfig.model_fields["max_steps"].default
 _SEALED_EVIDENCE_DIR = "sealed-eval"
 
 
@@ -179,7 +181,9 @@ class SealedEvaluationReport(StrictModel):
     evaluator_id: str = Field(min_length=1)
     seed: int = Field(ge=0)
     policy_id: str = Field(min_length=1)
-    max_steps: Literal[5] = 5
+    #: 步数预算随 dataset_version 版本化（v1–v4 = 5；v5 = 7）。取值来自运行
+    #: config——旧证据磁盘值 5 的加载与 report_id 复算不受 Literal 放宽影响。
+    max_steps: Literal[5, 7] = 5
     task_count: int = Field(ge=1)
     category_counts: dict[str, int]
     holdout_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -293,7 +297,7 @@ def evaluate_authorized_holdout(
     records = load_authorized_formal_holdout(authorization)
     receipt = authorization.dataset.holdout_receipt
     _require_matching_bundle(bundle, receipt)
-    _require_step_budget(records)
+    _require_step_budget(records, config.max_steps)
 
     if config.dataset_version != receipt.dataset_version:
         msg = "sealed 评测 config 与 holdout receipt 的 dataset_version 不一致"
@@ -346,7 +350,7 @@ def evaluate_authorized_holdout(
         "split": receipt.split,
         "purpose": "release",
         "policy_id": policy.name,
-        "max_steps": _MAX_STEPS,
+        "max_steps": config.max_steps,
         "bundle_sha256": bundle.bundle_sha256,
         "holdout_artifact_sha256": authorization.artifact_sha256,
         "holdout_receipt_sha256": receipt_sha256,
@@ -369,6 +373,7 @@ def evaluate_authorized_holdout(
                 evaluator_id=receipt.evaluator_id,
                 seed=receipt.seed,
                 policy_id=policy.name,
+                max_steps=config.max_steps,
                 task_count=len(trajectories),
                 category_counts=_category_counts(trajectories, receipt),
                 holdout_artifact_sha256=authorization.artifact_sha256,
@@ -719,10 +724,11 @@ def load_sealed_evaluation_report(
     return report
 
 
-def _require_step_budget(records: Sequence[FormalTaskRecord]) -> None:
+def _require_step_budget(records: Sequence[FormalTaskRecord], budget: int) -> None:
+    """sealed 任务步数不得超出本次运行的 config 预算（v1–v4 = 5；v5 = 7）。"""
     for index, record in enumerate(records):
-        if record.task.max_steps > _MAX_STEPS:
-            msg = f"sealed 评测记录 {index} 的 max_steps 超出冻结预算"
+        if record.task.max_steps > budget:
+            msg = f"sealed 评测记录 {index} 的 max_steps 超出冻结预算 {budget}"
             raise ValueError(msg)
 
 

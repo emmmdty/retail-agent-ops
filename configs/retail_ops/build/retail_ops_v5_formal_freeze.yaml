@@ -1,0 +1,12 @@
+# B-4 数据重建（v5）：难度分层切分 + margin 0 档 + reason 口径 A + max_steps 6/7。
+# 预注册：task_plan.md Current Task（A-1，commit ba463a6）；A-0 四项裁定（2026-09-06 用户确认）：
+# 沿用 v4 场景集（含 rtc_stepwise train-only）；口径 A 映射表草案四行（cancel 类保持精确匹配）；
+# 判读阈值按 A-6 草案冻结；v1.4 配对 schema 不启用（发布判定沿用 1.3）。
+#
+# 复用 v4 bundle（工具/政策/12 类别序不变）；v5 的评测语义差异由 dataset_version、
+# 评测 config.max_steps（v5=7）与任务侧 acceptable_reasons metadata 承载。
+# 与 B4 提案「每场景 family 35 不变」的已披露偏差：分层验收「dev/holdout 覆盖全部难度档」
+# 要求 dev family ≥ 档数（7–10），配额表见 formal_tasks._V5_SPLIT_QUOTAS；总量 588/198/246。
+pipeline: formal_freeze
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v5_20260906

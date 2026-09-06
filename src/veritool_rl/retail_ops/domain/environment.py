@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from veritool_rl.core.envs.base import ToolEnv, ToolSchema
+from veritool_rl.core.metrics import arguments_match
 from veritool_rl.core.trajectory import ExpectedDecision, Observation, TaskSpec
 from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle
 from veritool_rl.retail_ops.domain.policy_rules import RefundFacts, evaluate_refund_rules
@@ -397,7 +398,9 @@ class RetailOpsEnv(ToolEnv):
         if self._matched_calls >= len(self._task.expected_calls):
             return
         expected = self._task.expected_calls[self._matched_calls]
-        if expected.name == name and expected.arguments == dict(arguments):
+        if expected.name == name and arguments_match(
+            expected.arguments, dict(arguments), self._task.metadata
+        ):
             self._matched_calls += 1
 
     def _deny(self, violation: str, error: str) -> Observation:
