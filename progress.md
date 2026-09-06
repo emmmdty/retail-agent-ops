@@ -1246,3 +1246,29 @@ SPEC §6 第 6 条「独立重建复验」**未做**，因此只能表述为"自
 | 2026-09-05 | teacher-v4-005 采集（mimo，640 任务，~2.5h） | 接受率 0.980；2.01M tokens（记账） |
 | 2026-09-05 | sft-005 训练（GPU 0，~40 min） | train_loss 0.1896；eval 0.0901；adapter `3aa24235…` |
 | 2026-09-05 | sft-005 三面评测（GPU 0，~35 min） | dev 0.9833/pv1；OOD v2 1.0000/pv0；OOD v4 0.9583/pv3；rtc 9/10、8/10 → **修好** |
+
+## 2026-09-05/06 — GPU 执行阶段第 3 步：E2 退化曲线真读数（smoke 四轮装置修复 + full 重跑）
+
+- smoke 续跑暴露四层装置缺陷并全部 TDD 修复：P1-9 重叠校验与 runner 冲突（eval 拆分）、
+  max_seq_len 1024/2048 均截断 assistant 段致 LoRA 零更新（candidate≡base 逐位，
+  spy 钩 TRL _tokenize 取证；终值 3072）、v3 任务集 DENY-window 场景状态方向矛盾
+  （+margin → −margin，与 v1 formal 对齐）、三个场景 user_request 缺 gold reason。
+  冒烟门禁修订（用户裁定）：合法调用率门只约束 candidate 侧。dataset_version 升
+  `retail_ops_v3_tc{N}_20260905b`。
+- 过程事故：full 曾双进程并行写同一采集目录（pkill 静默失败 + pgrep 自匹配误判），
+  证据混版本作废重采。教训：pkill 后 pgrep -af 验证 + 启动后确认单实例。
+- **full 真读数**（五断点全部完成）：base 0.65→0.425 单调退化；candidate
+  0.95/1.00/1.00/0.933/0.925；干扰调用率 0.03→0.117 随工具面上升（成功率的退化
+  比行为质量迟钝）；tc=12 出现 8 次「该拒绝却执行」的边界内崩溃（同任务 tc=9 全对）。
+  curve.json 哈希远端/本地一致；产物已回传本地（170MB）。
+- 教师接受率（full）：0.9542/0.9750/0.9667/0.9458/0.9479（异常 0）。
+- 收口：RESUME_EVIDENCE/INTERVIEW_PREP 的「读数作废」段更新为真读数；LOG-20260905-02；
+  findings；EXECUTION_PLAN R10 更正记录闭环。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-05 | smoke 续跑 ×4 轮装置修复 | 四层缺陷全修（TDD + 正向断言） |
+| 2026-09-05 | smoke 最终轮 | tc=9/12/15 训练真实发生（loss 2.8/1.7/2.2→0.15-0.36）；candidate 门全过 |
+| 2026-09-05 | full 第一次（P1+P2 并行事故） | 证据混版本作废；教训固化为单实例验证 |
+| 2026-09-05/06 | full 重跑（单实例验证通过） | 五断点全部完成，teacher 0.9458-0.9750 |
+| 2026-09-06 | 曲线读数 | base 0.65→0.425 单调退化；干扰率 0.03→0.117；tc=12 pv=8 边界崩溃 |

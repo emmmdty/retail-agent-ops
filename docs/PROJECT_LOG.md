@@ -4539,3 +4539,52 @@ OOD v4 0.9583/pv3（pv 较甲 2→3，如实记录）。teacher 接受率甲 0.9
 2→3；OOD v2 invalid 1；自变量不纯（乙相对甲同时变行数与构成，n=1）。sft-005 未
 经过封存评测，不改变发布候选。下一窗口按交接执行 E2 退化曲线续跑与 D4 一次性
 v1.3 发布判定。
+
+### LOG-20260905-02：E2 退化曲线真读数取得——装置修复三轮、v3 任务集两处真值缺陷、门禁语义修订
+
+- 日期：2026-09-05/06
+- 阶段/任务：R10 更正记录的完成（E2 退化曲线重跑，交接 `2026-08-27-r10-degradation-rerun` +
+  本阶段交接 §4 第 3 步）
+- 状态：完成（探索性读数；不用于发布判定，发布候选仍是 sft-008）
+- 关联：LOG-20260827-01（本条是其「要拿到真读数必须重跑」的兑现）、PITFALLS #12/#14、
+  `R10 退化曲线` 更正记录
+
+**方法论事件一（装置）**：smoke 续跑连环暴露四层装置缺陷，全部由「训练后必查 loss
+曲线、教师接受率按场景分桶、环境层 deny 正向断言」的监控抓出——(1) runner 的
+train_path=eval_path 用法与 P1-9 重叠校验冲突（8/28 加的校验晚于 8/27 的 runner）；
+(2) max_seq_len=1024 时 chat template 渲染序列（15 工具 schema 为主体）达
+2398–2533 tokens，keep_start 截断把 assistant 段整段切掉 → labels 全 -100 →
+loss/grad 恒 0 → **LoRA 零更新、candidate 与 base 逐位相同**（spy 钩 TRL _tokenize
+取证）；(3) v3 任务集 `REFUND_DENIED_WINDOW`/`CANCEL_DENIED_RECENT` 的订单状态用
++margin——场景叫 DENY、状态却窗口内可退（v1 formal 用 −margin；Oracle「不作为」
+恰好匹配 target，预检抓不到），教师按业务正确执行反被判失败；(4) refund_eligible/
+refund_recovery/refund_then_cancel 的 user_request 不含 gold 所需的 reason，
+教师只能反问用户（行为正确）被判失败。四层修复全部 TDD（含「DENY 场景在环境层
+真的会 deny」「请求必须携带 gold 参数」两类正向断言），dataset_version 升
+`retail_ops_v3_tc{N}_20260905b`。
+
+**方法论事件二（门禁语义修订，用户裁定）**：冒烟门禁「合法调用率 ≥0.8」的 base 侧
+对零训练基座在宽工具面上不成立——base 调用率随工具面单调下降（1.00→0.5833，
+unknown=0/invalid=0），是曲线要测的自变量效应而非装置故障；candidate 侧同装置
+全部 ≥0.8 证明装置有效。裁定：该门只约束 candidate 侧。
+
+**方法论事件三（过程纪律）**：full 曾出现两个进程并行写同一 teacher-collection
+目录（pkill 的 ssh 静默失败 + 裸 pgrep 自匹配误判「已死」），证据混两个
+dataset_version 后双双对账失败。教训：pkill 后必须 `pgrep -af` 验证；启动后必须
+确认单实例。证据作废重采。
+
+**证据（真读数）**：full 五断点（60–120 dev 任务/断点，mimo teacher 接受率
+0.9458–0.9750、异常 0）：base task_success 0.6500→0.4250 随工具面单调退化；
+candidate 0.95/1.00/1.00/0.933/0.925；candidate 干扰调用率 0.032→0.117 随工具面
+上升而 task_success 只微降——**成功率的退化比行为质量的退化迟钝**。tc=12 candidate
+出现 8 次「该拒绝却执行」（refund_denied_window 超期 1–3 天发起被拦截的退款；
+超期 5/7 天正确拒绝；同任务 tc=9 candidate 10/10 全对）——不同训练数据量训练出的
+候选政策边界稳健性不同。curve.json SHA-256 `053780de…` 远端/本地一致。
+
+**备选方案与未选择理由**：矛盾任务「带伤跑完」（训练信号恰好正确、曲线形状
+distortion 小）被用户否——denied_window 的「政策拒绝」是本项目最有解释力的度量，
+用自相矛盾的任务集测它没有意义。
+
+**后果与下一步**：R10 更正记录闭环（真读数已取得并按限定口径陈述）；对外材料
+（RESUME_EVIDENCE/INTERVIEW_PREP）的「读数作废」段更新为真读数 + 三层装置教训。
+下一步：D4 一次性 v1.3 发布判定（判读规则先写定提交）。
