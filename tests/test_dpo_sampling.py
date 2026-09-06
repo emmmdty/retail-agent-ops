@@ -496,5 +496,43 @@ def test_the_committed_sampling_config_matches_the_preregistration() -> None:
     assert config.sampling.max_new_tokens == 256
     assert config.phrasing.partition == "ood_dev"
     assert config.phrasing.bank_relpath == "phrasing/phrasing-bank-004/phrasings.jsonl"
+    assert config.phrasing.bank_sha256.startswith("f4b14e8d")
     assert config.adapter.run_dir == "reports/retail_ops/v1/r6/sft-008"
     assert config.model.local_dir == "Qwen3-4B-pinned"
+
+
+def test_bank_hash_verification_uses_the_content_hash_not_file_bytes(
+    tmp_path: Path,
+) -> None:
+    """声明哈希 = `bank_sha256(records)` 内容哈希（与 _run_ood_build 同一语义）。
+
+    突变验证：若改回文件字节哈希，本测试的「非文件哈希声明值」分支会红——
+    R11-1 首次远端启动正是被这个语义差拦下（文件 sha ≠ 内容哈希）。
+    """
+    import pytest as _pytest
+
+    from veritool_rl.retail_ops.build.phrasing_bank import (
+        bank_sha256,
+        build_records,
+        write_phrasing_bank,
+    )
+
+    module = _sampling_script_module()
+    records = build_records(
+        [(INTENT_REFUND, "test-style", f"第 {i} 号退款说法 {{order_id}}。") for i in range(30)]
+    )
+    bank_path = tmp_path / "phrasings.jsonl"
+    write_phrasing_bank(bank_path, records)
+
+    returned, actual = module._verify_bank_sha256(bank_path, bank_sha256(records))
+
+    assert [r.phrasing_id for r in returned] == [r.phrasing_id for r in records]
+    assert actual == bank_sha256(records)
+    assert actual != "0" * 64
+
+    import hashlib
+
+    file_bytes_sha = hashlib.sha256(bank_path.read_bytes()).hexdigest()
+    assert file_bytes_sha != bank_sha256(records)
+    with _pytest.raises(ValueError, match="内容哈希"):
+        module._verify_bank_sha256(bank_path, file_bytes_sha)

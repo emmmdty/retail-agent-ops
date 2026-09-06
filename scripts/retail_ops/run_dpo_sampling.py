@@ -47,7 +47,6 @@ from veritool_rl.core.agent.qwen import (  # noqa: E402
 )
 from veritool_rl.core.artifacts import (  # noqa: E402
     canonical_json,
-    sha256_file,
     write_json,
     write_jsonl,
 )
@@ -63,6 +62,7 @@ from veritool_rl.retail_ops.build.dpo_sampling import (  # noqa: E402
 )
 from veritool_rl.retail_ops.build.phrasing_bank import (  # noqa: E402
     PhrasingRecord,
+    bank_sha256,
     intent_index,
     load_phrasing_bank,
 )
@@ -166,6 +166,18 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _verify_bank_sha256(bank_path: Path, declared: str) -> tuple[list[PhrasingRecord], str]:
+    """bank 声明哈希校验——与 `_run_ood_build`/`OodPhrasingSpec` **同一语义**：
+    `bank_sha256(records)` 的内容规范化哈希（逐条 `phrasing_id|partition`），
+    **不是**文件字节哈希。返回 (records, actual)。"""
+    records = load_phrasing_bank(bank_path)
+    actual = bank_sha256(records)
+    if actual != declared:
+        msg = f"bank 内容哈希与声明不一致：actual={actual} declared={declared}"
+        raise ValueError(msg)
+    return records, actual
+
+
 def _load_samples_for(
     task: TaskSpec,
     samples_dir: Path,
@@ -234,14 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     bank_path = input_dir / config.phrasing.bank_relpath
-    actual_bank_sha256 = sha256_file(bank_path)
-    if actual_bank_sha256 != config.phrasing.bank_sha256:
-        msg = (
-            "bank 文件哈希与声明不一致："
-            f"actual={actual_bank_sha256} declared={config.phrasing.bank_sha256}"
-        )
-        raise ValueError(msg)
-    records = load_phrasing_bank(bank_path)
+    records, actual_bank_sha256 = _verify_bank_sha256(bank_path, config.phrasing.bank_sha256)
     index: dict[str, list[PhrasingRecord]] = intent_index(
         records,
         config.phrasing.partition,
@@ -306,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         "phrasing": {
             **config.phrasing.model_dump(mode="json"),
             "record_count": len(records),
-            "declared_sha256_verified": True,
+            "actual_bank_sha256": actual_bank_sha256,
         },
         "face_task_count": len(face),
         "wall_time_seconds": wall_time_seconds,
