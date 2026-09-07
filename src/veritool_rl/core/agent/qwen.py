@@ -13,7 +13,12 @@ from typing import Any, Final, Literal, Protocol
 
 from pydantic import ConfigDict, Field
 
-from veritool_rl.core.agent.parser import parse_qwen_response, parse_qwen_response_v2
+from veritool_rl.core.agent.parser import (
+    PARSER_ID_V1,
+    PARSER_ID_V2,
+    parse_qwen_response,
+    parse_qwen_response_v2,
+)
 from veritool_rl.core.agent.policy import PolicyOutput
 from veritool_rl.core.artifacts import canonical_json
 from veritool_rl.core.envs.base import ToolSchema
@@ -28,10 +33,10 @@ _HASH_CHUNK_SIZE = 1024 * 1024
 #: v2 只额外容忍「eos 前未闭合且剥离 eos 后恰为合法 JSON」的调用
 #: （V6-2b，预注册 A-0 裁定 4）。未知 id 一律 fail-closed。
 PARSERS_BY_ID: Final[dict[str, Callable[[str], PolicyOutput]]] = {
-    "hermes-single-call-v1": parse_qwen_response,
-    "hermes-single-call-v2-unterminated": parse_qwen_response_v2,
+    PARSER_ID_V1: parse_qwen_response,
+    PARSER_ID_V2: parse_qwen_response_v2,
 }
-DEFAULT_PARSER_ID: Final[str] = "hermes-single-call-v1"
+DEFAULT_PARSER_ID: Final[str] = PARSER_ID_V1
 
 
 def parser_for_id(parser_id: str) -> Callable[[str], PolicyOutput]:

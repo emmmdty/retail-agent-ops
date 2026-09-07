@@ -134,11 +134,11 @@ class BaseEvaluationConfig(StrictModel):
 
     @model_validator(mode="after")
     def _step_budget_follows_dataset_version(self) -> BaseEvaluationConfig:
-        is_v5 = self.dataset_version.startswith("retail_ops_v5_")
-        if is_v5 and self.max_steps != 7:
-            msg = f"v5 数据集的评测步数预算必须是 7（任务步数 6/7），got {self.max_steps}"
+        is_v5_plus = self.dataset_version.startswith(("retail_ops_v5_", "retail_ops_v6_"))
+        if is_v5_plus and self.max_steps != 7:
+            msg = f"v5/v6 数据集的评测步数预算必须是 7（任务步数 6/7），got {self.max_steps}"
             raise ValueError(msg)
-        if not is_v5 and self.max_steps != 5:
+        if not is_v5_plus and self.max_steps != 5:
             msg = f"v1–v4 数据集的评测步数预算冻结为 5，got {self.max_steps}"
             raise ValueError(msg)
         return self

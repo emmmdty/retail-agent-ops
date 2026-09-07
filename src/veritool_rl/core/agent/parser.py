@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -14,6 +15,10 @@ from veritool_rl.core.trajectory import ToolCall
 _TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _TOOL_CALL_GREEDY_PATTERN = re.compile(r"<tool_call>\s*(.*)\s*</tool_call>", re.DOTALL)
 _logger = logging.getLogger(__name__)
+
+#: 解析器版本 id 的单一事实源（评测证据、数据集 manifest、发布报告共同引用）。
+PARSER_ID_V1: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
+PARSER_ID_V2: Literal["hermes-single-call-v2-unterminated"] = "hermes-single-call-v2-unterminated"
 
 
 def _extract_payload(raw_text: str, greedy: bool = False) -> str | None:

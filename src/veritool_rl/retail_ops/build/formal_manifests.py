@@ -14,6 +14,7 @@ from weakref import WeakSet
 
 from pydantic import ConfigDict, Field, model_validator
 
+from veritool_rl.core.agent.parser import PARSER_ID_V1, PARSER_ID_V2
 from veritool_rl.core.artifacts import canonical_json, sha256_file, write_json, write_jsonl
 from veritool_rl.core.trajectory import TaskScenario, TaskSpec
 from veritool_rl.core.trajectory.schema import StrictModel
@@ -23,6 +24,18 @@ from veritool_rl.retail_ops.domain.formal_tasks import (
     FormalTaskRecord,
     FormalTaskSet,
 )
+
+#: v1–v6 正式数据集版本（版本↔内容双射；新增版本只许追加）。
+FormalDatasetVersion = Literal[
+    "retail_ops_v1_r2_20260722",
+    "retail_ops_v4_20260822",
+    "retail_ops_v4_20260904",
+    "retail_ops_v4_20260905",
+    "retail_ops_v5_20260906",
+    "retail_ops_v6_20260907",
+]
+#: formal manifest 携带的解析器版本。
+FormalParserId = Literal["hermes-single-call-v1", "hermes-single-call-v2-unterminated"]
 
 _DATASET_VERSION = "retail_ops_v1_r2_20260722"
 # v4 正式数据集轨道：20260822 是 R9 Phase B 冻结版；20260904 是第四轮
@@ -37,8 +50,12 @@ _V4_DATASET_VERSIONS = (
 # 复用 v4 bundle（工具/政策/类别序不变）；评测语义差异由 dataset_version、
 # config.max_steps（v5=7）与任务侧 acceptable_reasons metadata 承载。
 _V5_DATASET_VERSIONS = ("retail_ops_v5_20260906",)
+# v6（V6-2）正式数据集轨道：v5 结构 + rtc_stepwise 请求 reason 修复（单变量）。
+_V6_DATASET_VERSIONS = ("retail_ops_v6_20260907",)
 _GENERATOR_ID = "family_sha256_v1"
-_PARSER_ID = "hermes-single-call-v1"
+# v1–v5 冻结清单钉 v1；v6 起清单携带 v2（eos 前未闭合 tool_call 容忍，V6-2b）。
+_PARSER_ID = PARSER_ID_V1
+_V6_PARSER_ID = PARSER_ID_V2
 _EVALUATOR_ID = "retail_ops_v1"
 _V4_EVALUATOR_ID = "retail_ops_v4"
 _SEED = 0
@@ -82,9 +99,10 @@ def _expected_per_scenario(split: FormalSplit, dataset_version: str) -> dict[str
         _V4_STEPWISE_VERSIONS,
         _V5_SPLIT_QUOTAS,
         _V5_VERSIONS,
+        _V6_VERSIONS,
     )
 
-    if dataset_version in _V5_VERSIONS:
+    if dataset_version in _V5_VERSIONS or dataset_version in _V6_VERSIONS:
         split_index = {FormalSplit.TRAIN: 0, FormalSplit.DEV: 1, FormalSplit.HOLDOUT: 2}[split]
         expected = {
             scenario.value: quotas[split_index] * 2 for scenario, quotas in _V5_SPLIT_QUOTAS.items()
@@ -130,18 +148,12 @@ class _FormalSplitEvidence(StrictModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal[
-        "retail_ops_v1_r2_20260722",
-        "retail_ops_v4_20260822",
-        "retail_ops_v4_20260904",
-        "retail_ops_v4_20260905",
-        "retail_ops_v5_20260906",
-    ] = "retail_ops_v1_r2_20260722"
+    dataset_version: FormalDatasetVersion = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
     bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
-    parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
+    parser_id: FormalParserId = PARSER_ID_V1
     evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     split: Literal["train", "dev", "holdout"]
@@ -209,18 +221,12 @@ class FormalDatasetReceipt(StrictModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal[
-        "retail_ops_v1_r2_20260722",
-        "retail_ops_v4_20260822",
-        "retail_ops_v4_20260904",
-        "retail_ops_v4_20260905",
-        "retail_ops_v5_20260906",
-    ] = "retail_ops_v1_r2_20260722"
+    dataset_version: FormalDatasetVersion = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
     bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
-    parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
+    parser_id: FormalParserId = PARSER_ID_V1
     evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     split_task_counts: dict[str, int]
@@ -301,18 +307,12 @@ class _FormalPrivateTaskRow(StrictModel):
     """Private line binding complete task truth to formal provenance."""
 
     schema_version: Literal["2.0"] = "2.0"
-    dataset_version: Literal[
-        "retail_ops_v1_r2_20260722",
-        "retail_ops_v4_20260822",
-        "retail_ops_v4_20260904",
-        "retail_ops_v4_20260905",
-        "retail_ops_v5_20260906",
-    ] = "retail_ops_v1_r2_20260722"
+    dataset_version: FormalDatasetVersion = "retail_ops_v1_r2_20260722"
     generator_id: Literal["family_sha256_v1"] = "family_sha256_v1"
     bundle_id: Literal["retail_ops"] = "retail_ops"
     bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0"
     bundle_sha256: Fingerprint
-    parser_id: Literal["hermes-single-call-v1"] = "hermes-single-call-v1"
+    parser_id: FormalParserId = PARSER_ID_V1
     evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = "retail_ops_v1"
     seed: Literal[0] = 0
     task: TaskSpec
@@ -329,22 +329,18 @@ class _FormalPrivateTaskRow(StrictModel):
         record: FormalTaskRecord,
         *,
         bundle_sha256: str,
-        dataset_version: Literal[
-            "retail_ops_v1_r2_20260722",
-            "retail_ops_v4_20260822",
-            "retail_ops_v4_20260904",
-            "retail_ops_v4_20260905",
-            "retail_ops_v5_20260906",
-        ] = ("retail_ops_v1_r2_20260722"),
+        dataset_version: FormalDatasetVersion = ("retail_ops_v1_r2_20260722"),
         bundle_version: Literal["1.0.0", "4.0.0"] = "1.0.0",
         evaluator_id: Literal["retail_ops_v1", "retail_ops_v3", "retail_ops_v4"] = (
             "retail_ops_v1"
         ),
+        parser_id: FormalParserId = PARSER_ID_V1,
     ) -> _FormalPrivateTaskRow:
         return cls(
             dataset_version=dataset_version,
             bundle_version=bundle_version,
             evaluator_id=evaluator_id,
+            parser_id=parser_id,
             bundle_sha256=bundle_sha256,
             task=record.task.model_copy(deep=True),
             task_fingerprint=record.task_fingerprint,
@@ -373,20 +369,27 @@ def write_formal_task_set(
     private_output_dir: Path,
     public_output_dir: Path,
     *,
-    parser_id: str = _PARSER_ID,
+    parser_id: str | None = None,
 ) -> FormalDatasetReceipt:
-    """Write immutable private truth and answer-free public R2 metadata."""
+    """Write immutable private truth and answer-free public R2 metadata.
+
+    `parser_id=None`（默认）= 按 dataset_version 派生（v6 → v2，其余 → v1）；
+    显式传入时必须与派生值一致，否则拒绝——「忘了写」与「故意钉错」都过不去。
+    """
     is_v4 = bundle.bundle.bundle_version == "4.0.0"
     scenario_order = _V4_SCENARIO_ORDER if is_v4 else _SCENARIO_ORDER
     expected_evaluator = _V4_EVALUATOR_ID if is_v4 else _EVALUATOR_ID
     is_v5 = task_set.dataset_version in _V5_DATASET_VERSIONS
+    is_v6 = task_set.dataset_version in _V6_DATASET_VERSIONS
     if is_v5:
         task_set.assert_exact_quotas_v5()
+    elif is_v6:
+        task_set.assert_exact_quotas_v6()
     else:
         task_set.assert_exact_quotas_v4() if is_v4 else task_set.assert_exact_quotas()
-    if is_v5:
+    if is_v5 or is_v6:
         if not is_v4:
-            raise ValueError("v5 正式数据必须复用 v4 bundle（bundle_version 4.0.0）")
+            raise ValueError("v5/v6 正式数据必须复用 v4 bundle（bundle_version 4.0.0）")
     elif is_v4:
         if task_set.dataset_version not in _V4_DATASET_VERSIONS:
             raise ValueError("正式数据 dataset_version 不符合冻结契约")
@@ -396,7 +399,10 @@ def write_formal_task_set(
         raise ValueError("正式数据 generator_id 不符合冻结契约")
     if task_set.seed != _SEED:
         raise ValueError("正式数据 seed 不符合冻结契约")
-    if parser_id != _PARSER_ID:
+    # 解析器版本随 dataset_version 走（单一事实源）：v6 清单携带 v2，其余钉 v1。
+    expected_parser_id = _V6_PARSER_ID if is_v6 else _PARSER_ID
+    resolved_parser_id = expected_parser_id if parser_id is None else parser_id
+    if resolved_parser_id != expected_parser_id:
         raise ValueError("正式数据 parser_id 不符合冻结契约")
     if (
         bundle.bundle.bundle_id != "retail_ops"
@@ -422,7 +428,7 @@ def write_formal_task_set(
             bundle,
             private_staging,
             public_staging,
-            parser_id=parser_id,
+            parser_id=resolved_parser_id,
         )
         verified = load_verified_formal_dataset(public_staging)
         load_formal_split(verified, "train", private_staging / "train.jsonl")
@@ -474,13 +480,7 @@ def _write_staged_task_set(
     split_evidence: dict[FormalSplit, FormalTaskManifest | FormalHoldoutReceipt] = {}
     is_v4_bundle = bundle.bundle.bundle_version == "4.0.0"
     row_dataset_version = cast(
-        Literal[
-            "retail_ops_v1_r2_20260722",
-            "retail_ops_v4_20260822",
-            "retail_ops_v4_20260904",
-            "retail_ops_v4_20260905",
-            "retail_ops_v5_20260906",
-        ],
+        FormalDatasetVersion,
         task_set.dataset_version,
     )
     row_evaluator_id = bundle.bundle.evaluator_id
@@ -492,6 +492,7 @@ def _write_staged_task_set(
                 dataset_version=row_dataset_version,
                 bundle_version="4.0.0" if is_v4_bundle else "1.0.0",
                 evaluator_id=row_evaluator_id,
+                parser_id=cast(FormalParserId, parser_id),
             )
             for record in task_set.records(split)
         ]
@@ -522,29 +523,24 @@ def _write_staged_task_set(
         public_output_dir / "holdout-receipt.json",
         split_evidence[FormalSplit.HOLDOUT].model_dump(mode="json"),
     )
-    # 正式数据集轨道：v1/v4/v5 各自使用冻结 receipt。v4/v5 允许各自
+    # 正式数据集轨道：v1/v4/v5/v6 各自使用冻结 receipt。v4/v5/v6 允许各自
     # 已登记版本（write 路径已校验）。
     if bundle.bundle.bundle_version not in ("1.0.0", "4.0.0"):
         raise ValueError("正式数据集 receipt 只接受 v1 或 v4 bundle")
     expected_dataset = task_set.dataset_version
-    if is_v4_bundle and expected_dataset not in (*_V4_DATASET_VERSIONS, *_V5_DATASET_VERSIONS):
-        raise ValueError("正式数据集 receipt 只接受已登记的 v4/v5 dataset_version")
+    if is_v4_bundle and expected_dataset not in (
+        *_V4_DATASET_VERSIONS,
+        *_V5_DATASET_VERSIONS,
+        *_V6_DATASET_VERSIONS,
+    ):
+        raise ValueError("正式数据集 receipt 只接受已登记的 v4/v5/v6 dataset_version")
     receipt = FormalDatasetReceipt(
-        dataset_version=cast(
-            Literal[
-                "retail_ops_v1_r2_20260722",
-                "retail_ops_v4_20260822",
-                "retail_ops_v4_20260904",
-                "retail_ops_v4_20260905",
-                "retail_ops_v5_20260906",
-            ],
-            expected_dataset,
-        ),
+        dataset_version=cast(FormalDatasetVersion, expected_dataset),
         generator_id="family_sha256_v1",
         bundle_id=bundle.bundle.bundle_id,
         bundle_version=bundle.bundle.bundle_version,
         bundle_sha256=bundle.bundle_sha256,
-        parser_id="hermes-single-call-v1",
+        parser_id=_V6_PARSER_ID if expected_dataset in _V6_DATASET_VERSIONS else _PARSER_ID,
         evaluator_id=bundle.bundle.evaluator_id,
         seed=0,
         split_task_counts={split.value: split_evidence[split].task_count for split in FormalSplit},

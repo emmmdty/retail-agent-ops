@@ -149,3 +149,43 @@ def test_version_names_are_mutually_exclusive() -> None:
 def test_v6_builder_is_deterministic(v6_task_set) -> None:
     rebuilt = build_v6_task_set(_V6_VERSION, 0)
     assert rebuilt == v6_task_set
+
+
+# ---------------------------------------------------------------------------
+# manifest 层：v6 冻结清单携带 v2 parser_id；v5 清单保持 v1
+# ---------------------------------------------------------------------------
+
+
+def test_v6_freeze_round_trip_binds_v2_parser_id(tmp_path: Path, v6_task_set) -> None:
+    """v6 清单在写入侧即钉 hermes-single-call-v2-unterminated，且可完整回读。"""
+    from veritool_rl.retail_ops.build.formal_manifests import (
+        load_verified_formal_dataset,
+        write_formal_task_set,
+    )
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    private_dir = tmp_path / "v6-private"
+    public_dir = tmp_path / "v6-public"
+    write_formal_task_set(v6_task_set, bundle, private_dir, public_dir)
+    verified = load_verified_formal_dataset(public_dir)
+    assert verified.receipt.dataset_version == _V6_VERSION
+    assert verified.receipt.parser_id == "hermes-single-call-v2-unterminated"
+    dev_manifest = load_verified_formal_dataset(public_dir).dev_manifest
+    assert dev_manifest.parser_id == "hermes-single-call-v2-unterminated"
+
+
+def test_v5_freeze_receipt_keeps_v1_parser_id(tmp_path: Path) -> None:
+    """v5/v4/v1 清单的 parser_id 逐字节不变（V6-2b 不触碰冻结证据口径）。"""
+    from veritool_rl.retail_ops.build.formal_manifests import (
+        load_verified_formal_dataset,
+        write_formal_task_set,
+    )
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    task_set = build_v5_task_set(_V5_VERSION, 0)
+    private_dir = tmp_path / "v5-private"
+    public_dir = tmp_path / "v5-public"
+    write_formal_task_set(task_set, bundle, private_dir, public_dir)
+    verified = load_verified_formal_dataset(public_dir)
+    assert verified.receipt.dataset_version == _V5_VERSION
+    assert verified.receipt.parser_id == "hermes-single-call-v1"
