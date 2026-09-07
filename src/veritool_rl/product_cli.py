@@ -74,9 +74,9 @@ from veritool_rl.retail_ops.build.teacher_data import (
     write_teacher_checkpoint,
 )
 from veritool_rl.retail_ops.build.teacher_route import TeacherRouteSnapshot, load_teacher_route
-from veritool_rl.retail_ops.domain.bundle import load_bundle
+from veritool_rl.retail_ops.domain.bundle import LoadedRetailOpsBundle, load_bundle
 from veritool_rl.retail_ops.domain.environment import RetailOpsEnv
-from veritool_rl.retail_ops.domain.formal_tasks import build_formal_task_set
+from veritool_rl.retail_ops.domain.formal_tasks import FormalTaskRecord, build_formal_task_set
 from veritool_rl.retail_ops.domain.policy_boundary_phrasing_tasks import (
     POLICY_BOUNDARY_PHRASING_DATASET_VERSION,
 )
@@ -927,6 +927,47 @@ def _default_teacher_client_factory(route: TeacherRouteSnapshot, api_key: str) -
     return OpenAICompatibleTeacherClient.from_route(route, api_key, default_headers=extra_headers)
 
 
+def _assert_request_reasons_within_tool_enums(
+    records: Sequence[FormalTaskRecord], bundle: LoadedRetailOpsBundle
+) -> None:
+    """采集前自查（V6-3-2 预注册断言；PITFALLS #26 教训前移）。
+
+    请求文本里「用户陈述的理由」必须落在该任务 gold 将要调用的工具**自己的**
+    reason 枚举域内。缺陷形状（rtc_stepwise 把退款枚举写进取消请求）在这里
+    直接拒绝——比采完 588 条再发现 15 条失败便宜一个数量级。枚举从 bundle
+    工具 schema 读取，不硬编码；请求不含「原因是 」从句的任务一律放行
+    （口径 A 的事实从句是自由文本，不存在枚举域问题）。
+    """
+    reason_enums: dict[str, set[str]] = {}
+    for tool in bundle.tools:
+        properties = tool.parameters.get("properties")
+        reason_schema = properties.get("reason") if isinstance(properties, dict) else None
+        enum = reason_schema.get("enum") if isinstance(reason_schema, dict) else None
+        if isinstance(enum, list):
+            reason_enums[tool.name] = {str(value) for value in enum}
+
+    for record in records:
+        request = record.task.user_request
+        if "原因是 " not in request:
+            continue
+        # reason 从句在第一个标点处结束（如 cancel_recovery 的「；临时失败时重试一次」）。
+        tail = request.split("原因是 ", 1)[1]
+        stated = re.split(r"[，。；;,]", tail, maxsplit=1)[0].strip()
+        gold_reason_tools = sorted(
+            {call.name for call in record.task.expected_calls if "reason" in call.arguments}
+        )
+        allowed: set[str] = set()
+        for name in gold_reason_tools:
+            allowed |= reason_enums.get(name, set())
+        if stated not in allowed:
+            raise ValueError(
+                "采集前自查失败：请求陈述的 reason 不在 gold 工具枚举域内 "
+                f"(task_id={record.task.task_id}, scenario={record.task.scenario.value}, "
+                f"stated={stated!r}, gold_reason_tools={gold_reason_tools}, "
+                f"allowed={sorted(allowed)})"
+            )
+
+
 def _run_teacher_collect(
     args: argparse.Namespace,
     config: dict[str, Any],
@@ -962,6 +1003,10 @@ def _run_teacher_collect(
     private_root = args.input_dir
     train_records = load_formal_split(dataset, "train", private_root / "train.jsonl")
     manifest_sha256 = _manifest_content_sha256(dataset.train_manifest)
+
+    # PITFALLS #26 教训前移：任何 API 调用之前，先机器断言请求陈述的
+    # reason 落在 gold 工具的枚举域内（缺陷形状在这里拒绝，不在采集后返工）。
+    _assert_request_reasons_within_tool_enums(train_records, bundle)
 
     # 到这里为止全部校验都不依赖环境变量；只有真正要构造 client 时才读取。
     env = environ if environ is not None else os.environ

@@ -189,3 +189,52 @@ def test_v5_freeze_receipt_keeps_v1_parser_id(tmp_path: Path) -> None:
     verified = load_verified_formal_dataset(public_dir)
     assert verified.receipt.dataset_version == _V5_VERSION
     assert verified.receipt.parser_id == "hermes-single-call-v1"
+
+
+# ---------------------------------------------------------------------------
+# 采集前枚举域断言（PITFALLS #26 教训前移，V6-3-2 预注册断言）
+# ---------------------------------------------------------------------------
+
+
+def test_request_reason_enum_assertion_accepts_the_v6_train_face() -> None:
+    """v6 冻结 train 588 条全部通过采集前自查（rtc_stepwise 请求已与 gold 同源）。"""
+    from veritool_rl.product_cli import _assert_request_reasons_within_tool_enums
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    task_set = build_v6_task_set(_V6_VERSION, 0)
+    _assert_request_reasons_within_tool_enums(list(task_set.train), bundle)
+
+
+def test_request_reason_enum_assertion_rejects_the_v5_defective_shape() -> None:
+    """同一断言在 v5 train 面上必须失败——它能在采集前抓住 PITFALLS #26 缺陷。"""
+    import pytest as _pytest
+
+    from veritool_rl.product_cli import _assert_request_reasons_within_tool_enums
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    task_set = build_v5_task_set(_V5_VERSION, 0)
+    with _pytest.raises(ValueError, match="采集前自查失败"):
+        _assert_request_reasons_within_tool_enums(list(task_set.train), bundle)
+
+
+def test_request_reason_enum_assertion_allows_cancel_enum_rotations() -> None:
+    """v4_20260822（无 stepwise）的 cancel 轮转 reason 全部落在 cancel 枚举域内。"""
+    from veritool_rl.product_cli import _assert_request_reasons_within_tool_enums
+    from veritool_rl.retail_ops.domain.formal_tasks import build_v4_task_set
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    task_set = build_v4_task_set("retail_ops_v4_20260822", 0)
+    _assert_request_reasons_within_tool_enums(list(task_set.records("train")), bundle)
+
+
+def test_request_reason_enum_assertion_rejects_v4_stepwise_defect() -> None:
+    """v4_20260905 的 rtc_stepwise 缺陷形状同样被采集前断言拒绝（负面锚点）。"""
+    import pytest as _pytest
+
+    from veritool_rl.product_cli import _assert_request_reasons_within_tool_enums
+    from veritool_rl.retail_ops.domain.formal_tasks import build_v4_task_set
+
+    bundle = load_bundle(Path("domains/retail_ops/v4"))
+    task_set = build_v4_task_set("retail_ops_v4_20260905", 0)
+    with _pytest.raises(ValueError, match="采集前自查失败"):
+        _assert_request_reasons_within_tool_enums(list(task_set.records("train")), bundle)
