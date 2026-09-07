@@ -1,0 +1,45 @@
+# V7 迭代（V7-3-1，预注册 task_plan 运行清单 bc1fb01）：train_export —
+# 在 v6 导出（2352 行，bank-v4 同池 paraphrase ×3）之上追加**确定性枚举词请求行**。
+# 干预面 = 只动 train_export（A-0 裁定 1）：dataset_version 沿用 retail_ops_v6_20260907，
+# teacher 证据复用 teacher-v6-001（不重采），观测 10 与观测 9 同一封存集。
+# 场景 → 模板映射为预注册配额（A-0 裁定 2，测试锁定）：allow 210 / deny 216，
+# 追加 426 行，sft.jsonl 2352 → 2778；reason 一律取该任务 gold 枚举值。
+# 措辞先验：枚举词 deny 请求在 v5/v6 训练分布中不存在（PITFALLS #27 根因链），
+# allow 侧同步覆盖防止「枚举词 ↔ 拒绝」成为新的伪相关。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v6_20260907
+dataset_version: retail_ops_v6_20260907
+teacher_attempt_id: teacher-v6-001
+attempt_id: train-export-v7-001
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+
+# bank_sha256 是声明的期望值：换了池子却忘了改这里，会静默产出另一份训练集。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  per_task: 3
+
+# 枚举词模板族与探针同形（policy_boundary_tasks._user_request），实例只来自
+# train split 任务（order_id/reason 都是任务自身的 gold 值，与探针实例零重叠）。
+sft_enum_word:
+  scenario_templates:
+    refund_eligible:
+      - "请检查订单 {order_id} 是否能因 {reason} 退款。"
+      - "我想为 {order_id} 申请 {reason} 的退款，请核实。"
+    refund_recovery:
+      - "请检查订单 {order_id} 是否能因 {reason} 退款。"
+      - "我想为 {order_id} 申请 {reason} 的退款，请核实。"
+    refund_denied_window:
+      - "请检查订单 {order_id} 是否能因 {reason} 退款。"
+      - "我想为 {order_id} 申请 {reason} 的退款，请核实。"
+    refund_denied_ownership:
+      - "请检查订单 {order_id} 是否能因 {reason} 退款。"
+      - "我想为 {order_id} 申请 {reason} 的退款，请核实。"
+    refund_denied_duplicate:
+      - "请检查订单 {order_id} 是否能因 {reason} 退款。"
+      - "我想为 {order_id} 申请 {reason} 的退款，请核实。"
+    rtc_stepwise:
+      - "请检查订单 {other_order_id} 是否能因 {reason} 取消。"

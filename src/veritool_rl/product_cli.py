@@ -65,6 +65,7 @@ from veritool_rl.retail_ops.build.phrasing_bank import (
 )
 from veritool_rl.retail_ops.build.teacher_client import OpenAICompatibleTeacherClient, TeacherClient
 from veritool_rl.retail_ops.build.teacher_data import (
+    EnumWordPlan,
     TeacherAttemptEvidence,
     TeacherCollectionCheckpoint,
     TeacherCollectionConfig,
@@ -948,6 +949,21 @@ def _default_teacher_client_factory(route: TeacherRouteSnapshot, api_key: str) -
     return OpenAICompatibleTeacherClient.from_route(route, api_key, default_headers=extra_headers)
 
 
+def _tool_reason_enums(bundle: LoadedRetailOpsBundle) -> dict[str, set[str]]:
+    """工具名 → reason 枚举域。枚举从 bundle 工具 schema 读取，不硬编码。
+
+    采集前自查（V6-3-2）与 v7 枚举词导出共用同一份提取规则，两边不可能漂移。
+    """
+    reason_enums: dict[str, set[str]] = {}
+    for tool in bundle.tools:
+        properties = tool.parameters.get("properties")
+        reason_schema = properties.get("reason") if isinstance(properties, dict) else None
+        enum = reason_schema.get("enum") if isinstance(reason_schema, dict) else None
+        if isinstance(enum, list):
+            reason_enums[tool.name] = {str(value) for value in enum}
+    return reason_enums
+
+
 def _assert_request_reasons_within_tool_enums(
     records: Sequence[FormalTaskRecord], bundle: LoadedRetailOpsBundle
 ) -> None:
@@ -959,13 +975,7 @@ def _assert_request_reasons_within_tool_enums(
     工具 schema 读取，不硬编码；请求不含「原因是 」从句的任务一律放行
     （口径 A 的事实从句是自由文本，不存在枚举域问题）。
     """
-    reason_enums: dict[str, set[str]] = {}
-    for tool in bundle.tools:
-        properties = tool.parameters.get("properties")
-        reason_schema = properties.get("reason") if isinstance(properties, dict) else None
-        enum = reason_schema.get("enum") if isinstance(reason_schema, dict) else None
-        if isinstance(enum, list):
-            reason_enums[tool.name] = {str(value) for value in enum}
+    reason_enums = _tool_reason_enums(bundle)
 
     for record in records:
         request = record.task.user_request
@@ -1234,7 +1244,7 @@ _TRAIN_EXPORT_KEYS = {
 
 def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
     """质量门通过后为全部 240 条 train 任务选定轨迹并导出，绝不读取环境变量。"""
-    _require_config_keys(config, _TRAIN_EXPORT_KEYS)
+    _require_config_keys(config, _TRAIN_EXPORT_KEYS, optional=frozenset({"sft_enum_word"}))
     if args.input_dir is None:
         raise ValueError("train_export 需要 --input_dir 指向 formal_freeze 的私有根目录")
 
@@ -1247,8 +1257,10 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
     sft_terminal_response = _sft_terminal_response(config)
     sft_system_prompt_sha256 = _sft_system_prompt_sha256(config)
     sft_paraphrase = _sft_paraphrase_plan(config, args.input_dir)
+    sft_enum_word = _sft_enum_word_plan(config)
 
     bundle = load_bundle(bundle_dir)
+    tool_reason_enums = _tool_reason_enums(bundle) if sft_enum_word is not None else None
     dataset = load_verified_formal_dataset(public_dir)
     if dataset.receipt.dataset_version != dataset_version:
         raise ValueError(
@@ -1285,6 +1297,8 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         sft_terminal_response=sft_terminal_response,
         sft_system_prompt_sha256=sft_system_prompt_sha256,
         sft_paraphrase=sft_paraphrase,
+        sft_enum_word=sft_enum_word,
+        tool_reason_enums=tool_reason_enums,
     )
 
     create_output_dir(args.output_dir)
@@ -1301,6 +1315,7 @@ def _run_train_export(args: argparse.Namespace, config: dict[str, Any]) -> None:
         sft_terminal_response=sft_terminal_response,
         sft_system_prompt_sha256=sft_system_prompt_sha256,
         sft_paraphrase=sft_paraphrase,
+        sft_enum_word=sft_enum_word,
     )
 
 
@@ -2055,6 +2070,23 @@ def _sft_paraphrase_plan(config: dict[str, Any], private_root: Path) -> Paraphra
     return load_paraphrase_plan(
         private_root / bank_relpath, declared_sha256=declared, per_task=per_task
     )
+
+
+def _sft_enum_word_plan(config: dict[str, Any]) -> EnumWordPlan | None:
+    """读取 v7 的枚举词导出声明。键缺省或 `null` 表示不做枚举词覆盖。
+
+    结构校验（场景白名单、模板占位符、非空模板集）在 `EnumWordPlan` 构造时
+    统一执行；reason 的枚举域核对在导出渲染时逐任务执行（枚举从 bundle 读取）。
+    """
+    value = config.get("sft_enum_word")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("sft_enum_word 必须是 mapping 或 null")
+    templates = value.get("scenario_templates")
+    if not isinstance(templates, dict) or not templates:
+        raise ValueError("sft_enum_word.scenario_templates 必须是非空 mapping")
+    return EnumWordPlan(scenario_templates=templates)
 
 
 def _positive_int(config: dict[str, Any], key: str) -> int:

@@ -890,6 +890,58 @@ def test_train_export_fails_gate_with_no_prior_teacher_evidence(
     assert not (tmp_path / "out").exists()
 
 
+def test_train_export_accepts_the_enum_word_optional_key(workspace: Path, tmp_path: Path) -> None:
+    """v7 的 `sft_enum_word` 走 optional 键：存在即放行，失败发生在质量门而不是键契约。"""
+    from veritool_rl.product_cli import main
+    from veritool_rl.retail_ops.build.teacher_data import TeacherQualityGateError
+
+    config = _train_export_config(
+        teacher_attempt_id="never-ran",
+        sft_enum_word={
+            "scenario_templates": {
+                "refund_eligible": ["请检查订单 {order_id} 是否能因 {reason} 退款。"]
+            }
+        },
+    )
+    config_path = workspace / "export-enum.yaml"
+    _write_yaml(config_path, config)
+
+    with pytest.raises(TeacherQualityGateError):
+        main(
+            [
+                "build",
+                "--config",
+                str(config_path),
+                "--input_dir",
+                str(PRIVATE_REL),
+                "--output_dir",
+                str(tmp_path / "out"),
+            ]
+        )
+
+
+def test_train_export_rejects_invalid_enum_word_spec(workspace: Path, tmp_path: Path) -> None:
+    """坏形状的枚举词声明必须在质量门之前报清楚，而不是等到导出中途。"""
+    from veritool_rl.product_cli import main
+
+    config = _train_export_config(teacher_attempt_id="never-ran", sft_enum_word="yes")
+    config_path = workspace / "export-enum-bad.yaml"
+    _write_yaml(config_path, config)
+
+    with pytest.raises(ValueError, match="sft_enum_word"):
+        main(
+            [
+                "build",
+                "--config",
+                str(config_path),
+                "--input_dir",
+                str(PRIVATE_REL),
+                "--output_dir",
+                str(tmp_path / "out"),
+            ]
+        )
+
+
 # ---------------------------------------------------------------------------
 # formal_dev_base (evaluate)
 # ---------------------------------------------------------------------------

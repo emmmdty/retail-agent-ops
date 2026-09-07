@@ -8,12 +8,13 @@ import os
 import re
 import shutil
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
+from string import Formatter
 from typing import Any, Protocol
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from veritool_rl.core.agent.policy import OraclePolicy, PolicyOutput
 from veritool_rl.core.agent.runner import SYSTEM_PROMPT, run_episode
@@ -536,6 +537,116 @@ ExportResult = tuple[
 ]
 
 
+#: 枚举词导出的场景 → 「该场景请求所指向的工具」。
+#:
+#: allow 侧（eligible/recovery/rtc）该工具就是金标里带 reason 的调用（有测试
+#: 逐任务核对映射诚实性）；deny 侧金标不执行退款，映射指向「被拒绝的那个工具」
+#: ——请求 reason 仍必须落在它的枚举域内（PITFALLS #26 同族检查的导出侧版本）。
+_ENUM_WORD_SCENARIO_TOOLS: dict[TaskScenario, str] = {
+    TaskScenario.REFUND_ELIGIBLE: "refund_order",
+    TaskScenario.REFUND_RECOVERY: "refund_order",
+    TaskScenario.REFUND_DENIED_WINDOW: "refund_order",
+    TaskScenario.REFUND_DENIED_OWNERSHIP: "refund_order",
+    TaskScenario.REFUND_DENIED_DUPLICATE: "refund_order",
+    TaskScenario.RTC_STEPWISE: "cancel_order",
+}
+
+#: 场景 → 模板里必须出现的订单占位符。rtc 的请求实体是第二订单 B
+#: （与 v6 请求文本同一实体，`_task_other_order_id` 提供值）。
+_ENUM_WORD_ORDER_PLACEHOLDER: dict[TaskScenario, str] = {
+    scenario: ("other_order_id" if scenario is TaskScenario.RTC_STEPWISE else "order_id")
+    for scenario in _ENUM_WORD_SCENARIO_TOOLS
+}
+
+_FORMATTER = Formatter()
+
+
+def _template_placeholders(template: str) -> set[str]:
+    return {field for _, field, _, _ in _FORMATTER.parse(template) if field is not None}
+
+
+class EnumWordPlan(StrictModel):
+    """v7 枚举词导出计划：场景 → v1 风格模板集（config 显式声明）。
+
+    行内容 = 该任务既有轨迹（teacher 接受行优先，否则 Oracle 兜底）+ 枚举词
+    请求重渲染——只改首条 user 消息，assistant/tool 内容逐字节不动（与
+    paraphrase 的「改写顾客怎么说、不改 Agent 该做什么」同一纪律）。
+    reason 一律取任务 gold 枚举值（`metadata["reason"]`），渲染前先核对它落在
+    该场景映射工具的 reason 枚举域内（枚举从 bundle 工具 schema 读取，
+    fail-closed，不硬编码词表）。
+
+    `stats` 由 `export_formal_train` 在导出循环后填写（appended_rows /
+    rows_by_scenario），`write_formal_train_export` 读取并落盘 sidecar——
+    启用了计划却拿不到统计时拒绝写盘，防止 sidecar 声称的覆盖与实际行数脱钩。
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    scenario_templates: dict[TaskScenario, tuple[str, ...]]
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        raw = value.get("scenario_templates")
+        if not isinstance(raw, dict) or not raw:
+            raise ValueError("sft_enum_word.scenario_templates 必须是非空 mapping")
+        normalized: dict[TaskScenario, tuple[str, ...]] = {}
+        for key, templates in raw.items():
+            try:
+                scenario = key if isinstance(key, TaskScenario) else TaskScenario(str(key))
+            except ValueError:
+                raise ValueError(f"未知场景: {key!r}") from None
+            if scenario not in _ENUM_WORD_SCENARIO_TOOLS:
+                raise ValueError(f"未知场景: {key!r}")
+            if not isinstance(templates, (list, tuple)) or not templates:
+                raise ValueError(f"{scenario.value} 必须声明至少一个模板")
+            expected = {"reason", _ENUM_WORD_ORDER_PLACEHOLDER[scenario]}
+            for template in templates:
+                if not isinstance(template, str) or not template:
+                    raise ValueError(f"{scenario.value} 的模板必须是非空字符串")
+                fields = _template_placeholders(template)
+                if fields != expected:
+                    raise ValueError(
+                        f"{scenario.value} 的模板占位符必须是 {sorted(expected)}，"
+                        f"实际是 {sorted(fields)}: {template!r}"
+                    )
+            normalized[scenario] = tuple(templates)
+        return {**value, "scenario_templates": normalized}
+
+    def render(self, task: TaskSpec, tool_reason_enums: Mapping[str, set[str]]) -> tuple[str, ...]:
+        """渲染该任务的枚举词请求文本；场景未被覆盖时返回空。
+
+        reason 与订单号都来自任务自身，模板只提供句式——探针措辞族相同、
+        实例不同，且实例只来自 train split（污染红线由调用侧测试断言）。
+        """
+        templates = self.scenario_templates.get(task.scenario)
+        if templates is None:
+            return ()
+        tool = _ENUM_WORD_SCENARIO_TOOLS[task.scenario]
+        reason = task.metadata.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError(f"枚举词行缺少 gold reason: {task.task_id}")
+        allowed: Collection[str] = tool_reason_enums.get(tool, frozenset())
+        if reason not in allowed:
+            raise ValueError(
+                "枚举词请求 reason 不在该场景工具的枚举域内 "
+                f"(task_id={task.task_id}, scenario={task.scenario.value}, "
+                f"tool={tool}, reason={reason!r}, allowed={sorted(allowed)})"
+            )
+        placeholder = _ENUM_WORD_ORDER_PLACEHOLDER[task.scenario]
+        if placeholder == "other_order_id":
+            order_id = _task_other_order_id(task)
+            if not order_id:
+                raise ValueError(f"rtc 场景缺少第二订单号，无法渲染枚举词请求: {task.task_id}")
+        else:
+            order_id = _task_order_id(task)
+        fill = {"reason": reason, placeholder: order_id}
+        return tuple(template.format(**fill) for template in templates)
+
+
 def _resolve_sft_oversample(
     sft_oversample: Mapping[str, int] | None,
     scenario_by_task_id: Mapping[str, str],
@@ -733,6 +844,8 @@ def export_formal_train(
     sft_terminal_response: Sequence[str] | None = None,
     sft_system_prompt_sha256: str | None = None,
     sft_paraphrase: ParaphrasePlan | None = None,
+    sft_enum_word: EnumWordPlan | None = None,
+    tool_reason_enums: Mapping[str, set[str]] | None = None,
 ) -> ExportResult:
     """质量门通过后，为每条任务选一条轨迹并独立 replay 全部导出集合。
 
@@ -759,10 +872,21 @@ def export_formal_train(
     的子类拆分——冻结集合的 12 句模板全是「请核实…」的书面祈使句，模型据此学到
     「表面形式 → 动作」的触发器，换个说法就退回「说完就停」。
     改写文本只取自措辞池的 **`train_aug`** 分片，与两个评测分片逐条互斥。
+
+    `sft_enum_word`（v7）是第五个变量：为覆盖清单里的每条任务追加**配额固定的**
+    枚举词请求行（v1 风格句式、reason = 任务 gold 枚举值；PITFALLS #27 的
+    对症干预——枚举词 deny 请求此前在训练分布中不存在，对它的拒绝泛化是 basin
+    性质）。枚举词行**不随 oversample 重复**（预注册配额是绝对数）；启用时必须
+    同时提供 `tool_reason_enums`（从 bundle 工具 schema 提取，与采集前自查同源），
+    缺失即拒绝导出——静默跳过会产出一份覆盖声明与实际行数脱钩的产物。
     """
     resolved_oversample = _resolve_sft_oversample(sft_oversample, scenario_by_task_id)
     resolved_terminal = _resolve_terminal_response(sft_terminal_response)
     rewrite_prompt = _resolve_system_prompt_rewrite(sft_system_prompt_sha256)
+    if sft_enum_word is not None and tool_reason_enums is None:
+        raise ValueError(
+            "启用 sft_enum_word 必须同时提供 tool_reason_enums（从 bundle 工具 schema 提取）"
+        )
     report = compute_teacher_quality_report(evidences, scenario_by_task_id)
     if not report.passes_gate:
         raise TeacherQualityGateError(
@@ -775,6 +899,8 @@ def export_formal_train(
     train_rows: list[dict[str, Any]] = []
     sft_rows: list[dict[str, Any]] = []
     seen_task_ids: set[str] = set()
+    enum_word_rows: list[dict[str, Any]] = []
+    enum_rows_by_scenario: dict[str, int] = {}
 
     for record in records:
         task_id = record.task.task_id
@@ -825,10 +951,28 @@ def export_formal_train(
                 other_order_id=_task_other_order_id(record.task),
             ):
                 sft_rows.extend(_rewrite_user_request(sft_example, text) for _ in range(repeat))
+        if sft_enum_word is not None:
+            for text in sft_enum_word.render(record.task, tool_reason_enums or {}):
+                enum_word_rows.append(_rewrite_user_request(sft_example, text))
+                scenario_value = record.task.scenario.value
+                enum_rows_by_scenario[scenario_value] = (
+                    enum_rows_by_scenario.get(scenario_value, 0) + 1
+                )
 
     if len(train_rows) != len(records):
         msg = "formal train 导出数量与输入任务数不一致"
         raise ValueError(msg)
+
+    # 枚举词行**统一追加在尾部**（不与既有行交错）：sft.jsonl 的前 N 行与
+    # 未启用枚举词的导出逐字节相同，「既有 2352 行逐字节不变」是前缀级事实，
+    # 可与 v6 导出产物逐行核对，而不是只靠行集合相等。
+    sft_rows.extend(enum_word_rows)
+
+    if sft_enum_word is not None:
+        sft_enum_word.stats = {
+            "appended_rows": sum(enum_rows_by_scenario.values()),
+            "rows_by_scenario": dict(sorted(enum_rows_by_scenario.items())),
+        }
 
     return report, selections, train_rows, sft_rows
 
@@ -916,6 +1060,7 @@ def write_formal_train_export(
     sft_terminal_response: Sequence[str] | None = None,
     sft_system_prompt_sha256: str | None = None,
     sft_paraphrase: ParaphrasePlan | None = None,
+    sft_enum_word: EnumWordPlan | None = None,
 ) -> dict[str, str]:
     """把完整训练数据写到 private ignored root，公开 root 只留聚合质量报告。
 
@@ -979,6 +1124,29 @@ def write_formal_train_export(
                 "phrasing_bank_version": PHRASING_BANK_VERSION if sft_paraphrase else None,
             },
         )
+        if sft_enum_word is not None:
+            # 与 sft_paraphrase.json「总是写」刻意不同：枚举词导出是 v7 新增契约，
+            # 禁用时连文件带哈希键都不落盘——v6 及更早配置的重建产物逐字节不变。
+            if not sft_enum_word.stats:
+                raise ValueError(
+                    "sft_enum_word 缺少导出统计：write_formal_train_export 必须在 "
+                    "export_formal_train 之后调用（stats 由导出循环填写）"
+                )
+            write_json(
+                staging / "sft_enum_word.json",
+                {
+                    "enabled": True,
+                    "scenario_templates": {
+                        scenario.value: list(templates)
+                        for scenario, templates in sorted(sft_enum_word.scenario_templates.items())
+                    },
+                    "scenario_tools": {
+                        scenario.value: _ENUM_WORD_SCENARIO_TOOLS[scenario]
+                        for scenario in sorted(sft_enum_word.scenario_templates)
+                    },
+                    **sft_enum_word.stats,
+                },
+            )
         artifact_hashes = {
             "train.jsonl": sha256_file(staging / "train.jsonl"),
             "sft_paraphrase.json": sha256_file(staging / "sft_paraphrase.json"),
@@ -988,6 +1156,8 @@ def write_formal_train_export(
             "sft_terminal_template.json": sha256_file(staging / "sft_terminal_template.json"),
             "sft_system_prompt.json": sha256_file(staging / "sft_system_prompt.json"),
         }
+        if sft_enum_word is not None:
+            artifact_hashes["sft_enum_word.json"] = sha256_file(staging / "sft_enum_word.json")
         _publish_staging_dir(staging, private_target)
         private_published = True
 
