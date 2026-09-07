@@ -6,7 +6,100 @@
 R0–R10 已完成，质量收口两轮完成，DPO 主线与 B-4/v5 数据重建全链完成；
 阶段状态以 `docs/EXECUTION_PLAN.md` 为准，历史任务摘要在 `progress.md`。
 
-## Current Task: v6 迭代——已收口（2026-09-08，判定 NO-GO 10/12，候选不变）
+## Current Task: v7 迭代——枚举词域覆盖，冲击 v1.3 GO（2026-09-08 起）
+
+执行入口：`docs/handoffs/2026-09-08-v7-wording-coverage-execution-prompt.md`。
+唯一候选方向：把 v1 风格枚举词请求显式纳入训练分布 + 双词域判读（PITFALLS #27
+唯一对症干预）；其它方向（换算法/扩场景/调门禁）不在本轮范围。
+
+### A-0 裁定（2026-09-08，用户逐项确认，已履行）
+
+1. **干预面（核心方案点）**：**只动 train_export，不动任务集**——`write_formal_train_export`
+   追加确定性「v1 风格枚举词请求」行；`dataset_version` 沿用
+   `retail_ops_v6_20260907`，观测 10 与观测 9 **同一封存集**（零重冻结、零 teacher
+   成本）。「重冻结子集」备选被否（全价且丢观测 9 可比性）。
+2. **行数与模板集**：**2 模板变体/任务**——覆盖 deny 三场景（window/ownership/
+   duplicate，模板 T1+T2）+ allow 三场景（eligible/recovery 用 T1+T2、rtc 用 T3）。
+   模板句式（预注册写死）：T1「请检查订单 {order_id} 是否能因 {reason} 退款。」
+   T2「我想为 {order_id} 申请 {reason} 的退款，请核实。」T3（rtc 专用）「请检查订单
+   {other_order_id} 是否能因 {reason} 取消。」；reason 一律取该任务 gold 枚举值
+   （`metadata["reason"]`，与金标调用零 mismatch 已实测）。配额：allow 210
+   （84+84+42）/ deny 216（72×3），追加 426 行，sft.jsonl 2352→2778。
+3. **判读规则**：沿用 v1.3 十二门 + 探针每点 ≥ 0.875，阈值一个字不改；三分支完整
+   划分（见下）；**本预注册先于观测 10 提交**。
+4. **观测 10 的 base 侧**：导出代码变更 → code_commit 变 → **base 必须重跑**
+   （dev/OOD v2/v4/封存四面的配对字段含 code_commit）。teacher 证据复用
+   `teacher-v6-001`（不重采）；phrasing bank 沿用 bank-v4 pin（`aa6ccee…`）。
+
+### 判读规则（v7 正式稿——冻结，一个字不改地用）
+
+1. **GO**：v1.3 十二门全 PASS 且探针 15 偏移每点 ≥ 0.875 → 换候选 `sft-v7-001`
+   （项目首个 v1.3 GO）；对外材料按新口径成对陈述。
+2. **NO-GO**：十二门中任一 FAIL，或探针任一点 < 0.875 → 不换候选（`sft-008`
+   保持）；如实收官；失败门按观测形状**只作事实记录**（不附加「路径穷尽」类机械
+   解读；本分支天然覆盖「11/12 但非绝对门」「探针单点塌方」等全部组合；封存单点
+   翻转属不可消除方差，判 NO-GO 不代表干预失败）；不重跑、不换素材、不向封存集
+   重掷骰子。
+3. **边界组合**：证据不完整 / 配对被拒 / 运行中断等导致判定面不成立 → 升级用户
+   确认，不自动判任何分支。
+
+无论哪种结果：台账（HOLDOUT_LEDGER 观测 10、PROJECT_LOG、EXECUTION_PLAN）同日
+收口；封存结果永远不反馈进开发；发布候选在判读出结果前保持 `sft-008`。
+
+### 运行清单（产物目录逐字声明；`r14-v7` 为本轮命名空间）
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| V7-2 | 枚举词导出实现（TDD，本地 CPU；代码+测试，无评测产物） | （无产物目录） |
+| V7-3-1 | train_export-v7-001（本地 CPU，复用 teacher-v6-001；sft.jsonl = 2352+426 行） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/train-export/train-export-v7-001` + `reports/retail_ops/v1/r14-v7/train-export-001` |
+| V7-3-2 | dev_sft 沿用 v6（dev 任务集未变，`dev-sft-v6-001` 仍有效；仅当导出校验要求重跑时在原目录重建） | （无新产物目录） |
+| V7-4-1 | 训练 `sft-v7-001`（gpu-5090 GPU 0，~40 min；命令清单逐条留痕后执行） | `reports/retail_ops/v1/r14-v7/sft-v7-001` |
+| V7-4-2 | merge → `Qwen3-4B-sft-v7-001-merged`（provenance sidecar，merged_revision 可复算；落在 `models/`，非声明对象） | （无 reports 产物目录） |
+| V7-4-3 | v7 dev 评测：base 重跑 + candidate（配对） | `reports/retail_ops/v1/r14-v7/dev-base-001` / `reports/retail_ops/v1/r14-v7/dev-candidate-001` |
+| V7-4-4 | OOD v2 评测：base 重跑 + candidate（**v7 代码 commit 变 → base 必须重跑**；平铺导出注入 evidence 级 parser_id，v6 先例） | `reports/retail_ops/v1/r14-v7/ood-v2-base-001` / `reports/retail_ops/v1/r14-v7/ood-v2-candidate-001` |
+| V7-4-5 | OOD v4 评测：base 重跑 + candidate（同上） | `reports/retail_ops/v1/r14-v7/ood-v4-base-001` / `reports/retail_ops/v1/r14-v7/ood-v4-candidate-001` |
+| V7-4-6 | 探针评测（−14 曲线是绝对门的先行指标；15 点每点读数进判读） | `reports/retail_ops/v1/r14-v7/probe-candidate-001` |
+| V7-4-7 | 封存 holdout 观测 10：base + candidate（合并形态；同一 `retail_ops_v6_20260907` 封存集） | `reports/retail_ops/v1/r14-v7/holdout-base-010` / `reports/retail_ops/v1/r14-v7/holdout-candidate-010` |
+| V7-4-8 | `release --gate_schema_version 1.3`（OOD 两门证据取 V7-4-4 的 v2 dev 分片平铺导出；v4 为辅助读数；新 `formal-release-010` 同步进 release 报告磁盘守卫豁免清单） | `reports/retail_ops/v1/r14-v7/formal-release-010` |
+
+**输入**：交接 §5（V7-0..V7-4 规格）、`docs/PITFALLS.md` §二 #26/#27、
+`docs/HOLDOUT_LEDGER.md` 观测 9、findings 2026-09-08 各节（塌方读数、根因链、
+V7-1 静态核查）、`src/veritool_rl/retail_ops/build/teacher_data.py`
+（`export_formal_train`/`write_formal_train_export`——注入缝）、
+`src/veritool_rl/retail_ops/domain/policy_boundary_tasks.py`（探针模板族——枚举词
+句式同族来源）、v6 train_export/sft 冻结配置先例。
+**输出**：`sft_enum_word` 导出键（config 显式声明模板集 + 目标场景 + 每任务变体数；
+行数配额精确、allow/deny 平衡、既有 2352 行逐字节不变、请求 reason ∈ gold 工具
+枚举域、deny 行 gold 仍是不退款终局——五条测试锁定）；`train-export-v7-001`
+（2778 行）；`sft-v7-001` + 合并形态；全套评测读数（dev/OOD v2/v4/探针/封存）；
+观测 10 + v1.3 判定落盘。
+**非目标**：不改 v1–v6 冻结契约与既有数据集（`retail_ops_v6_20260907` 冻结三件
+逐字节不动）；探针网格 / OOD v2/v4 分片逐字节不动；不动发布门禁阈值（0 / +0.02 /
+0.70）；不碰 BFCL holdout；bank-005 永不进入评测面；发布候选 `sft-008` 在判读出
+结果前保持不变；不启用 v1.4 配对 schema（观测 10 沿用 1.3）；不新增 teacher 采集；
+不改训练算法/超参形状（步数随行数线性增加是唯一变化）。
+**影响文件**：`src/veritool_rl/retail_ops/build/teacher_data.py`（枚举词行装配 +
+sidecar）、`src/veritool_rl/product_cli.py`（`sft_enum_word` 键解析 + optional
+白名单）、`configs/retail_ops/build/retail_ops_v7_train_export.yaml`（新）、
+`configs/retail_ops/train/retail_ops_v7_sft.yaml`（新，或 v6 sft 配置同目录先例）、
+sealed/eval/release 的 v7 配置（新，沿 v6 形状）、
+`tests/test_retail_ops_v7_enum_word.py`（新）。
+**验收命令**：§验收命令全量（pytest / ruff check / ruff format --check / mypy /
+uv lock --check / git diff --check / qualification chain / audit）；V7-3-1 后另附
+行数与平衡读数；V7-4-8 后附 release.json 三件套与逐门判定。
+
+### 风险（预注册预期段，如实写入）
+
+1. **封存单点翻转的不可消除方差**：绝对门要 pv=0，而观测 9 的 pv=1（0.4%）；
+   重训一次的封存 pv 期望 0–2——这一门存在抽签成分，判 NO-GO 不代表干预失败，
+   如实记录（分支 2 处置，不重跑）。
+2. **过校正（平移）风险**：枚举词 deny 行可能把拒绝泛化到 allow 侧（R7/DPO 机制）
+   ——探针 ALLOW 侧 8 点与 allow 场景枚举词行的平衡配额（210:216）是门内防线。
+3. **练习题污染红线**：枚举词行实例只能来自 train split；任何与探针/OOD 任务实例
+   重合的行都是评测污染，测试必须断言 task_id 级不相交（order_id 集合不相交一并
+   断言；探针可纯 CPU 重建，OOD 分片依赖私有措辞池、沿用既有跳过语义）。
+
+### 上一任务：v6 迭代——已收口（2026-09-08，判定 NO-GO 10/12，候选不变）
 
 **判定与归宿**：观测 9（封存 246 条，v6 口径首观测）candidate（合并形态）
 0.9959（245/246）/pv1/**invalid 0**——`policy_violation_count_max`（1>0）与

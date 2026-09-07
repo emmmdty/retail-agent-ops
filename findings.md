@@ -1,5 +1,39 @@
 # Findings
 
+## 2026-09-08 — V7-1 实现前静态核查：注入缝、配额依据、污染红线数据全部落实（无读数，未占观测）
+
+- **覆盖清单与失败面对齐**：探针 DENY 侧塌方 = window 轴（探针只测 window），OOD v2
+  塌方 = window 0.10 / duplicate 0.00（ownership 1.00 幸存）→ 枚举词行按交接覆盖
+  deny 三场景（window/ownership/duplicate）+ allow 三场景（eligible/recovery/rtc）。✓
+- **注入缝确认**：`export_formal_train`（teacher_data.py:725）主循环内 sft_example
+  构造后（terminal/prompt 变换后、paraphrase 块同层）是枚举词行装配点——同一选定
+  轨迹（teacher 优先 / Oracle 兜底），`_rewrite_user_request` 只改首条 user 消息，
+  assistant/tool 逐字节不动；`write_formal_train_export`（:905）新增
+  `sft_enum_word.json` sidecar（**enabled 时才写并纳入 artifact_hashes**——与
+  sft_paraphrase.json「总是写」刻意不同：v6 导出契约已冻结，老配置重建必须逐字节
+  不变）；`_run_train_export`（product_cli.py:1235）键白名单走
+  `_require_config_keys(..., optional=...)`（v5 max_steps 先例），解析器仿
+  `_sft_paraphrase_plan`。
+- **配额依据（build_v6_task_set(seed=0) 实测）**：train 588 构成 = 目标六场景
+  eligible 42 / recovery 42 / rtc 42 / window 36 / ownership 36 / duplicate 36；
+  金标 reason 与 `metadata["reason"]` 全部一致（0 mismatch）；deny 三场景的
+  metadata reason 在 4 个退款枚举词上分散（window 6/12/8/10、ownership 8/10/8/10、
+  duplicate 10/6/14/6 按 damaged/wrong_item/not_as_described/changed_mind）；
+  rtc 42 条全部 `changed_mind`（cancel 枚举）。**枚举词行 reason 取该任务
+  metadata["reason"]（= gold reason），「reason ∈ gold 工具枚举域」由构造保证**。
+- **污染红线数据支撑**：train order_id 集（1844）与探针 order_id 集（300）**零交集**；
+  task_id 零交集——测试可直接断言集合不相交（探针可纯 CPU 重建；OOD v2/v4 依赖
+  措辞池，属 clean clone 跳过类）。
+- **模板集草案**（探针同族、实例来自 train 任务）：T1「请检查订单 {order_id} 是否能
+  因 {reason} 退款。」T2「我想为 {order_id} 申请 {reason} 的退款，请核实。」
+  T3（rtc 专用）「请检查订单 {other_order_id} 是否能因 {reason} 取消。」——rtc 请求
+  实体是第二订单（`_task_other_order_id` 既有函数），reason=changed_mind 与 gold
+  cancel_other 同源。
+- **配额推算**：每任务 2 模板变体（T1+T2；rtc 仅 T3 一句）→ allow 210
+  （84+84+42）/ deny 216（72×3），追加 426 行，sft.jsonl 2352→2778；按 v6
+  441 步 @ 2352 行线性外推 ≈ 521 步（~40 min GPU）。每任务 1 变体（确定性轮转）
+  → 234 行，allow 126 / deny 108。
+
 ## 2026-09-08 — V6-4 评测窗口：dev 0.9949/pv1、探针 DENY 侧塌方（0.107）——「同源评测面高估」第三次实例，预注册探针门按设计拦下
 
 - **训练**：sft-v6-001（441 步，loss 1.2525→0.0464，曲线校验过）；合并形态
