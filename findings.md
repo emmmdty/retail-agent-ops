@@ -1,5 +1,26 @@
 # Findings
 
+## 2026-09-07 — V6-1 空生成诊断（静态部分）：失败分类被修正——不是空生成，是 tokenizer 边界缺闭合标签；数据侧无杠杆，确定性修复在解析器侧
+
+- **分类修正**：观测 8 两条失败（同 `refund_denied_duplicate`、同第 1 步、同 `get_refund_status`）的
+  `assistant_raw` 实录 = `<tool_call>\n{有效 JSON，35 tokens}<|im_end|>`——**缺 `\n</tool_call>` 闭合标签**，
+  不是「raw_text 为空的空生成」。台账/PITFALLS #25 的「空生成」表述源于观察者把**记录层
+  `raw_text` 字段（全轨迹恒为 null，含成功步）**当成了模型输出；真实输出在 `assistant_raw`。
+- **记录忠实性已验证**：录得字符串经 Qwen3-4B tokenizer 逐 token 复算 = 35，与 `output_tokens` 精确一致——
+  无记录层截断，模型真实地在那里终止。
+- **机制定位（tokenizer 边界退化）**：训练目标里 `}}\n</tool_call>` 分片为合并 token `"​}}\n`；
+  模型在 `}}` 处偶发选择**裸 token `"​}}`**（预训练 JSON 先验的另一种分片边界），离开训练分片路径后
+  `\n</tool_call>` 续写不可达 → 直接 `<|im_end|>`。近僵持 + NF4 噪声决胜负。
+- **上下文条件化的来源**：订单 ID 的数字分片差异改变 `}}` 处局部上下文（BAD 的 ID 逐位切分
+  12 个单字 token，OK 的 ID 有合并片），解释同场景 18 成功 / 2 失败、dev 198 条 0 次、其余 ~520 任务 0 次。
+- **数据侧假设已检验并证伪**：`get_order → get_refund_status` 序列在 sft.jsonl 中有 **100 行**
+  （96 行正是 duplicate 场景）——序列训练充分，缺标签不是数据缺失；「加数据」没有明确杠杆。
+- **对 v6 的含义**：只修 rtc_stepwise 时，观测 9 的 `invalid_call_count=0` 绝对门是抽签——
+  p ≈ 5–11%/同型上下文 × 封存 ~18 个 duplicate 第 1 步 → P(零失败) ≈ 15–40%。
+  **确定性修复 = 解析器协议容忍**（eos 前未闭合 tool_call 且 JSON 有效 → 接受）：属评测语义变更，
+  需用户裁决 + 新 parser_id 版本键控 + 先于观测 9 预注册 + 老证据零影响测试（C4 提案模式）。
+- **纪律注记**：诊断全程只用已录轨迹事实（PITFALLS #25 允许）+ 非封存面数据；未向封存集重掷骰子。
+
 ## 2026-09-07 — V5 观测 8 全链完成：v1.3 判定 NO-GO（11/12 PASS，唯一失败门 invalid_call_count=2），绝对门历史首过
 
 - **封存 holdout 观测 8**（246 条，v5 数据集，max_steps 7）：base 0.5691/pv81；

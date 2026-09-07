@@ -27,6 +27,14 @@ LOG-20260907-01；HOLDOUT_LEDGER 观测 8；RESUME_EVIDENCE §1.11。
 3. **判读规则**：v1.3 十二门 + 探针每点 ≥ 0.875，阈值一个字不改；分支表为下方
    三分支完整划分。**v1.4 配对 schema 不启用**：观测 9 沿用
    `--gate_schema_version 1.3`（v1.4 路径已建，首用时单独决策）。
+4. **（2026-09-07 修订，V6-1 诊断后、任何运行前）缺闭合标签缺陷处置 = 解析器协议
+   容忍**：V6-1 静态诊断证实失败分类为「有效 JSON 缺 `\n</tool_call>` 闭合标签」
+   （非空生成；tokenizer 边界近僵持 + NF4 噪声；数据侧无杠杆，序列训练充分 100 行）。
+   处置：新 parser_id 版本键控，容忍「eos 前未闭合的 tool_call」（剥离 eos 标记后
+   剩余部分**恰好是合法 JSON** 才接受；尾部另有内容仍严格拒绝）；JSON 校验 /
+   mixed / 嵌套守卫全部保留；unterminated 恢复计数进**诊断指标不进门禁**；
+   老证据零影响（报告存 metrics 不存原文、老 config 钉老 parser_id，测试锁定）。
+   修订先于观测 9 提交（v5 修订先例 `b290b16`）。
 
 ### 判读规则（v6 正式稿——冻结，一个字不改地用）
 
@@ -48,6 +56,7 @@ LOG-20260907-01；HOLDOUT_LEDGER 观测 8；RESUME_EVIDENCE §1.11。
 | V6-1a | 空生成静态诊断（本地 CPU：max_seq_len / 停止符 / 解析栈检查 + dev 同 family 提示词导出） | `reports/retail_ops/v1/r13-v6/emptygen-static-001` |
 | V6-1b | 空生成重放诊断（gpu-5090，同权重对 dev 同 family 提示词重放 N 次统计空生成频率；命令逐条确认后执行） | `reports/retail_ops/v1/r13-v6/emptygen-replay-001` |
 | V6-2 | rtc_stepwise 请求修复（TDD：请求 reason ∈ cancel 枚举且与 gold 一致；v4/v5 重建逐位不变；版本键控 v6 生效；代码+测试，无评测产物） | （无产物目录） |
+| V6-2b | 解析器协议容忍（TDD：eos 前未闭合 tool_call 且剥离 eos 后恰为合法 JSON → 接受并携带诊断标记；尾部另有内容 / JSON 非法仍拒绝；老 parser_id 行为逐字节不变；代码+测试，无评测产物） | （无产物目录） |
 | V6-3-1 | formal_freeze v6（本地 CPU）+ 覆盖表落盘验收（沿用 `assert_exact_quotas_v5` 全部断言） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907` + `manifests/retail_ops/v1/retail_ops_v6_20260907` + `reports/retail_ops/v1/r13-v6/coverage-v6-001` |
 | V6-3-smoke | teacher 小样本冒烟（mimo，会话头必设；大规模采集前 1 次直连试探 ~250 tok） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/teacher-collection/teacher-v6-smoke-001`；CLI output_dir 占位 `reports/retail_ops/v1/r13-v6/teacher-smoke-run-000`（流水线不写入） |
 | V6-3-2 | teacher 全量采集（mimo，~588 任务，0.80 分桶门 + **采集前新增断言：请求陈述的 reason/fact 落在该工具枚举域内**） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/teacher-collection/teacher-v6-001`；CLI output_dir 占位 `reports/retail_ops/v1/r13-v6/teacher-run-001`（流水线不写入） |
@@ -66,19 +75,22 @@ LOG-20260907-01；HOLDOUT_LEDGER 观测 8；RESUME_EVIDENCE §1.11。
 `src/veritool_rl/retail_ops/domain/formal_tasks.py` v5 段（`_V5_*` 常量、
 `_v5_bucket_allocation`、`build_v5_task_set`——v6 结构起点）、
 v5 冻结配置先例（`configs/retail_ops/build/retail_ops_v5_formal_freeze.yaml`）。
-**输出**：空生成根因结论 + 是否可修的判定（不可修则残差风险如实进预注册预期段）；
-rtc_stepwise 请求修复（与 gold cancel reason 同源，v4/v5 重建逐位不变）；v6 生成器 +
-`assert_exact_quotas_v6`（沿用 v5 全部断言）+ 覆盖表；teacher 采集（枚举域自查
-前移为采集前断言）；train/dev 导出；`sft-v6-001`；全套评测读数；观测 9 + v1.3
-判定落盘。
+**输出**：空生成根因结论 + 是否可修的判定（已产出：分类修正为缺闭合标签，
+处置=解析器容忍，见 A-0 裁定 4）；rtc_stepwise 请求修复（与 gold cancel reason
+同源，v4/v5 重建逐位不变）；解析器协议容忍（新 parser_id，版本键控，诊断计数
+不进门禁）；v6 生成器 + `assert_exact_quotas_v6`（沿用 v5 全部断言）+ 覆盖表；
+teacher 采集（枚举域自查前移为采集前断言）；train/dev 导出；`sft-v6-001`；全套
+评测读数；观测 9 + v1.3 判定落盘。
 **非目标**：不改 v1–v5 冻结契约与既有数据集；探针网格、OOD v2/v2.2/v2.3/v4 任务集
-逐字节不动；不动发布门禁阈值（0 / +0.02）；不碰 BFCL holdout；空生成的引擎栈修复
-不在本轮捆绑（诊断指向引擎栈则单独评估）；bank-005 永不进入评测面；发布候选
-`sft-008` 在判读出结果前保持不变；不启用 v1.4 配对 schema。
+逐字节不动；不动发布门禁阈值（0 / +0.02）；不碰 BFCL holdout；bank-005 永不进入
+评测面；发布候选 `sft-008` 在判读出结果前保持不变；不启用 v1.4 配对 schema；
+老 parser_id 的解析行为逐字节不变（v1–v5 评测契约的一部分）。
 **影响文件**：`src/veritool_rl/retail_ops/domain/formal_tasks.py`（v6 版本常量 +
 RTC_STEPWISE 请求分支版本键控修复 + v6 生成器）、
+`src/veritool_rl/core/agent/parser.py`（容忍路径，版本键控不动老入口）、
 `src/veritool_rl/retail_ops/build/formal_manifests.py`（v6 登记）、
-sealed/eval config 的 dataset_version 校验、`configs/retail_ops/build/`（v6 冻结配置）、
+sealed/eval config 的 dataset_version 校验与 parser_id 钉定、
+`configs/retail_ops/build/`（v6 冻结配置）、
 teacher 采集枚举域断言（采集侧自查，PITFALLS #26 教训前移）、
 `tests/test_retail_ops_v6_tasks.py`（新）。
 **验收命令**：§验收命令全量（pytest / ruff check / ruff format --check / mypy /
