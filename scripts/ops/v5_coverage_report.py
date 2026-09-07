@@ -31,10 +31,15 @@ from veritool_rl.retail_ops.domain.formal_tasks import (  # noqa: E402
     _v5_scenario_bucket_keys,
     build_formal_task_set,
     build_v5_task_set,
+    build_v6_task_set,
 )
 
 V1_VERSION = "retail_ops_v1_r2_20260722"
 V5_VERSION = "retail_ops_v5_20260906"
+V6_VERSION = "retail_ops_v6_20260907"
+
+#: 重建版构建器（v6 与 v5 结构配额完全相同，覆盖语义共用）。
+REBUILT_BUILDERS = {V5_VERSION: build_v5_task_set, V6_VERSION: build_v6_task_set}
 
 
 def _bucket_key(task: Any) -> int:
@@ -87,33 +92,40 @@ def _coverage(task_set: Any) -> dict[str, Any]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    if len(args) not in (1, 2):
         print(__doc__)
         return 2
-    out_dir = Path(sys.argv[1])
+    out_dir = Path(args[0])
+    rebuilt_version = args[1] if len(args) == 2 else V5_VERSION
+    builder = REBUILT_BUILDERS.get(rebuilt_version)
+    if builder is None:
+        print(f"未登记的重建版本: {rebuilt_version}，可选 {sorted(REBUILT_BUILDERS)}")
+        return 2
+    rebuilt_label = rebuilt_version.split("_")[2]
     v1 = _coverage(build_formal_task_set(V1_VERSION, 0))
-    v5 = _coverage(build_v5_task_set(V5_VERSION, 0))
+    rebuilt = _coverage(builder(rebuilt_version, 0))
     ratios = {
         scenario: {
             "v1": v1[scenario].get("margin_ge10_share_ratio_train_vs_holdout"),
-            "v5": v5[scenario].get("margin_ge10_share_ratio_train_vs_holdout"),
+            rebuilt_label: rebuilt[scenario].get("margin_ge10_share_ratio_train_vs_holdout"),
         }
-        for scenario in v5
-        if "margin_ge10_share_ratio_train_vs_holdout" in v5[scenario]
+        for scenario in rebuilt
+        if "margin_ge10_share_ratio_train_vs_holdout" in rebuilt[scenario]
     }
     payload = {
-        "dataset_versions": {"baseline": V1_VERSION, "rebuilt": V5_VERSION},
+        "dataset_versions": {"baseline": V1_VERSION, "rebuilt": rebuilt_version},
         "margin_ge10_share_ratio": ratios,
         "v1": v1,
-        "v5": v5,
+        rebuilt_label: rebuilt,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / "coverage.json"
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"coverage written to {out}")
-    print("margin>=10 share ratio (train vs holdout), v1 -> v5:")
+    print(f"margin>=10 share ratio (train vs holdout), v1 -> {rebuilt_label}:")
     for scenario, pair in ratios.items():
-        print(f"  {scenario:24s} {pair['v1']} -> {pair['v5']}")
+        print(f"  {scenario:24s} {pair['v1']} -> {pair[rebuilt_label]}")
     return 0
 
 
