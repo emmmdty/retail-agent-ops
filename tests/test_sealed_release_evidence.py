@@ -511,7 +511,11 @@ def test_committed_holdout_configs_match_the_cli_contract(name: str, candidate: 
         (REPO_ROOT / "configs/retail_ops/evaluate" / name).read_text(encoding="utf-8")
     )
     expected_keys = _FORMAL_HOLDOUT_CANDIDATE_KEYS if candidate else _FORMAL_HOLDOUT_BASE_KEYS
-    assert set(config) == expected_keys
+    # B-4/v5 起 `max_steps` 是版本化的可选键：v5 配置必须声明（validator 要求 7），
+    # v1–v4 配置必须不声明（默认 5）。版本条件断言比「键集合逐字节相同」更强。
+    is_v5 = config["dataset_version"].startswith("retail_ops_v5_")
+    expected = expected_keys | {"max_steps"} if is_v5 else expected_keys - {"max_steps"}
+    assert set(config) == expected
 
     sealed = SealedEvaluationConfig(
         dataset_version=config["dataset_version"],

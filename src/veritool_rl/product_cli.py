@@ -1331,7 +1331,7 @@ def _run_formal_dev_base(
     git 状态；`main()` 走的默认路径使用模块级 `_default_generation_backend`/
     `_default_hardware_provider`/`_current_code_commit`（后者会拒绝脏工作树）。
     """
-    _require_config_keys(config, _FORMAL_DEV_BASE_KEYS)
+    _require_config_keys(config, _FORMAL_DEV_BASE_KEYS, optional=frozenset({"max_steps"}))
     if args.seed != 0:
         raise ValueError("formal_dev_base 冻结 seed=0，收到 --seed 与之不一致")
 
@@ -1439,7 +1439,7 @@ def _run_formal_dev_candidate(
     这条流水线刻意与 `_run_formal_dev_base` 保持同样的 dataset/manifest 校验顺序：
     只有两次运行经过同一套守卫，`compare_dev_runs` 的 delta 才能归因于 adapter。
     """
-    _require_config_keys(config, _FORMAL_DEV_CANDIDATE_KEYS)
+    _require_config_keys(config, _FORMAL_DEV_CANDIDATE_KEYS, optional=frozenset({"max_steps"}))
     if args.seed != 0:
         raise ValueError("formal_dev_candidate 冻结 seed=0，收到 --seed 与之不一致")
 
@@ -1567,7 +1567,7 @@ def _run_formal_holdout(
         expected_keys = _FORMAL_HOLDOUT_MERGED_KEYS
     else:
         expected_keys = _FORMAL_HOLDOUT_BASE_KEYS
-    _require_config_keys(config, expected_keys)
+    _require_config_keys(config, expected_keys, optional=frozenset({"max_steps"}))
     if args.seed != 0:
         raise ValueError(f"{pipeline} 冻结 seed=0，收到 --seed 与之不一致")
 
@@ -2077,10 +2077,19 @@ def _resolve_within(root: Path, *parts: str) -> Path:
     return target
 
 
-def _require_config_keys(config: dict[str, Any], expected: set[str]) -> None:
-    if set(config) != expected:
+def _require_config_keys(
+    config: dict[str, Any], expected: set[str], *, optional: frozenset[str] = frozenset()
+) -> None:
+    """精确键契约 + 显式可选键：`expected` 必须全在，`actual` 不得越出 `expected ∪ optional`。
+
+    可选键的**版本条件强制**不由这里做（例如 `max_steps` 是否必须声明由
+    `BaseEvaluationConfig` 的 validator 按 dataset_version 钉死），这里只放行键的存在性。
+    """
+    actual = set(config)
+    if not expected <= actual or actual - expected - optional:
         raise ValueError(
-            f"配置字段不符合命令契约: expected={sorted(expected)}, actual={sorted(config)}"
+            f"配置字段不符合命令契约: expected={sorted(expected)}, "
+            f"optional={sorted(optional)}, actual={sorted(actual)}"
         )
 
 
