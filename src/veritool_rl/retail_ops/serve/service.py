@@ -215,7 +215,13 @@ def create_formal_app(
     _require_backend_matches_deployment(backend, model, adapter)
 
     policy_id = release.candidate_policy_id if deploy_candidate else release.base_policy_id
-    policy = QwenPolicy(backend, policy_id, release.generation.max_new_tokens)
+    # 服务与证据同解析器口径：release 清单携带判定时的 parser_id（V6-2b 起版本化）。
+    policy = QwenPolicy(
+        backend,
+        policy_id,
+        release.generation.max_new_tokens,
+        parser_id=release.parser_id,
+    )
     tasks = load_built_tasks(build_dir)
     allowed_tools = tuple(sorted(tool.name for tool in bundle.tools))
     episode_lock = threading.BoundedSemaphore(_MAX_CONCURRENT_EPISODES)

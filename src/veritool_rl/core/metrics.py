@@ -122,6 +122,7 @@ def compute_metrics(
     tool_denominator = 0
     correct_arguments = 0
     argument_denominator = 0
+    unterminated = 0
 
     for trajectory in trajectories:
         actual_calls = [step.tool_call for step in trajectory.steps if step.tool_call is not None]
@@ -151,6 +152,14 @@ def compute_metrics(
                 step.parse_error is not None
                 or (step.observation is not None and step.observation.error_code in _INVALID_CODES)
             )
+            # V6-2b 诊断计数（不进门禁）：v2 解析器恢复的「eos 前未闭合 tool_call」。
+            # 由 assistant_raw 派生，不触碰 Trajectory schema，老证据加载零影响。
+            if (
+                step.tool_call is not None
+                and "<tool_call>" in step.assistant_raw
+                and "</tool_call>" not in step.assistant_raw
+            ):
+                unterminated += 1
 
     recovery = [
         trajectory.success
@@ -181,6 +190,7 @@ def compute_metrics(
         "invalid_output_count": format_errors,
         "invalid_call_count": invalid,
         "invalid_call_rate": invalid / attempted if attempted else 0.0,
+        "unterminated_call_count": unterminated,
         "format_error_rate": (
             format_errors / total_steps
             if (total_steps := sum(len(t.steps) for t in trajectories))
@@ -334,6 +344,7 @@ def _empty_metrics() -> dict[str, Any]:
         "invalid_output_count": 0,
         "invalid_call_count": 0,
         "invalid_call_rate": 0.0,
+        "unterminated_call_count": 0,
         "format_error_rate": 0.0,
         "tool_selection_accuracy": 0.0,
         "argument_accuracy": 0.0,

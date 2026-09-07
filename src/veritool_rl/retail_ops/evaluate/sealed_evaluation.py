@@ -322,7 +322,13 @@ def evaluate_authorized_holdout(
         verify_local_model_files(adapter_dir, adapter.file_sha256)
     _require_backend_matches_pin(backend, model_dir, config, expected_adapter=adapter_dir)
 
-    policy = QwenPolicy(backend, _policy_id(config), config.generation.max_new_tokens)
+    # 解析器由 holdout receipt 单源钉定（receipt 承载冻结清单的 parser_id）。
+    policy = QwenPolicy(
+        backend,
+        _policy_id(config),
+        config.generation.max_new_tokens,
+        parser_id=receipt.parser_id,
+    )
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
     trajectories, replayed = execute_formal_records(

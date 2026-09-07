@@ -343,6 +343,16 @@ class FormalTaskSet(StrictModel):
 
         self._assert_stratified_coverage()
 
+    def assert_exact_quotas_v6(self) -> None:
+        """Verify the v6 contract: v5 结构配额 + rtc_stepwise 请求修复（单变量）。
+
+        v6（`retail_ops_v6_20260907`）与 v5 的总量、类别配额、分层覆盖、margin 0
+        三分与指纹强度完全相同——修复只改 `rtc_stepwise` 的请求文本（及其指纹），
+        不动任何结构契约，因此这里逐字沿用 v5 的全部断言；请求文本的修复由
+        `tests/test_retail_ops_v6_tasks.py` 锁定。
+        """
+        self.assert_exact_quotas_v5()
+
     def _assert_stratified_coverage(self) -> None:
         """分层验收：全档覆盖 + margin 0 三分 + 远超期占比比值。"""
         for scenario in _V4_SCENARIOS:
@@ -1444,15 +1454,45 @@ def _v5_user_request(
 
 
 def build_v5_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
-    """Build the v5 difficulty-stratified task set (B-4, `retail_ops_v5_20260906`).
+    """Build the v5 difficulty-stratified task set (B-4, `retail_ops_v5_20260906`)."""
+    if dataset_version not in _V5_VERSIONS:
+        raise ValueError(f"dataset_version 不是 v5 版本: {dataset_version}")
+    return _build_v5_stratified_task_set(dataset_version, seed)
+
+
+_V6_VERSIONS = frozenset({"retail_ops_v6_20260907"})
+
+
+def build_v6_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
+    """Build the v6 task set (`retail_ops_v6_20260907`): v5 结构 + rtc_stepwise 请求修复。
+
+    单变量修复（交接 V6-2、PITFALLS #26）：v5 结构、配额与分层切分逐字节同构，
+    唯一差异是 `rtc_stepwise` 辅助任务的请求 reason 与 gold `cancel_other` 同源
+    （`_V4_CANCEL_REASONS[0]`），不再从退款枚举轮转。版本键控：v4/v5 的重建路径
+    不受影响（它们的请求文本是冻结数据的一部分，缺陷形状由测试负面锁定）。
+    """
+    if dataset_version not in _V6_VERSIONS:
+        raise ValueError(f"dataset_version 不是 v6 版本: {dataset_version}")
+    return _build_v5_stratified_task_set(
+        dataset_version,
+        seed,
+        stepwise_request_reason=_V4_CANCEL_REASONS[0],
+    )
+
+
+def _build_v5_stratified_task_set(
+    dataset_version: str,
+    seed: int,
+    *,
+    stepwise_request_reason: str | None = None,
+) -> FormalTaskSet:
+    """分层切分构建主体（v5 与 v6 共用；v6 只覆盖 stepwise 请求 reason）。
 
     分层切分键：难度档 = margin 值（allow 侧 0–14 八档；deny 侧 1–14 七档；
     状态轴场景 = 状态下标；cancel = v4 十档）。档内按 `sha256(family)` 排序，
     按档级配数（`_v5_bucket_allocation`）确定性分配 train/dev/holdout——
     无人工挑选，消除 v1 哈希切分的 5.0× 难度偏移。
     """
-    if dataset_version not in _V5_VERSIONS:
-        raise ValueError(f"dataset_version 不是 v5 版本: {dataset_version}")
 
     records: dict[FormalSplit, list[FormalTaskRecord]] = {split: [] for split in FormalSplit}
     rtc_train_specs: list[dict[str, Any]] = []
@@ -1514,6 +1554,8 @@ def build_v5_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
 
     # 方案乙沿袭：每个 rtc train family 派生一个 rtc_stepwise 辅助 family
     # （同 state/context/reason，gold = 查 B + 取消 B），只进 train。
+    # v6 修复：请求 reason 覆写为 gold 同源的 cancel 枚举值（PITFALLS #26），
+    # 覆写发生在指纹计算之前，指纹如实反映最终内容。
     for family in rtc_train_specs:
         stepwise_family = _v5_family_spec(
             dataset_version,
@@ -1522,6 +1564,8 @@ def build_v5_task_set(dataset_version: str, seed: int) -> FormalTaskSet:
             int(family["state_variant"]),
             int(family["context_variant"]),
         )
+        if stepwise_request_reason is not None:
+            stepwise_family["reason"] = stepwise_request_reason
         stepwise_fingerprint = _sha256({"family": stepwise_family})
         for variant_index in range(2):
             task = _materialize_task(

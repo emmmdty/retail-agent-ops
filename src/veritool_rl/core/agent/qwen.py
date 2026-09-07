@@ -7,13 +7,13 @@ import os
 import re
 import stat
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
 
 from pydantic import ConfigDict, Field
 
-from veritool_rl.core.agent.parser import parse_qwen_response
+from veritool_rl.core.agent.parser import parse_qwen_response, parse_qwen_response_v2
 from veritool_rl.core.agent.policy import PolicyOutput
 from veritool_rl.core.artifacts import canonical_json
 from veritool_rl.core.envs.base import ToolSchema
@@ -23,6 +23,24 @@ from veritool_rl.core.trajectory.schema import StrictModel
 _MODEL_FILE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{7,64}$")
 _HASH_CHUNK_SIZE = 1024 * 1024
+
+#: 解析器版本注册表。v1 是 v1–v5 冻结评测契约的一部分（未闭合一律拒绝）；
+#: v2 只额外容忍「eos 前未闭合且剥离 eos 后恰为合法 JSON」的调用
+#: （V6-2b，预注册 A-0 裁定 4）。未知 id 一律 fail-closed。
+PARSERS_BY_ID: Final[dict[str, Callable[[str], PolicyOutput]]] = {
+    "hermes-single-call-v1": parse_qwen_response,
+    "hermes-single-call-v2-unterminated": parse_qwen_response_v2,
+}
+DEFAULT_PARSER_ID: Final[str] = "hermes-single-call-v1"
+
+
+def parser_for_id(parser_id: str) -> Callable[[str], PolicyOutput]:
+    """按 id 取解析函数；未知 id 拒绝，不给静默回落。"""
+    parser = PARSERS_BY_ID.get(parser_id)
+    if parser is None:
+        msg = f"未知 parser_id: {parser_id!r}，可选 {sorted(PARSERS_BY_ID)}"
+        raise ValueError(msg)
+    return parser
 
 
 Quantization = Literal["nf4", "bf16"]
@@ -220,9 +238,12 @@ class QwenPolicy:
         model_name: str,
         max_new_tokens: int = 256,
         adapter_path: str | None = None,
+        *,
+        parser_id: str = DEFAULT_PARSER_ID,
     ) -> None:
         self._backend = backend
         self._max_new_tokens = max_new_tokens
+        self._parser = parser_for_id(parser_id)
         suffix = f"+{adapter_path}" if adapter_path else ""
         self.name = f"qwen:{model_name}{suffix}"
 
@@ -236,7 +257,7 @@ class QwenPolicy:
             [tool.to_transformers() for tool in tools],
             self._max_new_tokens,
         )
-        parsed = parse_qwen_response(generated.text)
+        parsed = self._parser(generated.text)
         return parsed.model_copy(
             update={
                 "latency_ms": generated.latency_ms,

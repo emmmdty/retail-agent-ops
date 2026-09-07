@@ -84,6 +84,9 @@ class OodEvaluationConfig(StrictModel):
     code_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
     bootstrap_samples: Literal[1000] = 1000
     episode_timeout: float = Field(default=30.0, gt=0.0)
+    #: 解析器版本（V6-2b）。OOD/探针评测不经过 formal manifest，这里显式钉定；
+    #: 默认 v1 与全部既有 OOD 配置逐字节兼容，v6 配置显式携带 v2。
+    parser_id: str = "hermes-single-call-v1"
 
     @property
     def config_sha256(self) -> str:
@@ -125,6 +128,9 @@ class OodRunEvidence(StrictModel):
     #: 取值为 None 时不参与内容哈希，因此已有 OOD 证据复算逐位不变。
     inference_engine: Literal["transformers", "vllm"] | None = None
     runtime_env_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    #: 解析器版本（V6-2b）。None = 未记录（v6 之前的全部 OOD 证据），
+    #: 取值为 None 时不参与内容哈希，老证据复算逐位不变。
+    parser_id: str | None = None
 
     @model_validator(mode="after")
     def _runtime_provenance_is_all_or_nothing(self) -> OodRunEvidence:
@@ -182,7 +188,13 @@ def evaluate_ood(
     _require_backend_matches_pin(backend, model_dir, config, expected_adapter=adapter_dir)
 
     policy_id = _policy_id(config)
-    policy = QwenPolicy(backend, policy_id, config.generation.max_new_tokens)
+    # parser_id 由 QwenPolicy 构造即校验（未知 id fail-closed），不允许跑完才发现。
+    policy = QwenPolicy(
+        backend,
+        policy_id,
+        config.generation.max_new_tokens,
+        parser_id=config.parser_id,
+    )
 
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
@@ -220,6 +232,7 @@ def evaluate_ood(
             run_id=_ID_PLACEHOLDER,
             inference_engine=inference_engine,
             runtime_env_sha256=runtime_env_sha256,
+            parser_id=config.parser_id,
             dataset_version=manifest.dataset_version,
             generator_id=manifest.generator_id,
             bundle_sha256=bundle.bundle_sha256,

@@ -72,3 +72,36 @@ def parse_qwen_response(raw_text: str) -> PolicyOutput:
     if not final:
         return PolicyOutput(raw_text=raw_text, parse_error="empty_response")
     return PolicyOutput(raw_text=raw_text, final_response=final)
+
+
+_EOS_MARKERS = ("<|im_end|>", "<|im_start|>")
+
+
+def parse_qwen_response_v2(raw_text: str) -> PolicyOutput:
+    """`hermes-single-call-v2-unterminated`：在 v1 之上容忍 eos 前未闭合的 tool_call。
+
+    诊断依据（findings 2026-09-07「V6-1 空生成诊断」）：观测 8 两次
+    `invalid_tool_call_json` 的实录是「有效 JSON 缺 `\\n</tool_call>` 闭合标签」——
+    tokenizer 边界退化（`"}}\\n` 合并 token 与裸 `"​}}` 的近僵持），JSON 本身完整。
+    容忍条件取**最窄**：恰好一个 `<tool_call>` 开标签、无闭标签、开标签前无散文、
+    剥离 eos 标记后剩余部分**恰好是合法 JSON**。其余一切（闭合但 JSON 非法、
+    尾部散文、多重开标签、前置散文）维持 v1 的拒绝判定；v1 的全部正常路径
+    （闭合调用 / 终局答复 / 空响应）逐字节不变。
+    """
+    result = parse_qwen_response(raw_text)
+    if result.parse_error != "invalid_tool_call_json" or "</tool_call>" in raw_text:
+        return result
+    head, marker, tail = raw_text.partition("<tool_call>")
+    if not marker or head.strip() or "<tool_call>" in tail:
+        return result
+    payload = tail
+    for eos in _EOS_MARKERS:
+        payload = payload.split(eos, 1)[0]
+    payload = payload.strip()
+    if not payload:
+        return result
+    try:
+        call = ToolCall.model_validate(json.loads(payload))
+    except (json.JSONDecodeError, ValidationError, TypeError):
+        return result
+    return PolicyOutput(raw_text=raw_text, tool_call=call)

@@ -628,6 +628,14 @@ def _load_ood_evidence(
         )
         if invalid:
             raise ValueError(f"{label} OOD 指标缺少合法的 task_success（必须在 [0, 1] 内）: {path}")
+    # V6-2b：两侧都记录了解析器版本时必须一致——base 严格 / candidate 容忍的
+    # OOD delta 会把解析口径差异算进模型效果。老证据（无此字段）不约束。
+    base_parser = base_ood.get("parser_id")
+    cand_parser = cand_ood.get("parser_id")
+    if base_parser is not None and cand_parser is not None and base_parser != cand_parser:
+        raise ValueError(
+            f"基座与候选 OOD 证据的 parser_id 不一致: {base_parser!r} != {cand_parser!r}"
+        )
     return base_ood, cand_ood
 
 

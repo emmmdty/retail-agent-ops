@@ -422,7 +422,14 @@ def measure_dev_run(
     配对比较只有在两次运行经过**同一套**执行与指标机器时才成立，因此这段代码
     刻意只有一份；两条通道的差别仅在于 `policy_id`（候选侧带 adapter 身份）。
     """
-    policy = QwenPolicy(backend, policy_id, config.generation.max_new_tokens)
+    # 解析器由数据集 manifest 单源钉定（v1–v5 冻结清单为 hermes-single-call-v1；
+    # v6 起清单携带 hermes-single-call-v2-unterminated），base/candidate 自动同口径。
+    policy = QwenPolicy(
+        backend,
+        policy_id,
+        config.generation.max_new_tokens,
+        parser_id=public_manifest.parser_id,
+    )
     hardware_provider.reset_peak_memory()
     started = time.perf_counter()
     trajectories, replayed = execute_formal_records(
@@ -596,6 +603,10 @@ _ID_PLACEHOLDER = "0" * 64
 #: 忘了登记就会让旧证据复算不出原值——那正是要防的事。
 RUNTIME_PROVENANCE_FIELDS = frozenset({"inference_engine", "runtime_env_sha256"})
 
+#: 2026-09-07（V6-2b）登记：解析器版本。v6 之前的全部证据没有这个字段
+#: （加载后为 None），不参与内容哈希，复算逐位不变。
+_CONTENT_OPTIONAL_FIELDS = RUNTIME_PROVENANCE_FIELDS | {"parser_id"}
+
 
 def _finalize_evidence(evidence: EvidenceT, id_field: str) -> EvidenceT:
     """用内容摘要回填自哈希字段。"""
@@ -603,16 +614,17 @@ def _finalize_evidence(evidence: EvidenceT, id_field: str) -> EvidenceT:
 
 
 def _content_id(evidence: StrictModel, id_field: str) -> str:
-    """内容摘要；未记录（None）的运行时溯源字段不参与。
+    """内容摘要；未记录（None）的可选溯源字段不参与。
 
-    这样一份 2026-08-16 之前的证据——它根本没有这两个字段，加载后取值为 None——
-    复算出的 `run_id` 与它当初落盘时**逐位相同**。这是新增字段的唯一前提。
+    这样一份 2026-08-16 之前的证据——它根本没有那两个字段，加载后取值为 None——
+    复算出的 `run_id` 与它当初落盘时**逐位相同**。这是新增字段的唯一前提
+    （2026-09-07 起同样适用于 `parser_id`）。
     """
     payload = evidence.model_dump(mode="json", exclude={id_field, "schema_version"})
     payload = {
         key: value
         for key, value in payload.items()
-        if key not in RUNTIME_PROVENANCE_FIELDS or value is not None
+        if key not in _CONTENT_OPTIONAL_FIELDS or value is not None
     }
     return _content_sha256(payload)
 
