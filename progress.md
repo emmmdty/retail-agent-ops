@@ -1457,3 +1457,32 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-07 | V5-5 训练（gpu-5090 GPU 0，34 min） | sft-v5-001；loss 1.2555→0.0529 |
 | 2026-09-07 | V5-6/7b/8b/7/8/9/10 评测（GPU 0 级联） | 全部完成，读数见 findings |
 | 2026-09-07 | V5-11 release v1.3（本地 CPU） | NO-GO（11/12）；绝对门历史首过 |
+
+## 2026-09-07 — V6 迭代启动：V6-0 裁定 + 预注册（696ad81→5810959）+ V6-1 静态诊断（分类修正）+ V6-2/V6-2b 实现（dca981e）
+
+- **V6-0 四项裁定（用户逐项确认）**：先诊断后定；dataset_version=`retail_ops_v6_20260907`；
+  判读=v1.3 十二门+探针 ≥0.875、三分支完整划分；沿用 gate_schema 1.3。
+- **预注册**：task_plan Current Task 重写为 v6（A-0 裁定+判读规则正式稿+V6 运行清单
+  r13-v6 目录逐字声明，先于一切运行）；后补修订：解析器容忍立项（A-0 裁定 4）。
+- **V6-1 静态诊断（重大分类修正）**：观测 8 两次失败**不是空生成**——`assistant_raw`
+  实录为有效 JSON 缺 `\n</tool_call>`（35 tokens，逐 token 复算与 output_tokens 精确
+  一致）；「raw_text 为空」是观察者误读记录层未填充字段。机制=tokenizer 边界退化
+  （`"}}\n` 合并 token vs 裸 `"}}`）+ NF4 噪声；同场景第 1 步 2/20、dev 0/198；
+  数据侧无杠杆（序列训练充分 100 行）。用户裁定：**解析器容忍**处置。
+- **V6-2/V6-2b 实现（TDD，23 条新测试）**：v6 生成器（v5 结构 + stepwise 请求
+  reason=gold 同源 `_V4_CANCEL_REASONS[0]`，版本键控，v4/v5 负面锚点锁定缺陷形状）；
+  `parse_qwen_response_v2`（最窄容忍：单开标签+无散文+剥 eos 后恰为合法 JSON）；
+  QwenPolicy 按 parser_id 选择（fail-closed）；manifest 单源钉定 dev/sealed、OOD
+  config 键+证据字段（None 不参与哈希，老证据逐位复算）、发布侧 parser 一致性核对；
+  metrics `unterminated_call_count` 诊断计数（不进门禁）。
+- **质量门**：pytest 1538 passed（作者环境）；干净 clone 实跑 **1489/49/0**（与预测
+  一致）；ruff/format/mypy(116)/lock/diff/qualification/audit 全绿。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-07 | V6-0 方案点确认（用户） | 四项裁定冻结 |
+| 2026-09-07 | v6 预注册提交（696ad81）+ 修订（5810959） | 先于一切运行 |
+| 2026-09-07 | V6-1a 静态诊断（本地 CPU + 远端只读取证） | 分类修正：缺闭合标签，非空生成 |
+| 2026-09-07 | V6-1 处置裁定（用户） | 解析器容忍立项 |
+| 2026-09-07 | V6-2/V6-2b TDD 实现（dca981e） | 23 新测试；1538 全绿 |
+| 2026-09-07 | 干净 clone 实跑（--extra dev，py3.11） | 1489 passed / 49 skipped / 0 failed |
