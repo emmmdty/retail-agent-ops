@@ -6,7 +6,7 @@
 R0–R10 已完成，质量收口两轮完成，DPO 主线与 B-4/v5 数据重建全链完成；
 阶段状态以 `docs/EXECUTION_PLAN.md` 为准，历史任务摘要在 `progress.md`。
 
-## Current Task: v6 迭代（空生成诊断 + rtc_stepwise 请求修复 → 冲击 v1.3 GO）——新窗口执行入口（2026-09-07）
+## Current Task: v6 迭代预注册（空生成诊断 + rtc_stepwise 请求修复 → 冲击 v1.3 GO）（2026-09-07）
 
 **上一任务（B-4/v5 数据重建全链）已完成并收口**：观测 8（封存 246 条，v5 口径首观测）
 判定 **NO-GO（11/12）**——候选 1.0000/pv0，**绝对门 `policy_violation_count_max=0`
@@ -15,14 +15,75 @@ R0–R10 已完成，质量收口两轮完成，DPO 主线与 B-4/v5 数据重�
 A-6 第三分支升级后用户裁定如实收官、候选不变（sft-008）。
 LOG-20260907-01；HOLDOUT_LEDGER 观测 8；RESUME_EVIDENCE §1.11。
 
-**下一窗口执行入口**：`docs/handoffs/2026-09-07-v6-iteration-execution-prompt.md`
-——V6-0 方案点先与用户确认（范围/版本名/判读分支形状）→ V6-1 空生成根因诊断
-（不占观测）→ V6-2 rtc_stepwise 请求修复（TDD）→ V6-3 冻结 + 采集（会话头必设 +
-枚举域自查前移）→ V6-4 训练 + 评测 + 观测 9 + v1.3 判定（分支细则须覆盖 v5 的
-形状缺口）。硬边界：v1–v5 冻结契约逐字节不动；判读规则先于观测提交。
+**执行入口**：`docs/handoffs/2026-09-07-v6-iteration-execution-prompt.md`
 
-**本轮文档收尾（已完成）**：PITFALLS §二 #25/#26（空生成毛刺、rtc_stepwise 缺陷）、
-RESUME_EVIDENCE §1.11 + §2 不可写两行、INTERVIEW_PREP 失败案例 #13。
+### A-0 裁定（2026-09-07，用户逐项确认，遇到不再重开）
+
+1. **范围**：先诊断后定——V6-1 空生成根因诊断先行（不占封存观测，**禁用封存集
+   提示词作诊断输入**）；诊断指向**数据侧**可修项则一并入 v6，指向**引擎栈**则
+   单独评估（不与数据修复捆绑）。v6 数据侧确认单变量 = rtc_stepwise 请求修复（V6-2）。
+2. **dataset_version**：`retail_ops_v6_20260907`（按冻结日命名；冻结若顺延至次日则
+   全链改用 `retail_ops_v6_20260908`，二选一后一致）。v5 冻结集逐字节不动。
+3. **判读规则**：v1.3 十二门 + 探针每点 ≥ 0.875，阈值一个字不改；分支表为下方
+   三分支完整划分。**v1.4 配对 schema 不启用**：观测 9 沿用
+   `--gate_schema_version 1.3`（v1.4 路径已建，首用时单独决策）。
+
+### 判读规则（v6 正式稿——冻结，一个字不改地用）
+
+1. **GO**：v1.3 十二门全 PASS 且探针 15 偏移每点 ≥ 0.875 → 换候选 `sft-v6-001`；
+   对外材料按新口径成对陈述。
+2. **NO-GO**：十二门中任一 FAIL，或探针任一点 < 0.875 → 不换候选；如实收官；
+   失败门按观测形状**只作事实记录**（不附加「路径穷尽」类机械解读；本分支天然
+   覆盖「11/12 但非绝对门」等全部组合）；不重跑、不换素材、不向封存集重掷骰子。
+3. **边界组合**：证据不完整 / 配对被拒 / 运行中断等导致判定面不成立 → 升级用户
+   确认，不自动判任何分支。
+
+无论哪种结果：台账（HOLDOUT_LEDGER 观测 9、PROJECT_LOG、EXECUTION_PLAN）同日收口；
+封存结果永远不反馈进开发。
+
+### 运行清单（产物目录逐字声明；smoke/先验审查产物先补声明再运行）
+
+| # | 运行 | 产物目录 |
+|---|---|---|
+| V6-1a | 空生成静态诊断（本地 CPU：max_seq_len / 停止符 / 解析栈检查 + dev 同 family 提示词导出） | `reports/retail_ops/v1/r13-v6/emptygen-static-001` |
+| V6-1b | 空生成重放诊断（gpu-5090，同权重对 dev 同 family 提示词重放 N 次统计空生成频率；命令逐条确认后执行） | `reports/retail_ops/v1/r13-v6/emptygen-replay-001` |
+| V6-2 | rtc_stepwise 请求修复（TDD：请求 reason ∈ cancel 枚举且与 gold 一致；v4/v5 重建逐位不变；版本键控 v6 生效；代码+测试，无评测产物） | （无产物目录） |
+| V6-3-1 | formal_freeze v6（本地 CPU）+ 覆盖表落盘验收（沿用 `assert_exact_quotas_v5` 全部断言） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907` + `manifests/retail_ops/v1/retail_ops_v6_20260907` + `reports/retail_ops/v1/r13-v6/coverage-v6-001` |
+| V6-3-smoke | teacher 小样本冒烟（mimo，会话头必设；大规模采集前 1 次直连试探 ~250 tok） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/teacher-collection/teacher-v6-smoke-001`；CLI output_dir 占位 `reports/retail_ops/v1/r13-v6/teacher-smoke-run-000`（流水线不写入） |
+| V6-3-2 | teacher 全量采集（mimo，~588 任务，0.80 分桶门 + **采集前新增断言：请求陈述的 reason/fact 落在该工具枚举域内**） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/teacher-collection/teacher-v6-001`；CLI output_dir 占位 `reports/retail_ops/v1/r13-v6/teacher-run-001`（流水线不写入） |
+| V6-3-3 | train_export（本地 CPU，措辞 ×3 沿用 bank-v4） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/train-export/train-export-v6-001` + `reports/retail_ops/v1/r13-v6/train-export-001` |
+| V6-3-4 | dev_sft_export（本地 CPU，Oracle） | `data/private/retail_ops/v1/r2/retail_ops_v6_20260907/dev-sft/dev-sft-v6-001`；CLI output_dir 占位 `reports/retail_ops/v1/r13-v6/dev-sft-run-001`（流水线不写入） |
+| V6-4-1 | 训练 `sft-v6-001`（gpu-5090 GPU 0，~35 min；命令清单逐条确认后执行） | `reports/retail_ops/v1/r13-v6/sft-v6-001` |
+| V6-4-2 | v6 dev 评测：base + candidate（配对） | `reports/retail_ops/v1/r13-v6/dev-base-001` / `reports/retail_ops/v1/r13-v6/dev-candidate-001` |
+| V6-4-3 | OOD v2 评测：candidate + base（**v6 代码 commit 变 → base 必须重跑**，配对字段含 code_commit） | `reports/retail_ops/v1/r13-v6/ood-v2-candidate-001` / `reports/retail_ops/v1/r13-v6/ood-v2-base-001` |
+| V6-4-4 | OOD v4 评测：candidate + base（同上） | `reports/retail_ops/v1/r13-v6/ood-v4-candidate-001` / `reports/retail_ops/v1/r13-v6/ood-v4-base-001` |
+| V6-4-5 | 探针评测（−14 曲线是绝对门的先行指标） | `reports/retail_ops/v1/r13-v6/probe-candidate-001` |
+| V6-4-6 | v6 封存 holdout 观测 9：base + candidate | `reports/retail_ops/v1/r13-v6/holdout-base-009` / `reports/retail_ops/v1/r13-v6/holdout-candidate-009` |
+| V6-4-7 | `release --gate_schema_version 1.3`（OOD 两门证据取 V6-4-3 的 v2 dev 分片平铺导出；v4 为辅助读数） | `reports/retail_ops/v1/r13-v6/formal-release-009` |
+
+**输入**：交接 §5（V6-0..V6-4 规格）、`docs/PITFALLS.md` §二 #25/#26、
+`docs/HOLDOUT_LEDGER.md` 观测 8、
+`src/veritool_rl/retail_ops/domain/formal_tasks.py` v5 段（`_V5_*` 常量、
+`_v5_bucket_allocation`、`build_v5_task_set`——v6 结构起点）、
+v5 冻结配置先例（`configs/retail_ops/build/retail_ops_v5_formal_freeze.yaml`）。
+**输出**：空生成根因结论 + 是否可修的判定（不可修则残差风险如实进预注册预期段）；
+rtc_stepwise 请求修复（与 gold cancel reason 同源，v4/v5 重建逐位不变）；v6 生成器 +
+`assert_exact_quotas_v6`（沿用 v5 全部断言）+ 覆盖表；teacher 采集（枚举域自查
+前移为采集前断言）；train/dev 导出；`sft-v6-001`；全套评测读数；观测 9 + v1.3
+判定落盘。
+**非目标**：不改 v1–v5 冻结契约与既有数据集；探针网格、OOD v2/v2.2/v2.3/v4 任务集
+逐字节不动；不动发布门禁阈值（0 / +0.02）；不碰 BFCL holdout；空生成的引擎栈修复
+不在本轮捆绑（诊断指向引擎栈则单独评估）；bank-005 永不进入评测面；发布候选
+`sft-008` 在判读出结果前保持不变；不启用 v1.4 配对 schema。
+**影响文件**：`src/veritool_rl/retail_ops/domain/formal_tasks.py`（v6 版本常量 +
+RTC_STEPWISE 请求分支版本键控修复 + v6 生成器）、
+`src/veritool_rl/retail_ops/build/formal_manifests.py`（v6 登记）、
+sealed/eval config 的 dataset_version 校验、`configs/retail_ops/build/`（v6 冻结配置）、
+teacher 采集枚举域断言（采集侧自查，PITFALLS #26 教训前移）、
+`tests/test_retail_ops_v6_tasks.py`（新）。
+**验收命令**：§验收命令全量（pytest / ruff check / ruff format --check / mypy /
+uv lock --check / git diff --check / qualification chain / audit）；V6-3-1 后另附
+覆盖表读数；V6-4-7 后附 release.json 三件套与逐门判定。
 
 ### 上一任务：B-4/v5 数据重建全链（2026-09-06/07，已完成，判定 NO-GO 11/12）
 
