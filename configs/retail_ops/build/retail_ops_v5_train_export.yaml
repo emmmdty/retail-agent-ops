@@ -1,0 +1,20 @@
+# B-4/v5（V5-3，预注册 task_plan 运行清单）：train_export — 措辞 ×3（bank-v4 同池逐字节
+# 复制到 v5 私有根，bank_sha256 与 v4 声明一致 aa6ccee…），无 oversample（已证伪方向）。
+# 口径 A 注记：事实从句请求只出现在规范行（1/4），paraphrase 行不含事实——
+# 与 v1–v4「规范行含 reason、改写行不含」的训练分布形状逐位同构；
+# intent 池跨 allow/deny 场景共享，满足交接 §4.6 约束 2 的反关联要求。
+pipeline: train_export
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v5_20260906
+dataset_version: retail_ops_v5_20260906
+teacher_attempt_id: teacher-v5-001
+attempt_id: train-export-v5-001
+sft_oversample: {}
+sft_terminal_response: []
+sft_system_prompt_sha256: null
+
+# bank_sha256 是声明的期望值：换了池子却忘了改这里，会静默产出另一份训练集。
+sft_paraphrase:
+  bank_relpath: phrasing/phrasing-bank-v4/phrasings.jsonl
+  bank_sha256: "aa6ccee397266e2aa8501ffed08c92412759809c341b8a0ab6a5420c8fe533d9"
+  per_task: 3
