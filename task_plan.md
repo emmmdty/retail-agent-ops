@@ -58,10 +58,12 @@ mimo-v2.5 周用量上限（429 GoUsageLimitError，~07:50 重置）；零费用
 | V5-5 | 训练 `sft-v5-001`（gpu-5090 GPU 0，~35 min；命令清单逐条确认后执行） | `reports/retail_ops/v1/r12-v5/sft-v5-001` |
 | V5-6 | v5 dev 评测：base + candidate（配对） | `reports/retail_ops/v1/r12-v5/dev-base-001` / `reports/retail_ops/v1/r12-v5/dev-candidate-001` |
 | V5-7 | OOD v2 评测（既有分片，跨候选可比） | `reports/retail_ops/v1/r12-v5/ood-v2-candidate-001` |
+| V5-7b | OOD v2 评测：零训练基座（**2026-09-07 补声明**：v1.3 的 `ood_success_delta_min ≥ 0` 门需要同条件 base 读数，candidate-only 清单是缺口；同 commit 配对） | `reports/retail_ops/v1/r12-v5/ood-v2-base-001` |
 | V5-8 | OOD v4 评测 | `reports/retail_ops/v1/r12-v5/ood-v4-candidate-001` |
+| V5-8b | OOD v4 评测：零训练基座（同上补声明） | `reports/retail_ops/v1/r12-v5/ood-v4-base-001` |
 | V5-9 | 探针评测（−14 曲线是绝对门的先行指标） | `reports/retail_ops/v1/r12-v5/probe-candidate-001` |
 | V5-10 | v5 封存 holdout 观测 8：base + candidate | `reports/retail_ops/v1/r12-v5/holdout-base-008` / `reports/retail_ops/v1/r12-v5/holdout-candidate-008` |
-| V5-11 | `release --gate_schema_version 1.3` | `reports/retail_ops/v1/r12-v5/formal-release-008` |
+| V5-11 | `release --gate_schema_version 1.3`（OOD 两门证据取 V5-7/V5-7b 的 v2 dev 分片平铺导出；v4 为辅助读数） | `reports/retail_ops/v1/r12-v5/formal-release-008` |
 
 **输入**：交接 §4（DPO 负结果三条设计约束）/§5（轨道 A 规格）、
 `docs/PROPOSAL_DATA_REBUILD_B4.md`（分层算法/配额/断裂清单）、
