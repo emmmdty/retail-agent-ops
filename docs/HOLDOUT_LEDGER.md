@@ -15,10 +15,10 @@
 
 | 项 | 值 |
 |---|---|
-| 数据集 | `retail_ops_v1_r2_20260722`，120 条，六类各 20 |
-| 已消耗观测 | **7 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06），共 **15 次运行** |
+| 数据集 | 观测 1–7：`retail_ops_v1_r2_20260722`，120 条，六类各 20（**该口径终止于观测 7**）；观测 8 起：`retail_ops_v5_20260906`，246 条（B-4 难度分层重建，max_steps 7），新口径的第一份封存集 |
+| 已消耗观测 | **8 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06、-09-07） |
 | 观测次数约束 | **不限次数**（用户 2026-08-17 明确）。**但结果永远不得反馈进开发** |
-| 最新判定 | **GO / candidate（merged 形态）**，两套口径都是 —— 前三次判定均为 NO-GO |
+| 最新判定 | **NO-GO（观测 8，v5 口径，11/12 门 PASS，唯一失败门 `invalid_call_count`=2）**；v1 口径的最终判定为观测 7 的 NO-GO（绝对门），其此前曾两套口径 GO |
 | 阈值变更次数 | **0**，由三层保证：① `tests/test_release_gate_schema_v11.py::test_thresholds_come_from_the_untouched_release_yaml` 钉住 `release.yaml` 的字面值（`success_delta_min=0.05`、`p95_latency_ratio_max=1.25`）与键集合；② `invalid_call_count_max: Literal[0]`（`domain/bundle.py:79`）在类型层禁止非零；③ `release.yaml` 是 `bundle_sha256` 的**哈希分量**（`domain/bundle.py:124-133`），改一个阈值就会让磁盘上**每一份**已有 sealed 证据配对失败。（此前本行引用的 `test_release_config_does_not_touch_the_gates` 比较的是两份只含 `pipeline`/`bundle_dir`/`gate_schema_version` 的配置，**并不锁阈值**——2026-08-16 外部审阅指出，已更正。） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -411,3 +411,43 @@ schema 合规率完全相同，candidate 同理。跨 commit 的确定性成立�
 3. 观测 7 与观测 5 的 candidate 读数逐位一致（117/120、2 违规、ci_lower +0.0583）——
    评测路径跨 commit 确定性再次成立（base 的 task_success 也与观测 4/5/6 逐位相同）。
 4. 素材与生成条件差异（mimo、retry brief 强化）见 `OOD_SEALED_LEDGER.md` v2.3 条目。
+
+
+## 观测 8 — 2026-09-07（LOG-20260907-01）：**v5 口径的第一份封存集；绝对门历史首过；唯一失败门 invalid_call_count=2**
+
+新口径（B-4 数据重建 `retail_ops_v5_20260906`：难度分层 + margin 0 档 + 口径 A +
+max_steps 7）下的第一份封存集：246 条，base/candidate 两侧同 commit（`9cb6ba8` 系）
+完整重跑。候选 = `sft-v5-001` 的合并部署形态（merged_revision `ff1a88db…`，provenance
+sidecar 可复算）。
+
+| | base | candidate（merged） |
+|---|---|---|
+| task_success | 0.5691 | **1.0000**（246/246） |
+| 政策违规 | 81 | **0** |
+| 非法调用 | 0 | **2**（两次空生成 parse 滑步，均在成功任务内恢复） |
+| p95 latency | 2302 ms | 3923 ms |
+
+**12 门逐门**：11 PASS——`success_delta` +0.4309、`success_delta_ci_lower` **+0.3699**、
+`policy_violation_delta` −81、三个延迟/步数比值全部 ≤1.25（per_call 1.052、steps 0.924、
+latency_per_success 0.973）、`evidence_complete` True、`ood_task_success_min` **1.0000**
+（v2 dev 分片，base 0.6167）、`ood_success_delta_min` **+0.3833**、
+`policy_violation_count_max` **0 = 0（历史首次 PASS）**、`success_delta_ci_lower_min`
++0.3699 ≥ +0.02；**唯一 FAIL：`invalid_call_count`，观测值 2**。
+
+### 判定：**NO-GO**（v1.3 口径，逐门判定；A-6 第三分支「边界改善但未达标（或反之）」升级后用户裁定如实收官）
+
+### 必须与这个 NO-GO 一起说的
+
+1. **绝对门历史首过**：B-4 立项的核心主张（5.0× 训练/封存难度偏移是政策违规根因，
+   见 `POLICY_BOUNDARY.md` §2）被观测证实——难度分层重建后，封存集政策违规
+   81（base）→ **0**（candidate），且 dev/探针/OOD 四面全部零违规。
+2. **唯一失败门的形态**：2 次 `invalid_tool_call_json` parse 滑步（同为
+   `refund_denied_duplicate`、同在第 1 步 get_order 之后、raw_text 为空的罕见空生成），
+   agent 在 6 步预算内恢复、任务仍成功；非工具拒绝、非政策违规。2/246 = 0.8%。
+3. **统计强度问题同步解决**：ci_lower +0.3699（观测 7 为 +0.0583，第一次 GO 为
+   +0.0083）——最小效应宽度门以 18 倍余量通过。
+4. **预注册分支的形状缺口**：A-6 三分支预设了「修好=12/12」「修坏=绝对门 FAIL」，
+   未预见「绝对门修复但另一门 2 次滑步」的组合；按第三分支「（或反之）」升级，
+   用户裁定（2026-09-07）如实收官 NO-GO，不换候选。
+5. 辅助面：dev 198 条 candidate 1.0000/pv0（base 0.5101/pv74）；探针 15/15 = 1.00
+   （`offset −14` 修复且放行侧完好）；OOD v4 0.9917（base 0.45）。
