@@ -89,6 +89,10 @@ v7 = 把这个词域显式放进训练分布，让拒绝行为不再依赖 basin
 8. **发射后台任务**：`setsid nohup … < /dev/null &` 后**不依赖发射命令回显**，
    用独立短 ssh `pgrep` + 日志 tail 验证；`pkill -f` 模式会命中自身，先 `pgrep -fa` 看清。
 9. **远端长任务日志**：`tr "\r" "\n"` 再 tail（tqdm 进度条是 \r 分隔）。
+10. **cpolar 隧道轮转两步**：拒连后先 `cpolar-ssh-update`（改 ssh config 端口），
+    **再 `ssh-keyscan -p <新端口> 29.tcp.cpolar.top >> ~/.ssh/known_hosts`**——
+    端点换了端口后旧 host key 不覆盖新端口，缺第二步会 Host key verification failed
+    （2026-09-08 实踩）。
 
 ## 4. v6 收口事实（v7 的起点）
 
