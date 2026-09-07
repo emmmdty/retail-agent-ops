@@ -1486,3 +1486,27 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-07 | V6-1 处置裁定（用户） | 解析器容忍立项 |
 | 2026-09-07 | V6-2/V6-2b TDD 实现（dca981e） | 23 新测试；1538 全绿 |
 | 2026-09-07 | 干净 clone 实跑（--extra dev，py3.11） | 1489 passed / 49 skipped / 0 failed |
+
+## 2026-09-07 — V6-3 执行窗口：冻结落盘 + 采集前断言 + teacher 全量发射
+
+- **V6-3-1**（c07e5b4）：formal_freeze v6 → `retail_ops_v6_20260907`（588/198/246），
+  receipt 携带 `hermes-single-call-v2-unterminated`；覆盖表 coverage-v6-001 全部落
+  [0.8, 1.25]（refund_denied_window 0.2→0.9259 沿袭）；冻结 train 42 条 stepwise
+  请求全部与 gold 同源（端到端验证）。
+- **V6-3-2 前置**（15196c5）：采集前枚举域断言进 `_run_teacher_collect`（任何 API
+  调用前）；v6/v4_0822 通过、v5/v4_0905 缺陷形状拒绝（负面锚点）。
+- **smoke**：teacher-v6-smoke-001 共 18 条全部接受（outcomes 全 success）→
+  mimo 路由 + 周限 + 措辞先验通过；smoke 停止、checkpoint 完好。
+- **V6-3-2 全量发射**：teacher-v6-001（588 任务，2 episodes/任务，会话头必设）
+  后台运行中；实测 ~1.6 条/分钟，预计 ~6h。
+- **V6-4 备料**（a22475d）：v6 冻结配置/训练配置/四份 base 评测配置落盘；
+  OOD 评测 parser_id 可选键接线（fail-closed）；candidate/merged/release 配置
+  待 sft-v6-001 权重产出后生成。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-07 | V6-3-1 formal_freeze v6（本地 CPU） | 私有根 + manifests + receipt v2 parser_id |
+| 2026-09-07 | V6-3-1b 覆盖表（本地 CPU） | 全部 [0.8,1.25]；v6 键生效 |
+| 2026-09-07 | mimo 直连试探（~420 tok） | OK，周限可用 |
+| 2026-09-07 | V6-3-smoke（teacher-v6-smoke-001，18 条） | 18/18 接受，停止 |
+| 2026-09-07 | V6-3-2 全量发射（teacher-v6-001） | 后台运行中 |
