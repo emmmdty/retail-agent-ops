@@ -1,0 +1,37 @@
+# B-4/v5（V5-10 candidate 侧）：v5 封存 holdout 观测 8 的**合并部署形态**候选。
+# 部署形态教训（D4/G4）：未合并形态背 2× 单次前向开销，延迟门必挂——候选侧一律
+# 用合并形态（scripts/ops/merge_lora_adapter.py 现场合并，provenance sidecar 全字段
+# 可复算：merged_revision ff1a88db… = derive_merged_revision(base_revision, adapter 哈希)）。
+# max_steps=7 版本化；判读按 A-1 预注册的 A-6 冻结规则，观测后结果不反馈进开发。
+pipeline: formal_holdout_merged_candidate
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v5_20260906
+holdout_receipt_path: manifests/retail_ops/v1/retail_ops_v5_20260906/holdout-receipt.json
+models_root: models
+attempt_id: qwen3-4b-holdout-merged-candidate-008
+max_steps: 7
+merged_from:
+  base_repo: Qwen/Qwen3-4B
+  base_revision: "8cd0101f70cac4f1efcebc979faf483558e39297"
+  merged_revision: "ff1a88db3758b9d428021a0a08b158ebfd35d178f622c92a1daded83b9f51b3a"
+  adapter_file_sha256:
+    README.md: "341aa74959e30601970a23717f4baf7808906aa295231aae11ff07721c76824a"
+    adapter_config.json: "3d6eaf5b70bbabdd95b8c2c28f22e5b6846d2d63df394fd88fad4dc4fa6bd571"
+    adapter_model.safetensors: "3ab39bd3c55bf2bc8b163cf8f7e479568860cf9b689e5cb7088cef5b4eacf14b"
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+    training_args.bin: "a660765fc0d6cb2977fed4261f989e60a529dbdc2b2d024ffc66d59d29e9f725"
+model:
+  repo: local/Qwen3-4B-sft-v5-001-merged
+  revision: "ff1a88db3758b9d428021a0a08b158ebfd35d178f622c92a1daded83b9f51b3a"
+  local_dir: Qwen3-4B-sft-v5-001-merged
+  file_sha256:
+    chat_template.jinja: "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+    config.json: "5c2f8dc21c08a1ce358bf6869b8288f88fdda63aae72946c719153c54099c40d"
+    generation_config.json: "f0307fca451546ca3848030f070877843b09be03265359da2a58b12f843d16ca"
+    model.safetensors: "eb346a4a26605e01687a3c8b9d8c680d6584a8da86cecc8792bcec87f3a59919"
+    tokenizer.json: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+    tokenizer_config.json: "1cc816812993bff176eb4f7495433b736f06fba9b6e7b05cac7b4a1780650c95"
+generation:
+  max_new_tokens: 256
