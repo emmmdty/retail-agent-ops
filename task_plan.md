@@ -8,13 +8,13 @@ R0–R6（含「R6 收口」）已完成，阶段状态以 `docs/EXECUTION_PLAN.
 
 ## Current Task: v5 数据重建（`retail_ops_v5_20260906`）——A-1 预注册（2026-09-06，先于一切运行提交）
 
-**执行状态（2026-09-07）**：A-2/A-3 已完成（`d361972`、`c96512b`）——v5 生成器
-20 条契约测试 + 全量 1513 绿；formal_freeze 落盘（私有根 + manifests）；
-覆盖表机器证明 `reports/retail_ops/v1/r12-v5/coverage-v5-001/coverage.json`
-（refund_denied_window 占比比 0.2 → 0.926，原 5.0×；全部场景 ∈ [0.8, 1.25]）。
-**A-4 阻断**：V5-2-smoke 86 条全部 `transport_exhausted`——opencode zen 的
-mimo-v2.5 周用量上限（429 GoUsageLimitError，~07:50 重置）；零费用零接受；
-全量跑用独立 attempt_id 不受影响。三选项待用户：等重置 / 启用余额 / 切 DeepSeek。
+**执行状态（2026-09-07 收口）**：A-2/A-3（`d361972`、`c96512b`）、A-4（588 任务
+96.3% 接受，26 条传输失败重试全接受；rtc_stepwise 0.643 分桶门用户裁定放行）、
+A-5（sft-v5-001 训练 + 全部评测）、**V5-11 release v1.3 = NO-GO（11/12）**——
+唯一失败门 `invalid_call_count=2`（两次空生成 parse 滑步）；`policy_violation_count_max=0`
+**历史首次 PASS**（B-4 根因主张被观测证实）；ci_lower +0.3699。候选不变（sft-008）。
+A-6 第三分支升级后用户裁定如实收官（LOG-20260907-01、HOLDOUT_LEDGER 观测 8）。
+已诊断迭代入口：空生成毛刺（2/246）、rtc_stepwise 请求缺陷（继承 v4）——均需新预注册。
 
 **A-0 裁定（2026-09-06，用户逐项确认，遇到不再重开）**：
 

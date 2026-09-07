@@ -537,3 +537,28 @@ DPO 超参）经用户确认冻结，预注册提交（`eeec309`）先于一切�
 - **状态**：DPO 主线（本设计）收口。绝对门根治路径待定；下一决策门 =
   B-4 合并数据重建立项（`PROPOSAL_DATA_REBUILD_B4.md`，三个决策门待用户裁决）。
   测试基线 1493（CI 全绿于 `1d449f5`）。
+
+### B-4/v5 数据重建全链（2026-09-06/07：预注册 → CPU TDD → 冻结 → 采集 → 训练 → 观测 8 → v1.3 判定 NO-GO 11/12）
+
+- **预注册**（`ba463a6`，先于一切运行；A-0 四项用户裁定：沿用 v4 场景集、口径 A
+  四行映射、阈值冻结、不启用 v1.4）+ 修订 `b290b16`（补 V5-7b/V5-8b OOD base 声明）。
+- **CPU TDD（A-2，`d361972`）**：v5 生成器（分层档键 = margin 值、margin 0 档、
+  档内 sha256 配数）、`assert_exact_quotas_v5`（全档覆盖 + margin-0 三分 +
+  ≥10 占比 [0.8,1.25]）、口径 A（事实从句请求 + `acceptable_reasons` metadata +
+  `arguments_match` 集合语义，旧任务逐位不变）、max_steps 6/7 + 评测 config
+  版本化（可选键 + validator 钉死 v5=7）+ 报告字段从 config 取值、manifests 登记。
+  覆盖表机器证明（`c96512b`）：refund_denied_window 占比比 0.2 → 0.926（原 5.0×）。
+- **采集与训练（A-4/A-5.1）**：588 任务、566 接受 = 96.3%（26 条 zen 瞬断重试全
+  接受；rtc_stepwise 0.643 分桶门用户裁定放行——缺陷继承自 v4）；sft.jsonl 2352 行
+  （teacher 566 + Oracle 兜底 22）；sft-v5-001 训练 441 步 loss 1.2555→0.0529。
+- **观测 8（V5-6/7b/8b/7/8/9/10）**：dev 配对（base 0.5101/pv74 → candidate
+  **1.0000/pv0**）；探针 **15/15 = 1.00**；OOD v2 **1.0000**（base 0.6167）、
+  OOD v4 0.9917（base 0.45）；封存 246 条 base 0.5691/pv81 → candidate（合并形态）
+  **1.0000/pv0/invalid2**。
+- **V5-11 v1.3 判定 = NO-GO（11/12）**：唯一失败门 `invalid_call_count=2`（两次空
+  生成 parse 滑步，成功任务内恢复）；**`policy_violation_count_max=0` 历史首次
+  PASS**——B-4 根因主张（5.0× 偏移 → 政策违规）被观测证实；ci_lower **+0.3699**
+  （统计强度问题同步解决）。A-6 第三分支「（或反之）」升级，用户裁定如实收官
+  （LOG-20260907-01、HOLDOUT_LEDGER 观测 8；v1 口径终止于观测 7）。
+- **已诊断迭代入口**：空生成毛刺（2/246）；rtc_stepwise 请求缺陷（继承 v4）。
+  候选不变（sft-008）。测试基线 1513（作者环境；干净 clone 1464/49）。
