@@ -1,0 +1,11 @@
+# V6 迭代（V6-3-smoke，预注册 task_plan 运行清单）：teacher_collect 最小探测——
+# 单 episode/单次尝试，用于在投入全量预算前核实 mimo 路由可用性（必设
+# TEACHER_LLM_EXTRA_HEADERS_JSON 会话头；先直连试探 ~250 tok 再放量）。
+# 可安全中断：checkpoint 精确哈希校验后续跑不重复计费。
+pipeline: teacher_collect
+bundle_dir: domains/retail_ops/v4
+public_dir: manifests/retail_ops/v1/retail_ops_v6_20260907
+dataset_version: retail_ops_v6_20260907
+attempt_id: teacher-v6-smoke-001
+max_episodes_per_task: 1
+max_request_attempts: 1
