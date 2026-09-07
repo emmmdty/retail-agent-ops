@@ -929,15 +929,42 @@ def _count_offenders(text: str) -> list[str]:
 #: 值判别式只认**当前**那个数，因此拦不住一句停留在旧值上的话（"已消耗五次观测"）。
 #: 这张网补的正是那一半。**它按构造是不完备的**（枚举表面形式必然漏），
 #: 所以它只是第二张网，不是主判据——这一点写在这里，不写在 docstring 的承诺里。
+#: 数字片段（阿拉伯 + 中文小写 + 英文单词），供形状网复用。
+_NUM = r"(?:\d+|[一二三四五六七八九十两]|one|two|three|four|five|six|seven|eight|nine|ten)"
+
 _TOTALITY_SHAPES = (
+    # 2026-09-08 放宽：docstring 声称覆盖的总数语气此前只匹配「副词紧邻 N 次」，
+    # 台账涨数后值网不再兜底，语料暴露的间隔动词/量词变体（轮/组/条）逐一口径补齐。
     re.compile(
-        r"(?:已消耗|消耗了|一共|总共|累计|至今|迄今|统共)\s*(?:\d+|[一二三四五六七八九十两])\s*次"
+        r"(?:观测[^。\n]{0,4})?"
+        r"(?:已消耗|消耗了|一共|总共|总计|累计|至今|迄今|统共|共)"
+        r"[^。\n]{0,8}?" + _NUM + r"\s*[次轮回组条]"
     ),
     re.compile(
-        r"(?:整个开发期|全程|只被?)[^。\n]{0,20}?观测了?\s*(?:\d+|[一二三四五六七八九十两])\s*次"
+        r"(?:整个开发期|全程|只被?)[^。\n]{0,20}?观测了?\s*" + _NUM + r"\s*[次轮回组条]"
     ),
-    re.compile(r"观测总数\s*(?:为|是)?\s*(?:\d+|[一二三四五六七八九十两])"),
-    re.compile(r"(?:\d+|[一二三四五六七八九十两])\s*次观测均?已消耗"),
+    # 「观测总数为 8」「观测数：8」用系词分支；不用宽间隙——「唯一事实源」
+    # 的「一」会被当成数字（2026-09-08 误伤教训）。
+    re.compile(r"观测(?:总数|次数|数)\s*[:：为是达]\s*" + _NUM + r"\b"),
+    re.compile(r"观测(?:总数|次数|数)\s+" + _NUM + r"(?!\S*[事实源])"),
+    re.compile(r"观测预算[^。\n]{0,4}?" + _NUM + r"\s*[次轮回组条]"),
+    re.compile(r"(?:发起了?|停在)\s*" + _NUM + r"\s*[次轮回组条]?(?:\s*观测)?"),
+    re.compile(_NUM + r"\s*(?:release\s+)?decisions?\s+have\s+been\s+made", re.IGNORECASE),
+    re.compile(
+        r"number\s+of\s+sealed\s+holdout\s+observations\s+is\s+" + _NUM, re.IGNORECASE
+    ),
+    re.compile(
+        r"(?:there\s+(?:have|has)\s+been|there\s+were)\s+" + _NUM + r"\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"observation\s+count[^.\n]{0,10}?" + _NUM + r"\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"observation\s+count\s+stands\s+at\s+" + _NUM + r"\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"(?:has\s+been|was|were)\s+observed\s+" + _NUM + r"\s+times", re.IGNORECASE
+    ),
     re.compile(r"(?:in total|a total of|altogether|to date|so far)", re.IGNORECASE),
 )
 

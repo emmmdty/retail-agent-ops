@@ -1510,3 +1510,30 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-07 | mimo 直连试探（~420 tok） | OK，周限可用 |
 | 2026-09-07 | V6-3-smoke（teacher-v6-smoke-001，18 条） | 18/18 接受，停止 |
 | 2026-09-07 | V6-3-2 全量发射（teacher-v6-001） | 后台运行中 |
+
+## 2026-09-08 — V6-4 GPU 全链 + 观测 9 判定 NO-GO（10/12）：候选不变，三个门级/方法论结果
+
+- **V6-4-1 训练**（gpu-5090 GPU 0，33 min）：441 步 loss 1.2525→0.0464，曲线校验过；
+  merge → `Qwen3-4B-sft-v6-001-merged`（merged_revision `8f2c0591…`）。
+- **V6-4-2..5 评测级联**（GPU 0 串行 ~80 min）：dev base 0.5404/pv70 → candidate
+  0.9949/**pv1**；探针 DENY 侧塌方（7 点 0.00–0.107，pv50）；OOD v2 base 0.6167 →
+  candidate **0.6833**/pv9（<0.70 绝对门）；OOD v4 candidate 0.9583/pv2。
+- **V6-4-6 观测 9**（封存 246，v6 口径首观测）：base 0.5691/pv85/inv2 → candidate
+  （合并）**0.9959/pv1/invalid 0**、p95 3290ms；delta +0.4268、ci_lower +0.3618。
+- **V6-4-7 release v1.3**（本地 CPU）：**NO-GO（10/12）**——FAIL `policy_violation_count_max`
+  （1>0）与 `ood_task_success_min`（0.6833<0.70）；探针条件独立 FAIL。候选保持 sft-008。
+- **门级验证**：`invalid_call_count=0`（V6-2b 解析器容忍，v5 唯一失败门归零）；
+  rtc 修复 teacher 分桶 1.000；采集前断言上线。
+- **根因分析**（findings 2026-09-08）：措辞域锁定的「该拒绝」判定——枚举词 deny
+  请求从未入训练分布（v5/v6 皆然），v5 探针满分是 basin 运气；「同源评测面高估」
+  第三次实证。PITFALLS #27；观测计数检测器形状网按语料补强（4 处缺口 + 1 处误伤修复）。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-08 | V6-3-3/4 导出（本地 CPU） | sft.jsonl 2352 行；dev-sft 198 行 |
+| 2026-09-08 | 私有根同步远端 + repo ff 同步 | 2352/198 行校验一致 |
+| 2026-09-08 | V6-4-1 训练（gpu-5090 GPU 0，33 min） | sft-v6-001；441 步 |
+| 2026-09-08 | merge（GPU）+ sealed 配置生成 | merged_revision 8f2c0591… |
+| 2026-09-08 | V6-4-2..5 级联（GPU 0，~80 min） | 8/8 完成，无 FAILED |
+| 2026-09-08 | V6-4-6 封存候选（GPU） | 0.9959/pv1/inv0 |
+| 2026-09-08 | V6-4-7 release v1.3（本地 CPU） | NO-GO（10/12）；候选不变 |

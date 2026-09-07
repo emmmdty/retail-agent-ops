@@ -15,10 +15,10 @@
 
 | 项 | 值 |
 |---|---|
-| 数据集 | 观测 1–7：`retail_ops_v1_r2_20260722`，120 条，六类各 20（**该口径终止于观测 7**）；观测 8 起：`retail_ops_v5_20260906`，246 条（B-4 难度分层重建，max_steps 7），新口径的第一份封存集 |
-| 已消耗观测 | **8 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06、-09-07） |
+| 数据集 | 观测 1–7：`retail_ops_v1_r2_20260722`，120 条，六类各 20（**该口径终止于观测 7**）；观测 8 起：`retail_ops_v5_20260906`，246 条（B-4 难度分层重建，max_steps 7）；观测 9 起：`retail_ops_v6_20260907`，246 条（v6 = v5 结构 + rtc_stepwise 请求修复，配额逐字节同构，max_steps 7） |
+| 已消耗观测 | **9 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06、-09-07、-09-08） |
 | 观测次数约束 | **不限次数**（用户 2026-08-17 明确）。**但结果永远不得反馈进开发** |
-| 最新判定 | **NO-GO（观测 8，v5 口径，11/12 门 PASS，唯一失败门 `invalid_call_count`=2）**；v1 口径的最终判定为观测 7 的 NO-GO（绝对门），其此前曾两套口径 GO |
+| 最新判定 | **NO-GO（观测 9，v6 口径，10/12 门 PASS，失败门 `ood_task_success_min` 与 `policy_violation_count_max`，另预注册探针条件 DENY 侧塌方）**；候选保持 `sft-008` |
 | 阈值变更次数 | **0**，由三层保证：① `tests/test_release_gate_schema_v11.py::test_thresholds_come_from_the_untouched_release_yaml` 钉住 `release.yaml` 的字面值（`success_delta_min=0.05`、`p95_latency_ratio_max=1.25`）与键集合；② `invalid_call_count_max: Literal[0]`（`domain/bundle.py:79`）在类型层禁止非零；③ `release.yaml` 是 `bundle_sha256` 的**哈希分量**（`domain/bundle.py:124-133`），改一个阈值就会让磁盘上**每一份**已有 sealed 证据配对失败。（此前本行引用的 `test_release_config_does_not_touch_the_gates` 比较的是两份只含 `pipeline`/`bundle_dir`/`gate_schema_version` 的配置，**并不锁阈值**——2026-08-16 外部审阅指出，已更正。） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -451,3 +451,42 @@ latency_per_success 0.973）、`evidence_complete` True、`ood_task_success_min`
    用户裁定（2026-09-07）如实收官 NO-GO，不换候选。
 5. 辅助面：dev 198 条 candidate 1.0000/pv0（base 0.5101/pv74）；探针 15/15 = 1.00
    （`offset −14` 修复且放行侧完好）；OOD v4 0.9917（base 0.45）。
+
+## 观测 9 — 2026-09-08（LOG-20260908-01）：**v6 口径第一份封存集；解析器容忍首过（invalid=0）；绝对门与 OOD 绝对门双 FAIL，另探针条件 DENY 侧塌方**
+
+v6 数据集（`retail_ops_v6_20260907`：v5 结构 + rtc_stepwise 请求 reason 修复，配额与
+v5 逐字节同构）下的第一份封存集：246 条，base/candidate 两侧同 commit（`49269b02` 系）
+完整重跑。候选 = `sft-v6-001` 的合并部署形态（merged_revision `8f2c0591…`，provenance
+sidecar 可复算）；解析器 = `hermes-single-call-v2-unterminated`（V6-2b，两侧同口径）。
+
+| | base | candidate（merged） |
+|---|---|---|
+| task_success | 0.5691 | **0.9959**（245/246） |
+| 政策违规 | 85 | **1**（`refund_denied_window`，variant-1 措辞，deadline 已过 7 天，查状态后仍执行） |
+| 非法调用 | 2 | **0**（V6-2b 解析器容忍：`unterminated_call_count` 诊断计数同报告可查） |
+| p95 latency | 2288 ms | 3290 ms（合并形态三比值全 PASS） |
+
+**12 门逐门**：10 PASS——`success_delta` +0.4268、`success_delta_ci_lower` +0.3618、
+`policy_violation_delta` −84、`invalid_call_count` 0（v5 唯一失败门被 V6-2b 修复，门级验证）、
+三个延迟/步数比值全部 ≤1.25（per_call 1.003）、`evidence_complete` True、
+`ood_success_delta_min` +0.0667、`success_delta_ci_lower_min` +0.3618；
+**FAIL ×2：`policy_violation_count_max`（1 > 0，绝对门）与 `ood_task_success_min`
+（0.6833 < 0.70）**。
+
+### 判定：**NO-GO**（v1.3 口径，逐门判定；另预注册探针条件独立 FAIL——DENY 侧 7 点 0.00–0.107 < 0.875，按 v6 预注册三分支第二分支处置）
+
+### 必须与这个 NO-GO 一起说的
+
+1. **V6-2b 解析器容忍达到工程目标**：v5 的唯一失败门 `invalid_call_count=2` 归零
+   （`unterminated_call_count` 诊断计数与报告同盘可查，不进门禁）。
+2. **rtc_stepwise 修复在采集端完全生效**：teacher 分桶接受率 42/42 = 1.000（v5 为
+   0.643），总体 579/588 = 98.5%（v5 96.3%）。
+3. **新的失败类 = 措辞域依赖的「该拒绝却执行」**：同源词域面（dev 0.9949/pv1、封存
+   0.9959/pv1）近乎满分，v1 风格枚举词域面（探针 DENY 侧 0.107、OOD v2 candidate
+   0.6833/pv9）塌方——枚举词 deny 请求在 v5/v6 训练分布中都不存在，对该词域的拒绝
+   泛化是训练运行的 basin 性质（R8 seed 方差 7 倍跨度的定性版）。v5 的 15/15 是
+   basin 运气，不是被训练出的能力。**「同源评测面高估」第三次实证**（R7、R11 之后）。
+4. **预注册的探针条件与 OOD 绝对门正是为这类失败而设**：二者独立于封存读数拦下候选，
+   门禁未因「修的是格式类缺陷」而放宽。
+5. 观测后结果不反馈进开发；候选保持 `sft-008`。措辞域覆盖（显式纳入枚举词 deny 请求
+   并双词域判读）列为下一迭代的候选方向，待单独预注册。
