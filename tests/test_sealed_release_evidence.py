@@ -301,7 +301,6 @@ def test_a_genuine_base_candidate_pair_is_accepted_for_comparison(workspace: Pat
 
 def test_sealed_report_id_covers_the_model_provenance(workspace: Path) -> None:
     """新增的 provenance 字段必须落在 report_id 自哈希内，否则可被静默改写。"""
-    import json
 
     from veritool_rl.retail_ops.evaluate.sealed_evaluation import load_sealed_evaluation_report
 
@@ -753,7 +752,6 @@ def test_formal_release_report_round_trips_and_records_the_rollback_path(
 
 def test_formal_release_report_rejects_a_hand_edited_decision(workspace: Path) -> None:
     """把 NO-GO 报告的 decision 改成 GO 必须在加载时失败，不能靠人工改字段放行。"""
-    import json
 
     from veritool_rl.retail_ops.release.formal_release import (
         decide_formal_release,

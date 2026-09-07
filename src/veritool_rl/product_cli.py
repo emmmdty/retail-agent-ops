@@ -1362,7 +1362,7 @@ def _run_formal_dev_base(
     generation_settings = GenerationSettings(**generation_value)
     base_config = BaseEvaluationConfig(
         dataset_version=dataset_version,
-        max_steps=int(config.get("max_steps", 5)),
+        max_steps=_declared_max_steps(config),
         model=model_artifact,
         generation=generation_settings,
         code_commit=(code_commit_factory or _current_code_commit)(),
@@ -1467,7 +1467,7 @@ def _run_formal_dev_candidate(
 
     candidate_config = CandidateEvaluationConfig(
         dataset_version=dataset_version,
-        max_steps=int(config.get("max_steps", 5)),
+        max_steps=_declared_max_steps(config),
         model=ModelArtifact(**model_value),
         adapter=AdapterArtifact(**adapter_value),
         generation=GenerationSettings(**generation_value),
@@ -1591,7 +1591,7 @@ def _run_formal_holdout(
 
     sealed_config = SealedEvaluationConfig(
         dataset_version=dataset_version,
-        max_steps=int(config.get("max_steps", 5)),
+        max_steps=_declared_max_steps(config),
         model=ModelArtifact(**model_value),
         adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
         merged_from=(
@@ -2078,6 +2078,14 @@ def _resolve_within(root: Path, *parts: str) -> Path:
     if target_resolved != root_resolved and root_resolved not in target_resolved.parents:
         raise ValueError(f"目标路径逃逸出受信根目录: {target}")
     return target
+
+
+def _declared_max_steps(config: dict[str, Any]) -> Literal[5, 7]:
+    """从评测配置取声明的步数预算（缺省 5 = v1–v4 冻结值；版本条件由 validator 钉死）。"""
+    value = int(config.get("max_steps", 5))
+    if value not in (5, 7):
+        raise ValueError(f"max_steps 只接受 5 或 7，got {value}")
+    return cast(Literal[5, 7], value)
 
 
 def _require_config_keys(
