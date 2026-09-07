@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field, ValidationError
@@ -110,21 +111,32 @@ class OpenAICompatibleTeacherClient:
         cls,
         route: TeacherRouteSnapshot,
         api_key: str,
+        *,
+        default_headers: Mapping[str, str] | None = None,
     ) -> OpenAICompatibleTeacherClient:
-        """延迟导入可选 SDK 并创建 production transport；不发起请求。"""
+        """延迟导入可选 SDK 并创建 production transport；不发起请求。
+
+        `default_headers` 是**传输层会话元数据**（如 2026-09-07 起 opencode zen
+        强制要求的 `x-opencode-session`），不是路由语义——不给出或给出空表时
+        构造参数逐字节不变，既有调用零扰动。
+        """
         try:
             from openai import OpenAI
         except ImportError:
             msg = "未安装 teacher 可选依赖，请使用 uv sync --extra teacher"
             raise TeacherClientError(msg) from None
 
+        headers = {k: v for k, v in (default_headers or {}).items() if v}
         try:
-            client = OpenAI(
-                base_url=route.base_url,
-                api_key=api_key,
-                timeout=TEACHER_REQUEST_TIMEOUT_SECONDS,
-                max_retries=TEACHER_MAX_RETRIES,
-            )
+            kwargs: dict[str, Any] = {
+                "base_url": route.base_url,
+                "api_key": api_key,
+                "timeout": TEACHER_REQUEST_TIMEOUT_SECONDS,
+                "max_retries": TEACHER_MAX_RETRIES,
+            }
+            if headers:
+                kwargs["default_headers"] = headers
+            client = OpenAI(**kwargs)
         except Exception as error:
             message = _redact_error(str(error), (api_key,))
             raise TeacherClientError(message) from None

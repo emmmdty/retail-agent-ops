@@ -1,5 +1,32 @@
 # Findings
 
+## 2026-09-07 — A-4 收口：mimo 周限两连击 + zen 代理会话头强制 + rtc_stepwise 继承性缺陷（用户裁定放行）
+
+- **采集最终态**：588/588 处理、**566 接受 = 96.3%**；分桶 11/12 场景 1.00，
+  `refund_denied_window` **0.806**（唯一有 teacher 违规的桶，7 条全被执行式 verifier
+  拦下）、`rtc_stepwise` **0.643**（见下）。预注册 0.80 分桶门：11/12 通过；
+  rtc_stepwise 一档未达 → **用户裁定按现状放行**（2026-09-07）。
+- **rtc_stepwise 缺陷（继承自 v4_20260905，非 v5 引入）**：stepwise 请求把 rtc 家族的
+  **退款枚举** reason 写进**取消**任务的请求（「请取消订单 B，原因是 not_as_described。」），
+  而 gold `cancel_other` 硬编码 `_V4_CANCEL_REASONS[0]="changed_mind"`——teacher 按请求
+  说的 reason 发起取消 → 环境拒绝 → 停止 → 13 条 wrong_final_state + 2 条 schema_invalid。
+  v4 当年门是 0.50 所以 0.643 过了；v5 的 0.80 门把它暴露。修请求文本 = 内容指纹变 =
+  588 条已采证据全部作废 = 全价重采，为 0.6% 的行不成比例 → 未来 dataset_version 再修
+  （PITFALLS 候选）。15 条失败回退 `internal_reference`（Oracle 黄金行，selection.json
+  机器标记；来源分布 teacher 566 / internal_reference 22 = stepwise 15 + denied_window 7）。
+- **mimo 周限两连击**：(1) 首次 smoke 86 条 `transport_exhausted`（weekly GoUsageLimit，
+  ~07:50 重置）；(2) 全量采集末段 5 分钟窗（11:28–11:33）26 条瞬断——重试 26 条全部
+  接受（rtc 42/42 恢复满值）。重试机制：删除失败 evidence 文件 + checkpoint 只记
+  accepted → 同 attempt_id 续跑即重采；**教训：CLI 的 summary.json 落在 --output_dir
+  （reports），不在私有根**——链式脚本第一次就查错了位置。
+- **zen 代理行为变更（2026-09-07 ~12:25 起）**：强制 `x-opencode-session` 头
+  （400 `MissingSessionID`，报错文案自述缺什么）。实现：`from_route` 增加可选
+  `default_headers`（空表时构造参数逐字节不变，TDD 锁定）+ 工厂读
+  `TEACHER_LLM_EXTRA_HEADERS_JSON`（JSON 解析错误带 env 名）。传输层元数据，
+  不进路由快照/判分语义。
+- **训练**：sft-v5-001（441 步，~4.6s/步 ≈ 34 min 预计）在 gpu-5090 GPU 0 启动
+  （23546 MiB / 97%，与他人 17GB 常驻并存）。
+
 ## 2026-09-07 — A-2/A-3 收口：v5 生成器落地 + 覆盖表机器证明（5.0× → ~1.0×）+ smoke 被 mimo 周限阻断
 
 - **v5 任务集落成**（`build_v5_task_set`，20 条契约测试全绿 + 全量 1513）：

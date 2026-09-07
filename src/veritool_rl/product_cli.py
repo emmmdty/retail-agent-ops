@@ -892,8 +892,27 @@ _TEACHER_COLLECT_KEYS = {
 
 
 def _default_teacher_client_factory(route: TeacherRouteSnapshot, api_key: str) -> TeacherClient:
-    """生产环境默认工厂：延迟导入 openai SDK，不在导入期发起任何请求。"""
-    return OpenAICompatibleTeacherClient.from_route(route, api_key)
+    """生产环境默认工厂：延迟导入 openai SDK，不在导入期发起任何请求。
+
+    `TEACHER_LLM_EXTRA_HEADERS_JSON`（可选，`{"头名": "值"}` 形式）作为**传输层
+    会话元数据**透传给 SDK client——2026-09-07 起 opencode zen 强制要求
+    `x-opencode-session`，该头只影响代理路由，不进入任何判分语义。
+    """
+    extra_headers: dict[str, str] | None = None
+    raw = os.environ.get("TEACHER_LLM_EXTRA_HEADERS_JSON")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"TEACHER_LLM_EXTRA_HEADERS_JSON 不是合法 JSON: {error}") from None
+        if not isinstance(parsed, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in parsed.items()
+        ):
+            raise ValueError(
+                "TEACHER_LLM_EXTRA_HEADERS_JSON 必须是 {string: string} 形式的 JSON object"
+            )
+        extra_headers = parsed
+    return OpenAICompatibleTeacherClient.from_route(route, api_key, default_headers=extra_headers)
 
 
 def _run_teacher_collect(

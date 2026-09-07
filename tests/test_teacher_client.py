@@ -311,9 +311,32 @@ def test_production_factory_bounds_the_request_timeout_and_retries(
 def test_the_request_timeout_is_a_named_constant_not_a_magic_number() -> None:
     """超时值必须能被引用与断言，否则文档里写的数字与代码里的会各走各的。"""
     from veritool_rl.retail_ops.build.teacher_client import (
-        TEACHER_MAX_RETRIES,
         TEACHER_REQUEST_TIMEOUT_SECONDS,
     )
 
     assert TEACHER_REQUEST_TIMEOUT_SECONDS > 0
+
+
+def test_from_route_forwards_extra_transport_headers_only_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-09-07：opencode zen 代理开始强制要求 `x-opencode-session` 头
+    （400 MissingSessionID，5 分钟瞬断窗内 26 条 transport_exhausted）。
+    传输层需要能携带**额外头**，但头是会话路由元数据、不是路由语义——
+    不给出（或给出空表）时构造参数逐字节不变，既有行为零扰动。"""
+    route, api_key = _route()
+    constructor_calls: list[dict[str, Any]] = []
+
+    def fake_openai(**kwargs: Any) -> _FakeOpenAIClient:
+        constructor_calls.append(kwargs)
+        return _FakeOpenAIClient(_response())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=fake_openai))
+
+    OpenAICompatibleTeacherClient.from_route(route, api_key)
+    assert "default_headers" not in constructor_calls[-1], "未给出额外头时不得改构造参数"
+
+    headers = {"x-opencode-session": "test-session-id"}
+    OpenAICompatibleTeacherClient.from_route(route, api_key, default_headers=headers)
+    assert constructor_calls[-1].get("default_headers") == headers
     assert TEACHER_MAX_RETRIES >= 0

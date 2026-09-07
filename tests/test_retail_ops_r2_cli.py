@@ -1415,3 +1415,45 @@ def test_formal_dev_base_rejects_output_overwrite(workspace: Path, tmp_path: Pat
             hardware_provider_factory=_hardware_provider_factory,
             code_commit_factory=_fake_code_commit_factory,
         )
+
+
+def test_default_teacher_client_factory_forwards_extra_headers_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-09-07：zen 代理强制 `x-opencode-session`——额外头经 env 透传，
+    只影响传输层路由，不进入判分语义；env 缺省时行为与历史逐字节相同。"""
+    import os
+
+    from veritool_rl.core.build.teacher_route import load_teacher_route
+    from veritool_rl.product_cli import _default_teacher_client_factory
+
+    captured: list[dict[str, object]] = []
+
+    def fake_from_route(cls, route, api_key, *, default_headers=None):
+        captured.append({"route": route, "api_key": api_key, "default_headers": default_headers})
+        return object()
+
+    monkeypatch.setattr(
+        "veritool_rl.retail_ops.build.teacher_client.OpenAICompatibleTeacherClient.from_route",
+        classmethod(fake_from_route),
+    )
+    route = load_teacher_route(
+        {
+            "TEACHER_LLM_PROVIDER": "fake",
+            "TEACHER_LLM_FAKE_BASE_URL": "https://teacher.example.test/v1",
+            "TEACHER_LLM_FAKE_API_KEY": "sk-factory-test",
+            "TEACHER_LLM_FAKE_MODEL": "teacher-model",
+        }
+    )
+    monkeypatch.delenv("TEACHER_LLM_EXTRA_HEADERS_JSON", raising=False)
+    _default_teacher_client_factory(route, "sk-test")
+    assert captured[-1]["default_headers"] is None
+
+    monkeypatch.setenv("TEACHER_LLM_EXTRA_HEADERS_JSON", '{"x-opencode-session": "session-abc"}')
+    _default_teacher_client_factory(route, "sk-test")
+    assert captured[-1]["default_headers"] == {"x-opencode-session": "session-abc"}
+
+    monkeypatch.setenv("TEACHER_LLM_EXTRA_HEADERS_JSON", "not-json")
+    with pytest.raises(ValueError, match="TEACHER_LLM_EXTRA_HEADERS_JSON"):
+        _default_teacher_client_factory(route, "sk-test")
+    assert os.environ.get("TEACHER_LLM_EXTRA_HEADERS_JSON") == "not-json"
