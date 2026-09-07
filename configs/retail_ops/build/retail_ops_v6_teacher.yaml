@@ -2,7 +2,7 @@
 # 对 v6 train split（588 任务）按冻结默认预算采集，teacher 为 mimo-v2.5
 # （沿用既有授权，费用逐次记账）。接受率门禁 ≥0.80（分场景分桶）+ 采集前
 # 枚举域断言（PITFALLS #26 教训前移，已在 CLI 构造期生效）。
-# 必设 TEACHER_LLM_EXTRA_HEADERS_JSON 会话头（zen 代理 2026-09-07 起强制）。
+# 必设教师侧传输层会话头（zen 代理 2026-09-07 起强制；变量名见交接 §3.2，不进配置）。
 # 可安全中断续跑：已接受任务由 checkpoint 精确哈希校验后跳过。
 pipeline: teacher_collect
 bundle_dir: domains/retail_ops/v4
