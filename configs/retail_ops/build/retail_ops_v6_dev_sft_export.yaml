@@ -1,0 +1,8 @@
+# V6 迭代（V6-3-4，预注册 task_plan 运行清单）：dev_sft_export — 用 Oracle 为 198 条 v6
+# dev 任务导出 SFT 数据（训练时换入为 eval_relpath，评测前换回 TaskSpec dev.jsonl——
+# round4 交接坑 2 沿袭）。
+pipeline: dev_sft_export
+bundle_dir: domains/retail_ops/v4
+dataset_version: retail_ops_v6_20260907
+dev_manifest_path: manifests/retail_ops/v1/retail_ops_v6_20260907/dev.json
+attempt_id: dev-sft-v6-001

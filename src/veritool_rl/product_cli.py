@@ -23,11 +23,13 @@ from fastapi import FastAPI
 
 from veritool_rl.cli import load_config
 from veritool_rl.core.agent.qwen import (
+    DEFAULT_PARSER_ID,
     CudaHardwareProvider,
     GenerationBackend,
     GenerationSettings,
     HardwareProvider,
     TransformersBackend,
+    parser_for_id,
     verify_local_model_files,
 )
 from veritool_rl.core.artifacts import (
@@ -697,7 +699,21 @@ _OOD_EVAL_BASE_KEYS = {
     "model",
     "generation",
 }
+#: V6-2b：解析器版本为显式可选键（v6 起的评测配置显式携带 v2；未声明 = v1 旧行为）。
+_OOD_EVAL_OPTIONAL_KEYS = frozenset({"parser_id"})
 _OOD_EVAL_CANDIDATE_KEYS = _OOD_EVAL_BASE_KEYS | {"adapter"}
+
+
+def _resolve_ood_parser_id(config: dict[str, Any]) -> str:
+    """解析 OOD 评测的解析器版本：未声明 = v1（旧行为），声明值必须已登记。"""
+    value = config.get("parser_id")
+    if value is None:
+        return DEFAULT_PARSER_ID
+    if not isinstance(value, str):
+        msg = "parser_id 必须是字符串"
+        raise ValueError(msg)
+    parser_for_id(value)  # 未知 id 在此 fail-closed
+    return value
 
 
 def _run_ood_build(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -824,7 +840,11 @@ def _run_ood_evaluate(
         raise ValueError(
             "ood_evaluate 的 dataset_version 取自评测目录的 manifest.json，不在配置文件里声明"
         )
-    _require_config_keys(config, _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS)
+    _require_config_keys(
+        config,
+        _OOD_EVAL_CANDIDATE_KEYS if is_candidate else _OOD_EVAL_BASE_KEYS,
+        optional=_OOD_EVAL_OPTIONAL_KEYS,
+    )
     bundle = load_bundle(_bundle_dir(config))
     models_root = _project_relative_path(config, "models_root")
     manifest = load_ood_manifest(args.input_dir / "manifest.json")
@@ -834,6 +854,7 @@ def _run_ood_evaluate(
         generation=GenerationSettings(**_config_mapping(config, "generation")),
         code_commit=(code_commit_factory or _current_code_commit)(),
         dataset_version=manifest.dataset_version,
+        parser_id=_resolve_ood_parser_id(config),
     )
     evaluate_ood(
         config=ood_config,
