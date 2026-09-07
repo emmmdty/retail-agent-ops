@@ -940,9 +940,7 @@ _TOTALITY_SHAPES = (
         r"(?:已消耗|消耗了|一共|总共|总计|累计|至今|迄今|统共|共)"
         r"[^。\n]{0,8}?" + _NUM + r"\s*[次轮回组条]"
     ),
-    re.compile(
-        r"(?:整个开发期|全程|只被?)[^。\n]{0,20}?观测了?\s*" + _NUM + r"\s*[次轮回组条]"
-    ),
+    re.compile(r"(?:整个开发期|全程|只被?)[^。\n]{0,20}?观测了?\s*" + _NUM + r"\s*[次轮回组条]"),
     # 「观测总数为 8」「观测数：8」用系词分支；不用宽间隙——「唯一事实源」
     # 的「一」会被当成数字（2026-09-08 误伤教训）。
     re.compile(r"观测(?:总数|次数|数)\s*[:：为是达]\s*" + _NUM + r"\b"),
@@ -950,21 +948,11 @@ _TOTALITY_SHAPES = (
     re.compile(r"观测预算[^。\n]{0,4}?" + _NUM + r"\s*[次轮回组条]"),
     re.compile(r"(?:发起了?|停在)\s*" + _NUM + r"\s*[次轮回组条]?(?:\s*观测)?"),
     re.compile(_NUM + r"\s*(?:release\s+)?decisions?\s+have\s+been\s+made", re.IGNORECASE),
-    re.compile(
-        r"number\s+of\s+sealed\s+holdout\s+observations\s+is\s+" + _NUM, re.IGNORECASE
-    ),
-    re.compile(
-        r"(?:there\s+(?:have|has)\s+been|there\s+were)\s+" + _NUM + r"\b", re.IGNORECASE
-    ),
-    re.compile(
-        r"observation\s+count[^.\n]{0,10}?" + _NUM + r"\b", re.IGNORECASE
-    ),
-    re.compile(
-        r"observation\s+count\s+stands\s+at\s+" + _NUM + r"\b", re.IGNORECASE
-    ),
-    re.compile(
-        r"(?:has\s+been|was|were)\s+observed\s+" + _NUM + r"\s+times", re.IGNORECASE
-    ),
+    re.compile(r"number\s+of\s+sealed\s+holdout\s+observations\s+is\s+" + _NUM, re.IGNORECASE),
+    re.compile(r"(?:there\s+(?:have|has)\s+been|there\s+were)\s+" + _NUM + r"\b", re.IGNORECASE),
+    re.compile(r"observation\s+count[^.\n]{0,10}?" + _NUM + r"\b", re.IGNORECASE),
+    re.compile(r"observation\s+count\s+stands\s+at\s+" + _NUM + r"\b", re.IGNORECASE),
+    re.compile(r"(?:has\s+been|was|were)\s+observed\s+" + _NUM + r"\s+times", re.IGNORECASE),
     re.compile(r"(?:in total|a total of|altogether|to date|so far)", re.IGNORECASE),
 )
 
