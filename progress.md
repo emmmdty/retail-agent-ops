@@ -1438,3 +1438,22 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-07 | V5-1b 覆盖表（本地 CPU） | 5.0×→~1.0× 机器证明落盘 |
 | 2026-09-07 | 干净 clone 实跑 | 1464/49/0，文档基线同步（30a1299） |
 | 2026-09-07 | V5-2-smoke（mimo，~4 min 后中断） | 86 条 transport_exhausted（周限），$0 |
+
+## 2026-09-07 — V5 观测 8 全链完成：v1.3 NO-GO（11/12，invalid_call_count=2 唯一失败），绝对门历史首过
+
+- A-4 补采（26 条 transport 失败重试全部接受）→ 588 任务 566 接受 = 96.3%；
+  V5-3 train_export（2352 行，teacher 566 + Oracle 兜底 22）；V5-4 dev_sft 198 条。
+- A-5.1 训练 sft-v5-001（441 步，loss 1.2555→0.0529）；A-5.2-5.10 全部评测完成：
+  dev 配对（base 0.5101/pv74 → candidate 1.0000/pv0）、探针 15/15、OOD v2 1.0000、
+  OOD v4 0.9917、封存观测 8（base 0.5691/pv81 → candidate 1.0000/pv0/invalid2）。
+- V5-11 release v1.3：**NO-GO（11/12）**——唯一失败门 invalid_call_count=2（parse 滑步）；
+  policy_violation_count_max=0 **历史首次 PASS**；ci_lower +0.3699。
+  按 A-6 第三分支「升级需用户确认」处理中。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-07 | V5-2 补采 26 条（同 attempt 重试） | 全部接受；rtc 42/42；总体 96.3% |
+| 2026-09-07 | V5-3/V5-4 导出（本地 CPU） | sft.jsonl 2352 行；dev-sft 198 条 |
+| 2026-09-07 | V5-5 训练（gpu-5090 GPU 0，34 min） | sft-v5-001；loss 1.2555→0.0529 |
+| 2026-09-07 | V5-6/7b/8b/7/8/9/10 评测（GPU 0 级联） | 全部完成，读数见 findings |
+| 2026-09-07 | V5-11 release v1.3（本地 CPU） | NO-GO（11/12）；绝对门历史首过 |

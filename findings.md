@@ -1,5 +1,27 @@
 # Findings
 
+## 2026-09-07 — V5 观测 8 全链完成：v1.3 判定 NO-GO（11/12 PASS，唯一失败门 invalid_call_count=2），绝对门历史首过
+
+- **封存 holdout 观测 8**（246 条，v5 数据集，max_steps 7）：base 0.5691/pv81；
+  candidate（合并形态，merged_revision ff1a88db…）**1.0000 / pv=0 / invalid=2**；
+  delta +0.4309、ci_lower **+0.3699**、per_call 1.05、steps 0.92、latency_per_success 0.97。
+- **v1.3 正式判定（V5-11，formal-release-008）= NO-GO（11/12）**：唯一失败门
+  `invalid_call_count`（2 > 0）——2 次 parse 滑步发生在成功任务中途（重试后完成），
+  非工具拒绝（trajectories 全扫 0 次 invalid_arguments/unknown_tool）、非政策违规。
+  **`policy_violation_count_max=0` 历史首次 PASS**——B-4 立项的核心主张
+  （5.0× 难度偏移是政策违规的根因）被证实。
+- **辅助面**：v5 dev 198 条 candidate 1.0000/pv0（base 0.5101/pv74）；
+  探针 15/15 = 1.00（−14 修复且放行侧完好）；OOD v2 1.0000（base 0.6167）；
+  OOD v4 0.9917（base 0.45）；dev/holdout/probe/OOD 四面零政策违规。
+- **预注册分支落点**：A-6 三分支的形状假设（修好=12/12；修坏=绝对门 FAIL）均不匹配
+  本结果（探针达标但一门未过）——第三分支「边界改善但未达标（或反之）」按其「升级需
+  用户确认」条款处置，升级材料已备（本条 + release.json 三件套）。
+- **工程教训（本日三连）**：(1) CLI 管线的 config 键白名单是精确匹配——`max_steps`
+  版本化需要「可选键」机制（`_require_config_keys` 增 optional 参数）；(2) 构造代码
+  丢字段（max_steps 未从 YAML 传入冻结配置）→ validator 以「got 5」当场报错——
+  fail-closed 自报错，非静默失败；(3) zen 代理中途强制会话头——外层 API 的行为
+  变更会以 transport_exhausted 的形态砸进采集，重试机制（checkpoint + 删失败文件）
+  是真金保险。
 ## 2026-09-07 — A-4 收口：mimo 周限两连击 + zen 代理会话头强制 + rtc_stepwise 继承性缺陷（用户裁定放行）
 
 - **采集最终态**：588/588 处理、**566 接受 = 96.3%**；分桶 11/12 场景 1.00，
