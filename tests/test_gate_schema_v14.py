@@ -260,6 +260,9 @@ def test_release_configs_declare_versions_consistently() -> None:
         "retail_ops_v1_r4_formal_release.yaml",
         "retail_ops_v1_r45_formal_release_v11.yaml",
         "retail_ops_v1_d4_formal_release_v13.yaml",
+        # B-4/v5 一次性判定（观测 8）：A-0 用户裁定沿用 1.3（不启用 1.4），
+        # 判定已完成（LOG-20260907-01，NO-GO 11/12）——与 D4 v13 同一先例。
+        "retail_ops_v5_formal_release_v13.yaml",
     }
     latest = max(GATE_IDS_BY_SCHEMA, key=lambda v: tuple(int(p) for p in v.split(".")))
 
