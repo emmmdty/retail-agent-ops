@@ -1362,6 +1362,7 @@ def _run_formal_dev_base(
     generation_settings = GenerationSettings(**generation_value)
     base_config = BaseEvaluationConfig(
         dataset_version=dataset_version,
+        max_steps=int(config.get("max_steps", 5)),
         model=model_artifact,
         generation=generation_settings,
         code_commit=(code_commit_factory or _current_code_commit)(),
@@ -1466,6 +1467,7 @@ def _run_formal_dev_candidate(
 
     candidate_config = CandidateEvaluationConfig(
         dataset_version=dataset_version,
+        max_steps=int(config.get("max_steps", 5)),
         model=ModelArtifact(**model_value),
         adapter=AdapterArtifact(**adapter_value),
         generation=GenerationSettings(**generation_value),
@@ -1589,6 +1591,7 @@ def _run_formal_holdout(
 
     sealed_config = SealedEvaluationConfig(
         dataset_version=dataset_version,
+        max_steps=int(config.get("max_steps", 5)),
         model=ModelArtifact(**model_value),
         adapter=AdapterArtifact(**_config_mapping(config, "adapter")) if is_candidate else None,
         merged_from=(
