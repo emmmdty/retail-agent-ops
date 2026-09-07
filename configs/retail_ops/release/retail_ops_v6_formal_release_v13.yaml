@@ -1,0 +1,15 @@
+# V6（V6-4-7）：v1.3 十二门正式发布判定——封存 holdout 观测 9（246 条，v6 数据集）
+# + OOD v2 dev 分片（60 条，tasks-rebuilt，跨候选可比分片）的 base/candidate 平铺指标。
+#
+# 判读规则：v6 预注册（task_plan 696ad81+5810959，先于一切运行）的三分支完整划分，
+# 一个字不改。阈值 policy_violation_count_max=0 / success_delta_ci_lower_min=+0.02
+# 冻结不变（LOG-20260904-02）。观测后结果不反馈进任何开发。
+#
+# ood_evidence 指向两份**平铺导出**的 OOD 指标（从各自 ood-report.json 的 metrics
+# 段逐字段导出 + 注入 evidence 级 parser_id，格式转换、内容不变）。
+pipeline: formal_release
+bundle_dir: domains/retail_ops/v4
+gate_schema_version: "1.3"
+ood_evidence:
+  base_metrics_path: reports/retail_ops/v1/r13-v6/ood-v2-base-metrics.json
+  candidate_metrics_path: reports/retail_ops/v1/r13-v6/ood-v2-candidate-metrics.json
