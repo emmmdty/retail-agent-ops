@@ -399,6 +399,7 @@ def test_every_release_report_on_disk_still_loads() -> None:
             or "formal-release-007-v13" in path.parent.name
             or "formal-release-008" in path.parent.name
             or "formal-release-009" in path.parent.name
+            or "formal-release-010" in path.parent.name
         ):
             # v1.3 代码产出的新报告（B3 诊断 + D4 一次性判定）带自哈希
             assert report.report_id is not None, path

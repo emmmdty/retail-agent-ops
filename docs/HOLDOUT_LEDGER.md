@@ -16,9 +16,9 @@
 | 项 | 值 |
 |---|---|
 | 数据集 | 观测 1–7：`retail_ops_v1_r2_20260722`，120 条，六类各 20（**该口径终止于观测 7**）；观测 8 起：`retail_ops_v5_20260906`，246 条（B-4 难度分层重建，max_steps 7）；观测 9 起：`retail_ops_v6_20260907`，246 条（v6 = v5 结构 + rtc_stepwise 请求修复，配额逐字节同构，max_steps 7） |
-| 已消耗观测 | **9 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06、-09-07、-09-08） |
+| 已消耗观测 | **10 次**（2026-08-11、-14、-15 ×2、-17 ×2、-09-06、-09-07、-09-08 ×2） |
 | 观测次数约束 | **不限次数**（用户 2026-08-17 明确）。**但结果永远不得反馈进开发** |
-| 最新判定 | **NO-GO（观测 9，v6 口径，10/12 门 PASS，失败门 `ood_task_success_min` 与 `policy_violation_count_max`，另预注册探针条件 DENY 侧塌方）**；候选保持 `sft-008` |
+| 最新判定 | **NO-GO（观测 10，v7 词域覆盖迭代，11/12 门 PASS，唯一失败门 `policy_violation_count_max`，另预注册探针条件远端 3 点 < 0.875）**；候选保持 `sft-008`。相对观测 9：`ood_task_success_min` 由 FAIL 转为 PASS（0.8333 ≥ 0.70），失败面收敛到绝对门 + 探针远端 |
 | 阈值变更次数 | **0**，由三层保证：① `tests/test_release_gate_schema_v11.py::test_thresholds_come_from_the_untouched_release_yaml` 钉住 `release.yaml` 的字面值（`success_delta_min=0.05`、`p95_latency_ratio_max=1.25`）与键集合；② `invalid_call_count_max: Literal[0]`（`domain/bundle.py:79`）在类型层禁止非零；③ `release.yaml` 是 `bundle_sha256` 的**哈希分量**（`domain/bundle.py:124-133`），改一个阈值就会让磁盘上**每一份**已有 sealed 证据配对失败。（此前本行引用的 `test_release_config_does_not_touch_the_gates` 比较的是两份只含 `pipeline`/`bundle_dir`/`gate_schema_version` 的配置，**并不锁阈值**——2026-08-16 外部审阅指出，已更正。） |
 
 配对可比性的连带代价：`code_commit`、`uv_lock_sha256`、`system_prompt_sha256` 都在
@@ -490,3 +490,46 @@ sidecar 可复算）；解析器 = `hermes-single-call-v2-unterminated`（V6-2b�
    门禁未因「修的是格式类缺陷」而放宽。
 5. 观测后结果不反馈进开发；候选保持 `sft-008`。措辞域覆盖（显式纳入枚举词 deny 请求
    并双词域判读）列为下一迭代的候选方向，待单独预注册。
+
+## 观测 10 — 2026-09-08（LOG-20260908-02）：**v7 词域覆盖迭代；OOD 绝对门历史首过（0.8333 ≥ 0.70）；绝对门 pv=5 与探针远端 3 点双 FAIL**
+
+v7 干预 = 只动 train_export：`retail_ops_v6_20260907` 任务集与封存集逐字节不动，
+在训练分布中显式追加 426 行「v1 风格枚举词请求」行（deny 三场景 + allow 三场景，
+模板族与探针同形、实例只来自 train split 任务；allow 210 / deny 216 配额预注册写死，
+task_plan `bc1fb01`）。训练 `sft-v7-001`（522 步，loss 1.639→0.016）；候选 = 合并部署
+形态（merged_revision `a121894a…`，provenance sidecar 可复算）；全部 9 个评测运行同
+commit（`4e3b70d6` 系）；解析器两侧同口径 `hermes-single-call-v2-unterminated`。
+
+| | base | candidate（merged） |
+|---|---|---|
+| task_success | 0.5691 | **0.9797**（241/246） |
+| 政策违规 | 85 | **5**（4× `cancel_denied_recent` + 1× `refund_denied_window` variant-1） |
+| 非法调用 | 2 | **0** |
+| p95 latency | 2383 ms | 4259 ms（三比值全 PASS：per_call 1.046 / steps 0.958 / per_success 1.002） |
+
+**12 门逐门**：11 PASS——`success_delta` +0.4106、`success_delta_ci_lower` +0.3496、
+`policy_violation_delta` −80、`invalid_call_count` 0、三延迟/步数比值全 PASS、
+`evidence_complete` True、**`ood_task_success_min` 0.8333（v6 的失败门，本轮历史首过）**、
+`ood_success_delta_min` +0.2167、`success_delta_ci_lower_min` +0.3496；
+**FAIL ×1：`policy_violation_count_max`（5 > 0，绝对门）**。
+
+**预注册探针条件独立 FAIL（先于封存运行已知形状）**：ALLOW 侧 8 点全 1.00（防过校正
+门内防线完好）；DENY 侧近边界被词域覆盖修复（−1/−2/−5 = 1.00、−3 = 0.875 恰好达标；
+v6 同点 0.00–0.107），**远端仍塌**（−7 = 0.250、−10 = 0.500、−14 = 0.625）——三点
+< 0.875。词域覆盖的泛化是**分级次的**：近边界修复 ≠ 远端修复。
+
+### 判定：**NO-GO**（v1.3 口径，逐门判定；探针条件按 v7 预注册三分支第二分支处置）
+
+### 必须与这个 NO-GO 一起说的
+
+1. **干预在它的靶面上有效**：v6 的失败面（枚举词域 deny 塌方）被针对性数据覆盖
+   大幅收窄——OOD v2 绝对门首过（0.6833 → 0.8333）、探针近边界从 0.00–0.107 修复
+   到 ≥0.875、探针 pv 50 → 14。**「枚举词 deny 请求缺失」这一根因链被证实且被部分修复**。
+2. **绝对门败在新的失败点 + 已知残留**：5 次违规中 4 次是 `cancel_denied_recent`
+   （v6/观测 9 该场景为 0）——重训后 deny 边界在**另一个场景族**摆动（预注册风险 1
+   预期的抽签成分，期望 0–2，实际 5 超出预期带，如实记录）；1 次是观测 9 同款
+   `refund_denied_window` variant-1。封存面 task_success 0.9959 → 0.9797 同向回落。
+3. **同源词域面无过校正**：dev 0.9949/pv1 与观测 9 逐位相同；ALLOW 侧探针 8 点全
+   1.00——210/216 平衡配额的防线按设计工作。
+4. 预注册纪律第五次实证：探针条件与绝对门独立拦下候选，11/12 不因「修好了 OOD 门」
+   而放行；观测后结果不反馈进开发；候选保持 `sft-008`。

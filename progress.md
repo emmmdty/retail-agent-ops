@@ -1537,3 +1537,33 @@ epochs 1 / batch 2 × accum 4 / max_length 2048 + 渲染长度实测 + loss 非�
 | 2026-09-08 | V6-4-2..5 级联（GPU 0，~80 min） | 8/8 完成，无 FAILED |
 | 2026-09-08 | V6-4-6 封存候选（GPU） | 0.9959/pv1/inv0 |
 | 2026-09-08 | V6-4-7 release v1.3（本地 CPU） | NO-GO（10/12）；候选不变 |
+
+## 2026-09-08 — V7 全链 + 观测 10 判定 NO-GO（11/12 + 探针条件 FAIL）：根因链预测-验证闭环，候选不变
+
+- **V7-0/V7-1**：A-0 两方案点用户确认（只动 train_export + 2 模板变体/任务）；
+  静态核查落 findings（注入缝/配额依据/污染红线数据）。预注册 `bc1fb01` 先于一切运行。
+- **V7-2 TDD 实现**（本地 CPU）：`sft_enum_word` 键 + EnumWordPlan（尾部追加语义 +
+  sidecar 条件化 + 枚举域 fail-closed）；25 条新测试锁定配额/平衡/逐字节前缀/污染红线。
+- **V7-3-1 导出**：sft.jsonl 2352 前缀与 v6 逐字节相同 + 426 追加行
+  （allow 210 / deny 216，与预注册配额一致）；provenance 三件与 v6 相同。
+- **V7-4-1 训练**（gpu-5090 GPU 0，~41 min）：522 步 loss 1.639→0.016，
+  eval_loss 0.0954；merge → `Qwen3-4B-sft-v7-001-merged`（merged_revision `a121894a…`）。
+- **V7-4-2..7 评测级联**（GPU 0 串行 ~100 min，9 运行同 commit `4e3b70d6`，零 FAILED）：
+  dev candidate 0.9949/pv1（与观测 9 逐位相同）；探针 candidate 0.8833/pv14
+  （ALLOW 8 点全 1.00；DENY −1..−5 修复至 ≥0.875，−7/−10/−14 = 0.250/0.500/0.625 仍塌）；
+  OOD v2 candidate **0.8333**/pv9（绝对门 0.70 **历史首过**）；OOD v4 0.9667/pv4。
+- **V7-4-8 观测 10 + release v1.3**（本地 CPU）：base 0.5691/pv85/inv2 → candidate
+  （合并）**0.9797/pv5/inv0**、p95 4259ms、三延迟比全 PASS；**NO-GO（11/12）**——
+  唯一失败门 `policy_violation_count_max`（5>0：4× cancel_denied_recent 新失败点 +
+  1× 观测 9 同款残留），另探针条件独立 FAIL。候选保持 sft-008。
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-09-08 | V7-2 TDD（本地 CPU） | 25 测试；全门绿 |
+| 2026-09-08 | V7-3-1 导出（本地 CPU） | 2352+426 行；前缀逐字节核对 |
+| 2026-09-08 | 私有产物同步远端 + repo ff 同步 | 2778 行哈希一致 |
+| 2026-09-08 | V7-4-1 训练（gpu-5090 GPU 0，~41 min） | sft-v7-001；522 步 |
+| 2026-09-08 | merge（GPU）+ 候选配置生成 | merged_revision a121894a… |
+| 2026-09-08 | V7-4-2..7 级联（GPU 0，~100 min） | 9/9 完成，无 FAILED |
+| 2026-09-08 | V7-4-8 观测 10 + release v1.3（本地 CPU） | NO-GO（11/12）；候选不变 |
+| 2026-09-08 | 干净 clone 实跑（`4e3b70d`） | 1520 passed / 49 skipped / 0 failed |

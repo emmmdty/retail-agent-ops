@@ -266,6 +266,9 @@ def test_release_configs_declare_versions_consistently() -> None:
         # V6 一次性判定（观测 9）：A-0 用户裁定沿用 1.3（v1.4 首用时单独决策），
         # 判定已完成（LOG-20260908-01，NO-GO 10/12）——与 v5/D4 同一先例。
         "retail_ops_v6_formal_release_v13.yaml",
+        # V7 一次性判定（观测 10）：A-0 沿袭 1.3（不启用 1.4），判定已完成
+        # （LOG-20260908-02，NO-GO 11/12 + 探针条件 FAIL）——与 v6 同一先例。
+        "retail_ops_v7_formal_release_v13.yaml",
     }
     latest = max(GATE_IDS_BY_SCHEMA, key=lambda v: tuple(int(p) for p in v.split(".")))
 

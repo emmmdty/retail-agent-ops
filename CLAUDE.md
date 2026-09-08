@@ -97,8 +97,8 @@ git diff --check
   `build → evaluate → release → serve` 四接口在真实模型上跑通，
   对外交付物见 `README.md` / `README.en.md` / `docs/INTERVIEW_PREP.md`。
 - 当前基线：**1569 tests passed**（作者环境）／干净 clone 上 1520 passed、49 skipped、**0 failed**
-  （2026-08-27 **实跑**；同日在 `88ccabb` 上实跑复核了上一轮公布的 1238/46，与推算值一致）；
-  `ruff check`、**`ruff format --check`**、`mypy`(89)、
+  （2026-09-08 v7 收口**实跑**；跳过的全部要读不随仓库分发的私有产物）；
+  `ruff check`、**`ruff format --check`**、`mypy`(116)、
   `uv lock --check`、`git diff --check`、`scripts/ci/audit_public_release.py` 全部通过。
 
 ### 结论摘要（引用时必须带条件）
