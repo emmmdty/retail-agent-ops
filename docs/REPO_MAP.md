@@ -23,14 +23,20 @@
 | `domains/retail_ops/v2/` | 活动 | 领域 bundle v2：政策规则**可执行**、`refund_order` 增必填 `idempotency_key`。见 [`DOMAIN_BUNDLE_V2.md`](./DOMAIN_BUNDLE_V2.md)。正式数据集轨道仍只接受 v1 |
 | `domains/retail_ops/v3/` | 活动 | 领域 bundle v3（15 工具，`evaluator_id: retail_ops_v3`）；R8 C2 引入，6 类任务同 v1 |
 | `domains/retail_ops/v4/` | 活动 | 领域 bundle v4（跨工具评测，`evaluator_id: retail_ops_v4`）；R9 Phase B 的跨工具 teacher 采集与评测轨道 |
+| `domains/flight_ops/` | 活动 | 第二领域数据 bundle（R8/R9 引入，镜像 retail_ops 的 domain/build/evaluate/release 结构，验证领域可替换性） |
 | `configs/` | 活动 | 运行配置，按四接口分层 |
 | `manifests/` | 活动 | 冻结数据集的公开 manifest（answer-free，进 Git） |
 | `tests/` | 活动 | 治理契约测试与领域契约测试；条数以 `README.md` 的工程基线一行为准，本表不复述 |
 | `scripts/legacy/` | legacy | 旧 CLI 脚本；`legacy/bfcl/` 仍服务于 BFCL 外部回归 |
+| `scripts/ops/` | 活动 | 运维与演示脚本（13 个：措辞池生成与互斥导出、演示视频与证据、引擎对照与基准、政策边界曲线、LoRA 合并等；其中 8 个在 `pyproject.toml` 的 mypy `files` 清单内） |
+| `scripts/flight_ops/` | 活动 | flight_ops 运维脚本（`run.py`） |
+| `scripts/retail_ops/` | 活动 | RetailOps 运维脚本（退化曲线、DPO 采样） |
+| `scripts/*.py`（顶层散脚本） | 活动 | 一次性运维与分析脚本：`export_mlflow.py`、`plot_degradation_curve.py`、`r9_convert_to_sft.py`、`r9_phase_a_oversample.py`、`run_degradation_curve.py`、`run_v3_degradation.py`、`task1d_ood_gate_dryrun.py` |
 | `reports/retail_ops/` | 活动 | RetailOps 运行产物（ignored，不进 Git） |
+| `reports/flight_ops/` | 活动 | flight_ops 的 r10 运行产物（**进 Git**，与 `reports/retail_ops/` 的 ignored 策略相反） |
 | `reports/legacy/` | 归档 | 旧 MVP/BFCL 的历史报告（部分进 Git，作为结果可追溯性凭证） |
 | `data/` | 活动 | 私有数据与外部 benchmark checkout（整体 ignored） |
-| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE` / **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`** / **`RESULTS`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
+| `docs/` | 活动 | 治理文档 + 交付文档（`MODEL_CARD` / `MODEL_CARD_sft-006` / `SYSTEM_CARD` / `DEMO` / `RESUME_EVIDENCE`（2026-09-08 起为本地不分发层，见 §8）/ **`HOLDOUT_LEDGER`** / **`POLICY_BOUNDARY`** / **`RESULTS`**）；`docs/handoffs/` 为当前有效的执行提示词，`docs/archive/` 为已完成阶段的过程文档 |
 | `scripts/ci/` | 活动 | CPU 全链路复现校验（`verify_qualification_chain.py`），CI 与本地共用同一条命令 |
 | `.github/workflows/` | 活动 | CPU 质量门 workflow。**2026-08-20 首次真跑通过**（commit `596eee8`，证据见 `docs/CI_EVIDENCE.md`） |
 | `Dockerfile` | 活动 | CPU-only 镜像，刻意不含 torch（重依赖只在 GPU 主机装） |
@@ -69,6 +75,7 @@ src/veritool_rl/
 │   ├── evaluate/           #   evaluation
 │   └── release/            #   release
 ├── training/sft.py         # 单卡 QLoRA-SFT
+├── training/dpo.py         # DPO 偏好训练
 └── legacy/                 # 旧 VeriTool-RL 路线（bfcl 数据与评测、MVP evaluator、grpo/preference）
 ```
 
@@ -80,7 +87,7 @@ src/veritool_rl/
 
 | 路径 | 消费命令 |
 |---|---|
-| `configs/retail_ops/build/` | `retail-agent-ops build`（R1 qualification 有**必填**键 `inject`——间接 prompt injection 变体与欠指定澄清变体（`inject` / `clarify`）都是独立评测子集而非默认行为；另含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
+| `configs/retail_ops/build/` | `retail-agent-ops build`（R1 qualification 有**必填**键 `inject`——间接 prompt injection 变体与欠指定澄清变体（`inject` / `clarify`）都是独立评测子集而非默认行为；另含 formal_freeze / teacher_collect / train_export / dev_sft_export / sft 五条流水线；DPO 主线的三个配置 `retail_ops_dpo.yaml` / `retail_ops_dpo_smoke.yaml` / `retail_ops_dpo_sampling.yaml` 也在本层）。`train_export` 有**三个必填**的变换键，都不给默认值——目的是让"忘了写"与"故意不启用"在配置层可分辨：`sft_oversample`（按场景重复 sft 行，空 mapping = 不重采样）、`sft_terminal_response`（按场景在多步样本末尾追加一条**独立的** assistant 终局回复，空列表 = 不追加）、`sft_system_prompt_sha256`（把 system 消息改写为当前 `runner.SYSTEM_PROMPT`，`null` = 沿用轨迹里的 prompt）。最后一个刻意声明**期望哈希**而非布尔值：teacher 证据持久化了 `metadata["system_prompt"]`，改常量不会追溯改写它，布尔值下"配置写了 true 但常量忘了改"会静默产出逐字节相同的训练集 |
 | `configs/retail_ops/evaluate/` | `retail-agent-ops evaluate`（qualification、formal_dev_base、formal_dev_candidate、formal_holdout_base、formal_holdout_candidate）。qualification 侧有一个**必填**键 `perturb_schema`：它改变评测条件（工具别名 + 参数顺序扰动），"忘了写"与"故意不启用"必须在配置层可分辨；`..._schema_{clean,perturbed}.yaml` 是只差这一个开关的对照。另有必填键 `guardrail`：开不开独立于环境的第二道防线同样是评测条件，`retail_ops_v2_injection_{unguarded,guarded}.yaml` 是只差这一个开关的对照。第三个必填键 `user_simulator` 决定 episode 是单轮还是可澄清多轮，`retail_ops_v2_clarify_{singleturn,multiturn}.yaml` 是只差这一个开关的对照 |
 | `configs/retail_ops/release/` | `retail-agent-ops release`（R1 配对门禁、formal_release）。`formal_release` 有一个**必填**键 `gate_schema_version`（`"1.0"` / `"1.1"`）——"这份判定用的是哪套门禁语义"是证据最重要的元数据之一，不能靠"没写就是旧的" |
 | `configs/retail_ops/serve/` | `retail-agent-ops serve`（R1 qualification、formal_serve） |
@@ -176,6 +183,9 @@ base + candidate **两侧**重跑。dev 侧的 `PAIRING_FIELDS` 不含 `code_com
 | `reports/{bfcl,mvp}/` | `reports/legacy/{bfcl,mvp}/` |
 | `docs/{handoffs,superpowers}/` | `docs/archive/{handoffs,superpowers}/` |
 
+（注：原 `docs/superpowers/` 空壳目录已于 2026-09-08 删除；其规格与计划现存于
+`docs/archive/superpowers/`，上表为搬迁当时的历史对照。）
+
 `docs/PROJECT_LOG.md`、`findings.md`、`progress.md` 与 `reports/legacy/**` 内的历史
 路径**未被改写**——它们记录的是当时的事实，用本表回溯即可。
 
@@ -184,13 +194,14 @@ base + candidate **两侧**重跑。dev 侧的 `PAIRING_FIELDS` 不含 `code_com
 本项目对原 `veritool-rl` 工作区零依赖：单一 `main` 分支、
 remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（2026-08-20 首次 push）、
 无 submodule、无 linked worktree、无 Git alternates、无跨仓库软链接；`data/external_repos/gorilla`
-是自包含的 BFCL 固定 checkout（见 `data/external_repos/BFCL_PIN.txt`）。
+是自包含的 BFCL 固定 checkout（`data/` 整体不入库；pin 的 commit 与仓库 URL 已抄入
+[`NOTICE.md`](./NOTICE.md)，与作者本地的 `data/external_repos/BFCL_PIN.txt` 一致）。
 删除原工作区不会影响本项目的任何命令。
 
 ## 8. 文档分层（2026-09-08 收尾起）
 
 `docs/` 与仓库根的 Markdown 分两层（边界由 `.gitignore` + `audit_public_release.py`
-强制，理由见 [`NOTICE.md`](./NOTICE.md)「文档分层」节）：
+强制，2026-09-08 起含第 7 项分层审计，理由见 [`NOTICE.md`](./NOTICE.md)「文档分层」节）：
 
 - **公开层（随仓库分发）**：本文件、`SPEC.md`、`HOLDOUT_LEDGER.md`（观测台账，唯一
   事实源）、`PITFALLS.md`（教训库）、`RESULTS.md`、`EXECUTION_PLAN.md`（阶段状态

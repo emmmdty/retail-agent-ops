@@ -44,7 +44,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
-    "httpx2>=2.0",
+    # starlette TestClient（tests/test_formal_service.py 等）在导入期需要 httpx；
+    # 此前由 dev 依赖里的 httpx2 fork 提供该导入名，2026-09-08 换回标准包。
+    "httpx>=0.28",
 ]
 
 [build-system]

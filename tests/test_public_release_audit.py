@@ -260,3 +260,38 @@ def test_the_allowlist_does_not_disable_the_scan_for_those_files(fake_repo: Path
     other = _write(fake_repo, "scripts/ci/config.yaml", "local_dir: /mnt/aidata/whatever\n")
     with pytest.raises(audit.AuditFailure, match="开发机绝对路径"):
         audit.audit_no_absolute_dev_paths([other])
+
+
+# --- 文档分层（第 7 项审计） ---------------------------------------------------
+
+
+def test_a_tracked_local_layer_document_is_detected(fake_repo: Path) -> None:
+    """`git add -f AGENTS.md` 必须被拦下——文档分层不能只靠 `.gitignore` 单点防护。"""
+    planted = _write(fake_repo, "AGENTS.md", "# AGENTS\n")
+    with pytest.raises(audit.AuditFailure, match="文档分层"):
+        audit.audit_document_layering([planted])
+
+
+def test_a_tracked_local_layer_subdirectory_entry_is_detected(fake_repo: Path) -> None:
+    """分层清单里的目录条目（如 `docs/handoffs/`）按前缀整棵拦截。"""
+    planted = _write(fake_repo, "docs/handoffs/2026-09-08-prompt.md", "提示词\n")
+    with pytest.raises(audit.AuditFailure, match="文档分层"):
+        audit.audit_document_layering([planted])
+
+
+def test_public_layer_documents_are_not_flagged(fake_repo: Path) -> None:
+    """公开层文档不得被分层审计误伤。"""
+    clean = _write(fake_repo, "docs/RESULTS.md", "# RESULTS\n")
+    audit.audit_document_layering([clean])
+
+
+def test_the_real_repository_tracks_no_local_layer_documents() -> None:
+    """真实仓库的当前状态：分层生效后本地层文件一个都不该被跟踪。"""
+    audit.audit_document_layering(audit.tracked_files())
+
+
+def test_every_local_layer_path_is_covered_by_gitignore() -> None:
+    """审计的分层清单与 `.gitignore` 的分层规则必须逐条对齐，两边都不许各自漂移。"""
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for layered in audit.LOCAL_LAYER_PATHS:
+        assert "/" + layered in gitignore, f".gitignore 缺少分层条目：/{layered}"

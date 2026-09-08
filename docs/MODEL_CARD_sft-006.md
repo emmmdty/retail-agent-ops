@@ -1,7 +1,9 @@
 # 模型卡：qwen3-4b-retailops-sft-006
 
-本卡描述 RetailAgentOps R4 第三轮产出的候选 `sft-006`——**迄今在封存 holdout 上任务
-指标最好的候选（120/120）**，以及它**仍未获准部署**的原因。它与 R3 的
+本卡描述 RetailAgentOps R4 第三轮产出的候选 `sft-006`——**R4–R6 口径（120 条封存
+holdout）上任务指标最好的候选（120/120）**（此后的口径换成 246 条难度分层封存集，
+主角换为 `sft-008`，见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 观测 7–10），
+以及它**仍未获准部署**的原因。它与 R3 的
 [`MODEL_CARD.md`](./MODEL_CARD.md)（候选 `sft-001`）是两个不同的 artifact：不同的
 LoRA 覆盖、不同的训练数据、不同的 system prompt、不同的失败门禁。
 

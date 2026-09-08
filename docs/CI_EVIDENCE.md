@@ -132,3 +132,31 @@ main 的历史里可见的位置，随后被下一个 commit 修复。这正是
 **仍未处理（记录在案）**：Node.js 20 deprecation annotation（`actions/checkout@v4`
 / `astral-sh/setup-uv@v5` 被 runner 强制升 Node.js 24）——仍是 annotation 不是
 failure，升级 action 版本属独立维护项。
+
+## 2026-09-08：setup-uv 指向未发布的 major tag 一次失败 + pin 后恢复全绿
+
+维护窗口内把 `astral-sh/setup-uv` 从 `v5` 升到 `v10`，但 major tag `v10` 未在
+action 仓库发布，CI 在 resolve action 一步即失败；随后 pin 到 `v10.0.1` 恢复全绿。
+按本文档约定追加记录，不改写历史行。
+
+| 字段 | 值 |
+|---|---|
+| 失败 run | https://github.com/emmmdty/retail-agent-ops/actions/runs/34178735401 |
+| commit | `f88b81e` |
+| 总时长 | 7s（在 `Run astral-sh/setup-uv@v10` 步骤即失败） |
+| conclusion | **failure** |
+| 失败原因 | `Unable to resolve action astral-sh/setup-uv@v10`——major tag 未发布，floating major tag 不可依赖 |
+
+| 字段 | 值 |
+|---|---|
+| 恢复 run | https://github.com/emmmdty/retail-agent-ops/actions/runs/34178779167 |
+| commit | `0e748bc`（setup-uv pin 到 `v10.0.1`） |
+| 总时长 | 2m13s |
+| conclusion | **success** |
+
+同窗口早前的 run 34178498585（commit `0945c6e`，`format`）为 **success**（3m10s），
+是升版动作之前的最后一次全绿。
+
+**值得说的**：这次失败是「action 版本用 floating major tag」这一习惯的代价——
+`@v10` 在本地 CI 缓存里可能恰好解析得到，在干净 runner 上则直接 resolve 失败。
+修复方式与仓库其余外部依赖一致：pin 到完整次版本号。

@@ -3,6 +3,14 @@
 本卡描述系统**做什么、靠什么保证、在哪里会失败**。产品边界见 [`SPEC.md`](../SPEC.md)，
 候选模型见 [`MODEL_CARD.md`](./MODEL_CARD.md)，目录职责见 [`REPO_MAP.md`](./REPO_MAP.md)。
 
+> **现状（2026-09-08）**：发布门禁已升级为 **v1.3 十二门**（含绝对违规下界与最小效应宽度），
+> 封存集为 **246 条**（难度分层重建口径，train/dev/holdout = 588/198/246），观测台账已记至
+> **观测 10**；最终判定 **NO-GO（11/12）+ 预注册探针条件独立 FAIL**（探针 DENY 远端
+> −7/−10/−14 = 0.250/0.500/0.625 < 0.875；近边界已修复至 ≥ 0.875），发布候选保持 `sft-008`。
+> 现状与逐次判定的唯一事实源是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
+> 本卡 §2/§4/§5 写于 v1.0–v1.1 时代（五项门禁、240/60/120 数据面），作为历史口径保留、
+> 未按新口径改写；新口径的逐门读数见 README「关键结果」与台账。
+
 ## 1. 系统定位
 
 RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单卡后训练 → 执行式评测 →
@@ -45,7 +53,7 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 
 ## 4. 发布门禁与服务约束
 
-### 4.1 五项门禁（`domains/retail_ops/v1/release.yaml`）
+### 4.1 五项门禁（`domains/retail_ops/v1/release.yaml`）（v1 时代；v1.3 起为十二门，见 README 架构图）
 
 `success_delta ≥ +0.05`、`policy_violation_delta ≤ 0`、`invalid_call_count ≤ 0`、
 `p95_latency_ratio ≤ 1.25`、`evidence_complete = true`。
@@ -100,7 +108,8 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 2946.5 → **1717.7 ms**、p95 比值 2.0250 → **1.2141**，而任务指标（120/120，模板内）与
 调用次数（1.5000）**一位没变**。注意：引用该次 120/120 必须同时给出分布外读数
 （同一候选在模板外 60 条上 0.5833），详见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)。
-但合并形态**拿不到发布判定**——契约要求 candidate = 同一基座
+但合并形态**拿不到发布判定**（v1.0 契约下；v1.1 起合并形态可判定，见台账观测 4）
+——契约要求 candidate = 同一基座
 + adapter。逐次读数与四条限制见 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md) 与
 [`SERVING_FORM_COMPARISON.md`](./SERVING_FORM_COMPARISON.md)。
 
@@ -150,8 +159,9 @@ RetailAgentOps 把零售工具 Agent 的**领域定义 → 轨迹数据 → 单�
 ```bash
 env -u UV_INDEX_URL uv sync --extra dev --frozen
 .venv/bin/pytest -q          # 作者环境 1352 passed；干净 clone 1306 passed / 46 skipped
+#（历史口径；当前 1570 / 1518+52，以 README 与 CI 最近运行为准）
 # build → evaluate(base/oracle/fault) → release(GO/NO-GO) → serve
-# 六条命令见 README「本地 CPU 演示」
+# 命令见 README「手动跑 qualification 链路」一节
 ```
 
 真实模型轨道需要单卡 GPU、已锁定哈希的 Qwen3-4B 权重与私有数据集，命令见

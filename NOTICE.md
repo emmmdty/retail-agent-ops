@@ -11,7 +11,7 @@
 | 组件 | 许可 | 在本项目中的角色 | 是否进入本仓库 |
 |---|---|---|---|
 | [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B) / [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B)（阿里巴巴） | Apache-2.0 | 被适配的基座模型 | **否**。配置里只固定 `revision` 与逐文件 SHA-256，权重由使用者自行获取 |
-| [Gorilla / BFCL](https://github.com/ShishirPatil/gorilla)（UC Berkeley） | Apache-2.0 | legacy 轨道的外部单轮 AST 回归 | **否**。固定 commit `6ea5797…`，按 `data/external_repos/BFCL_PIN.txt` 自行 checkout |
+| [Gorilla / BFCL](https://github.com/ShishirPatil/gorilla)（UC Berkeley） | Apache-2.0 | legacy 轨道的外部单轮 AST 回归 | **否**。固定 commit `6ea57973c7a6097fd7c5915698c54c17c5b1b6c8`，上游仓库 `https://github.com/ShishirPatil/gorilla.git`（本地化于 2026-08-09），由使用者自行 checkout。pin 原记录在 `data/external_repos/BFCL_PIN.txt`，但 `data/` 整体被 .gitignore 覆盖、该文件不入库，故内容抄录于此，与作者本地 `data/external_repos/BFCL_PIN.txt` 一致 |
 | PyTorch / Transformers / TRL / PEFT / bitsandbytes / FastAPI / pydantic 等 | 各自开源许可 | 运行时依赖 | **否**。由 `uv.lock` 逐版本固定，按需安装 |
 | vLLM | Apache-2.0 | 引擎替换对照的**旁证**环境 | **否**。装在独立 venv，项目 `uv.lock` 一个字节未动（见 `docs/ENGINE_SUBSTITUTION.md`） |
 
@@ -33,7 +33,8 @@
 
 ## 3. 文档分层（2026-09-08 收尾起）
 
-本仓库的文档分两层，`audit_public_release.py` 与 `.gitignore` 强制这条边界：
+本仓库的文档分两层，`audit_public_release.py` 与 `.gitignore` 强制这条边界
+（2026-09-08 起含第 7 项分层审计）：
 
 | 层 | 内容 | 分发 |
 |---|---|---|
@@ -41,9 +42,9 @@
 | **本地层** | 作者个人材料（清单见 `.gitignore`「文档分层」节）与 agent 运维记忆（`AGENTS.md`、`CLAUDE.md`、`HANDOFF.md`、`task_plan.md`、`findings.md`、`progress.md`、`PROJECT_LOG.md`、`handoffs/`、`archive/`） | **仅作者本地**，`.gitignore` 覆盖 |
 
 本地层存在的理由：(a) 作者个人材料属私人写作，不是项目交付物的一部分；(b) agent 工作记忆
-与 GPU 运维留痕包含个人工作流细节，对复现没有任何帮助。**工程结论、读数与判定的完整
-证据链全部在公开层**——观测台账、结果、教训与阶段状态都是公开文档；本分层不隐藏任何
-结论，只隐藏私人叙事。
+与 GPU 运维留痕（含 `PRODUCT_BRIEF` 等工作记忆类文档）包含个人工作流细节，对复现没有
+任何帮助。**工程结论与全部评测数字都在公开层**——观测台账、结果、教训与阶段状态都是
+公开文档。本地层承载的是作者个人材料与 agent 运维记忆，不承载任何工程结论或评测数字。
 
 ## 4. Benchmark 声明边界
 

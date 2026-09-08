@@ -7,14 +7,15 @@
 * 本脚本扫描 `git ls-files` 的**全集**，因此新增一个从未被任何测试覆盖的文件时
   仍然拦得住。
 
-六项审计：
+七项审计：
 
 1. `LICENSE` 存在，且与 `pyproject.toml` 声明的 SPDX 标识一致；
 2. `NOTICE.md` 存在，且列出了每一个被固定引用的第三方组件；
 3. 没有模型权重/checkpoint 类文件被跟踪；
 4. 没有凭据类字符串被跟踪；
 5. 没有封存 holdout 的任务真值被跟踪；
-6. 没有开发机绝对路径被写进代码或配置（文档里引用远端路径是允许的）。
+6. 没有开发机绝对路径被写进代码或配置（文档里引用远端路径是允许的）；
+7. 文档分层的本地不分发文件没有被跟踪（`git add -f` 绕过 `.gitignore` 时拦住）。
 
 用法（仓库根目录）：
 
@@ -105,6 +106,27 @@ REQUIRED_NOTICE_MENTIONS = ("Qwen3-4B", "Qwen3-1.7B", "Gorilla", "BFCL", "vLLM",
 PATTERN_FIXTURE_ALLOWLIST = (
     "scripts/ci/audit_public_release.py",
     "tests/test_public_release_audit.py",
+)
+
+#: 文档分层（NOTICE.md「文档分层」节，2026-09-08 收尾起生效）：作者个人材料与
+#: agent 运维记忆只保留在作者本地，不随仓库分发。`.gitignore` 是第一道防线，
+#: 但 `git add -f` 可以静默绕过它——这项审计对**被跟踪的全集**重新验证分层边界。
+#: 与 `tests/test_public_release_audit.py` 的
+#: `test_every_local_layer_path_is_covered_by_gitignore` 成对：两边都不许各自漂移。
+LOCAL_LAYER_PATHS: tuple[str, ...] = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "task_plan.md",
+    "findings.md",
+    "progress.md",
+    "docs/PROJECT_LOG.md",
+    "docs/CAREER_CONTEXT.md",
+    "docs/INTERVIEW_PREP.md",
+    "docs/RESUME_EVIDENCE.md",
+    "docs/PRODUCT_BRIEF.md",
+    "docs/HANDOFF.md",
+    "docs/handoffs",
+    "docs/archive",
 )
 
 
@@ -275,6 +297,20 @@ def audit_no_absolute_dev_paths(paths: list[Path]) -> None:
         )
 
 
+def audit_document_layering(paths: list[Path]) -> None:
+    offenders: list[str] = []
+    for path in paths:
+        relpath = path.relative_to(REPO_ROOT).as_posix()
+        for layered in LOCAL_LAYER_PATHS:
+            if relpath == layered or relpath.startswith(layered + "/"):
+                offenders.append(relpath)
+                break
+    if offenders:
+        raise AuditFailure(
+            f"文档分层的本地不分发文件被 Git 跟踪（git add -f 绕过了 .gitignore）：{offenders}"
+        )
+
+
 AUDITS = (
     ("LICENSE 与 pyproject 声明一致", lambda paths: audit_license()),
     ("NOTICE.md 点名全部第三方组件", lambda paths: audit_notice()),
@@ -282,6 +318,7 @@ AUDITS = (
     ("无凭据被跟踪", audit_no_credentials),
     ("无封存 holdout 真值被跟踪", audit_no_holdout_truth),
     ("无开发机绝对路径进代码/配置", audit_no_absolute_dev_paths),
+    ("本地不分发层未被跟踪", audit_document_layering),
 )
 
 
