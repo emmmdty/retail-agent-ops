@@ -15,6 +15,17 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def _existing(names: tuple[str, ...] | list[str]) -> list[str]:
+    """文档分层（NOTICE.md「文档分层」节）的运行时投影。
+
+    2026-09-08 收尾起，个人求职材料与 agent 运维记忆（RESUME_EVIDENCE/
+    INTERVIEW_PREP/CLAUDE/PROJECT_LOG 等）只在作者机器上存在。凡是被
+    `git rm --cached` 转入本地层的文档缺席时，公开子集继续受检——CI 上
+    不因分层放松公开文档的任何约束，作者机器上则全额行使。
+    """
+    return [name for name in names if (ROOT / name).is_file()]
+
+
 def test_required_handoff_documents_exist() -> None:
     """公开必需文档随仓库分发；本地工作文档在作者机器上必须非空。
 
@@ -554,14 +565,14 @@ def test_holdout_ledger_is_the_single_source_of_truth() -> None:
     for token in ("LOG-20260815-03", "LOG-20260815-04", "LOG-20260817-04"):
         assert token in ledger, token
 
-    for name in (
+    for name in _existing((
         "README.md",
         "docs/SYSTEM_CARD.md",
         "docs/MODEL_CARD.md",
         "docs/MODEL_CARD_sft-006.md",
         "docs/RESUME_EVIDENCE.md",
         "docs/REPO_MAP.md",
-    ):
+    )):
         assert "HOLDOUT_LEDGER.md" in _read(name), f"{name} 必须引用封存 holdout 台账"
 
 
@@ -1223,6 +1234,10 @@ def test_the_resume_bullets_never_quote_a_reading_without_its_companion() -> Non
     「封存 120」而暗示同一件事的写法仍能绕过。这条挡的是**可预见的挑数字**，
     不是任意改写；剩下那部分由 §2 的不可写清单与人工审阅承担。
     """
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
     for name, chunk in _resume_bullet_variants().items():
         for topic, mentions, companions, why in _TOPIC_PAIRINGS:
             if not any(mention in chunk for mention in mentions):
@@ -1249,6 +1264,8 @@ def test_the_resume_bullets_only_use_numbers_documented_elsewhere() -> None:
     就是这样过关的（0–999 里有 198 个整数在本文件别处出现过）。
     那一半由上面的主题配对规则承担，两条合起来也不是完备的。
     """
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
     text = _read("docs/RESUME_EVIDENCE.md")
     section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
     elsewhere = text.replace(section, "")
@@ -1273,6 +1290,8 @@ def test_the_resume_bullets_never_use_a_phrasing_the_project_forbids() -> None:
     改写那一半由上面的读数配对检查与人工审阅负责。两条都不是完备的，
     但"完全没有机械约束"与"挡得住逐字复用"之间的差别是实打实的。
     """
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
     listed = _read("docs/RESUME_EVIDENCE.md").split("## 2. 明确不可写的表述")[1].split("\n## ")[0]
     forbidden = {
         match.group(1).strip()
@@ -1340,6 +1359,8 @@ def test_the_overturned_judgement_count_matches_the_table() -> None:
 
     **绑到表本身**，因此加一行就必须改标题，改不了就红。
     """
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
     text = _read("docs/RESUME_EVIDENCE.md")
 
     heading = re.search(r"### 1\.\d+ 被自己实验推翻的 \*\*(\d+)\*\* 个判断", text)
@@ -1398,7 +1419,7 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
     一个通过全部自动门禁的候选，在模板外的表达变化上是 0/20 且比零训练基座还差。
     只讲 GO 不讲这个数就是误导——而"记得一起讲"靠人是靠不住的，所以做成测试。
     """
-    for name in (
+    for name in _existing((
         "README.md",
         "README.en.md",
         "docs/HOLDOUT_LEDGER.md",
@@ -1406,7 +1427,7 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
         "docs/RESUME_EVIDENCE.md",
         "docs/INTERVIEW_PREP.md",
         "docs/REBUILD_VERIFICATION.md",
-    ):
+    )):
         text = _read(name)
         if "GO" not in text:
             continue
@@ -1518,9 +1539,9 @@ def test_there_is_exactly_one_five_minute_script() -> None:
     现在讲稿只在 `INTERVIEW_PREP.md`，`DEMO.md` 只保留演示流程。
     """
     demo = _read("docs/DEMO.md")
-    prep = _read("docs/INTERVIEW_PREP.md")
-
-    assert "## 1. 五分钟讲解（约 750 字，按段落计时）" in prep
+    if (ROOT / "docs/INTERVIEW_PREP.md").is_file():
+        prep = _read("docs/INTERVIEW_PREP.md")
+        assert "## 1. 五分钟讲解（约 750 字，按段落计时）" in prep
     assert "已迁出本文件" in demo
     assert "INTERVIEW_PREP.md" in demo
     # DEMO 不得再自带时间轴段落（那是讲稿的形状）
@@ -1573,7 +1594,7 @@ def test_the_author_environment_baseline_never_appears_without_the_clean_clone_o
     这条测试就是防止那句披露在下一次改文档时被顺手删掉。
     """
     collected = _collected_test_count()
-    for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
+    for name in _existing(("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md")):
         text = _read(name)
         if not re.search(
             r"\*\*\d+\*\*? tests passed|\*\*\d+ tests passed\*\*|\*\*\d+\*\* 项测试", text
@@ -1617,14 +1638,14 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
     batch2_cost = "$0.0559"
     total_cost = "$0.111"
 
-    for name in (
+    for name in _existing((
         "README.md",
         "README.en.md",
         "docs/RESUME_EVIDENCE.md",
         "docs/SYSTEM_CARD.md",
         "docs/INTERVIEW_PREP.md",
         "docs/EXECUTION_PLAN.md",
-    ):
+    )):
         text = _read(name)
         if not batch1_cost.search(text):
             continue
@@ -1634,6 +1655,8 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
         )
 
     # 唯一取数口径必须把两批和总计都写全
+    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
+        return
     evidence = _read("docs/RESUME_EVIDENCE.md")
     assert batch1_cost.search(evidence), "docs/RESUME_EVIDENCE.md 缺少批次 1 的成本 $0.055"
     for required in (batch2_cost, total_cost, "519", "526", "1045", "87.9%", "99.2%"):
@@ -1694,7 +1717,7 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
     与 `test_the_go_is_never_quoted_without_the_ood_reading` 同一个形状：
     这类「好消息旁边必须有坏消息」的约束靠人记是靠不住的。
     """
-    for name in (
+    for name in _existing((
         "README.md",
         "README.en.md",
         "docs/GENERALIZATION_FIX.md",
@@ -1702,7 +1725,7 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         "docs/READING_THE_NUMBERS.md",
         "docs/EXECUTION_PLAN.md",
         "CLAUDE.md",
-    ):
+    )):
         text = _read(name)
         # **极性必须是「提到收益 -> 断言代价在场」。**
         # 2026-08-17 的外部审阅指出，第一版把两者用 and 连起来当触发条件：
@@ -1866,12 +1889,12 @@ def test_r6_states_the_current_release_boundary() -> None:
     assert "永远不得反馈进开发" in fix
 
     # 反向：那句已经变假的话不得再出现在任何活动文档里
-    for name in (
+    for name in _existing((
         "README.md",
         "docs/GENERALIZATION_FIX.md",
         "docs/EXECUTION_PLAN.md",
         "docs/RESUME_EVIDENCE.md",
-    ):
+    )):
         text = _read(name)
         assert "封存 120 条 holdout 本轮**没有观测**" not in text, name
 
