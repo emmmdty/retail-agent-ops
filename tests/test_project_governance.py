@@ -565,13 +565,15 @@ def test_holdout_ledger_is_the_single_source_of_truth() -> None:
     for token in ("LOG-20260815-03", "LOG-20260815-04", "LOG-20260817-04"):
         assert token in ledger, token
 
-    for name in _existing((
-        "README.md",
-        "docs/SYSTEM_CARD.md",
-        "docs/MODEL_CARD.md",
-        "docs/MODEL_CARD_sft-006.md",
-        "docs/REPO_MAP.md",
-    )):
+    for name in _existing(
+        (
+            "README.md",
+            "docs/SYSTEM_CARD.md",
+            "docs/MODEL_CARD.md",
+            "docs/MODEL_CARD_sft-006.md",
+            "docs/REPO_MAP.md",
+        )
+    ):
         assert "HOLDOUT_LEDGER.md" in _read(name), f"{name} 必须引用封存 holdout 台账"
 
 
@@ -1219,7 +1221,6 @@ def _collected_test_count() -> int:
     return int(match.group(1))
 
 
-
 def test_no_active_doc_restates_the_sealed_holdout_observation_count() -> None:
     """观测次数只能出现在台账里——**用那个从台账现算的判别式扫全部活动文档**。
 
@@ -1252,13 +1253,15 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
     一个通过全部自动门禁的候选，在模板外的表达变化上是 0/20 且比零训练基座还差。
     只讲 GO 不讲这个数就是误导——而"记得一起讲"靠人是靠不住的，所以做成测试。
     """
-    for name in _existing((
-        "README.md",
-        "README.en.md",
-        "docs/HOLDOUT_LEDGER.md",
-        "docs/MODEL_CARD_sft-006.md",
-        "docs/REBUILD_VERIFICATION.md",
-    )):
+    for name in _existing(
+        (
+            "README.md",
+            "README.en.md",
+            "docs/HOLDOUT_LEDGER.md",
+            "docs/MODEL_CARD_sft-006.md",
+            "docs/REBUILD_VERIFICATION.md",
+        )
+    ):
         text = _read(name)
         if "GO" not in text:
             continue
@@ -1465,13 +1468,15 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
     batch2_cost = "$0.0559"
     total_cost = "$0.111"
 
-    for name in _existing((
-        "README.md",
-        "README.en.md",
-        "docs/SYSTEM_CARD.md",
-        "docs/INTERVIEW_PREP.md",
-        "docs/EXECUTION_PLAN.md",
-    )):
+    for name in _existing(
+        (
+            "README.md",
+            "README.en.md",
+            "docs/SYSTEM_CARD.md",
+            "docs/INTERVIEW_PREP.md",
+            "docs/EXECUTION_PLAN.md",
+        )
+    ):
         text = _read(name)
         if not batch1_cost.search(text):
             continue
@@ -1543,13 +1548,15 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
     与 `test_the_go_is_never_quoted_without_the_ood_reading` 同一个形状：
     这类「好消息旁边必须有坏消息」的约束靠人记是靠不住的。
     """
-    for name in _existing((
-        "README.md",
-        "README.en.md",
-        "docs/GENERALIZATION_FIX.md",
-        "docs/READING_THE_NUMBERS.md",
-        "docs/EXECUTION_PLAN.md",
-    )):
+    for name in _existing(
+        (
+            "README.md",
+            "README.en.md",
+            "docs/GENERALIZATION_FIX.md",
+            "docs/READING_THE_NUMBERS.md",
+            "docs/EXECUTION_PLAN.md",
+        )
+    ):
         text = _read(name)
         # **极性必须是「提到收益 -> 断言代价在场」。**
         # 2026-08-17 的外部审阅指出，第一版把两者用 and 连起来当触发条件：
@@ -1713,11 +1720,13 @@ def test_r6_states_the_current_release_boundary() -> None:
     assert "永远不得反馈进开发" in fix
 
     # 反向：那句已经变假的话不得再出现在任何活动文档里
-    for name in _existing((
-        "README.md",
-        "docs/GENERALIZATION_FIX.md",
-        "docs/EXECUTION_PLAN.md",
-    )):
+    for name in _existing(
+        (
+            "README.md",
+            "docs/GENERALIZATION_FIX.md",
+            "docs/EXECUTION_PLAN.md",
+        )
+    ):
         text = _read(name)
         assert "封存 120 条 holdout 本轮**没有观测**" not in text, name
 
