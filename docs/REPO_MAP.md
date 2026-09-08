@@ -198,7 +198,7 @@ remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（2026-08-20 �
   `READING_THE_NUMBERS`/`OOD_EVALUATION`/`REBUILD_VERIFICATION`/`POLICY_BOUNDARY`/
   `GENERALIZATION_FIX`/`GATE_SCHEMA_V11_RECOMPUTE`/`FAULT_MATRIX` 等）、`adr/`、
   演示视频 `media/demo.mp4`。
-- **本地层（仅作者机器）**：个人求职材料（`CAREER_CONTEXT`/`RESUME_EVIDENCE`/
-  `INTERVIEW_PREP`/`PRODUCT_BRIEF`）与 agent 运维记忆（`AGENTS.md`/`CLAUDE.md`/
-  `HANDOFF.md`/`task_plan.md`/`findings.md`/`progress.md`/`PROJECT_LOG.md`/
-  `handoffs/`/`archive/`）。工程结论不因此缺失——它们全部以公开文档承载。
+- **本地层（仅作者机器）**：作者个人材料（清单见 `.gitignore`「文档分层」节）与
+  agent 运维记忆（`AGENTS.md`/`CLAUDE.md`/`HANDOFF.md`/`task_plan.md`/`findings.md`/
+  `progress.md`/`PROJECT_LOG.md`/`handoffs/`/`archive/`）。工程结论不因此缺失——
+  它们全部以公开文档承载。

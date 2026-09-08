@@ -2,7 +2,7 @@
 
 R8 第一轮独立审查 A2 的硬扣分项：业界工具零对照。这个导出器是桥接，不是替代——
 导出去的 MLflow run 仍然只有"记指标"的能力，没有"配对可比性 + 发布判定"的能力。
-面试官用 MLflow UI 看指标，用本项目的 `release` 命令看判定。
+MLflow 用 UI 看指标；本项目用 `release` 命令看判定。
 
 用法（仓库根目录）：
 
@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 #: 从 candidate-report.json 提取出来 log 进 MLflow metrics 的字段。
-#: 选的是"跨候选可比 + 面试官会问"的核心指标。
+#: 选的是"跨候选可比 + 常被追问"的核心指标。
 METRIC_KEYS = (
     "task_success",
     "policy_violation_count",

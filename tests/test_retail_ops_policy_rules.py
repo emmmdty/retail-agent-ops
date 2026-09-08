@@ -3,7 +3,7 @@
 评审口径：`domains/retail_ops/v1/policies.yaml` 的 `rules:` 六条名字在 `src/` 里
 **零处引用**，`max_transient_retries` 只被解析成 `Literal[1]`、从不驱动逻辑；真正的
 政策语义硬编码在 `domain/environment.py` 的 `_refund_order` if 链里。这与 `SPEC.md` §2
-「输入：版本化业务政策」是契约级不一致。面试必问："退款窗口从 14 天改成 7 天，
+「输入：版本化业务政策」是契约级不一致。关键追问："退款窗口从 14 天改成 7 天，
 你的流水线怎么响应？"当时的答案是"改 Python + 重训模型"。
 
 **引擎只有一条求值路径。** v1 的六条名字解析到内置冻结规则集，v2 的规则直接内联在

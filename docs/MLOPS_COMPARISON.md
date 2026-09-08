@@ -2,7 +2,7 @@
 
 本文件回答 R8 第一轮独立审查 A2 的硬扣分项：「这套自建证据链相比 MLflow Tracking +
 W&B Artifacts + DVC pipeline + Evidently drift 检测，新增了什么、牺牲了什么」。
-面试官第一反应是"为什么不用业界已有"——这里逐条给坐标。
+读者第一反应是"为什么不用业界已有"——这里逐条给坐标。
 
 ## 一句话坐标
 
@@ -54,7 +54,7 @@ W&B Artifacts + DVC pipeline + Evidently drift 检测，新增了什么、牺牲
 
 诚实交代自建证据链的代价：
 
-1. **不可移植到任意仓库**：证据系统依赖本仓库的目录结构、`bundle_sha256`、私有产物路径。换到面试官公司，这套不能直接用——它不是 library，是一个紧贴单一领域的工程。R8 Task A2 用第二个 toy 域实证了 `core → devops_ops` 分层成立，但仍然需要该域实现自己的 domain/build/evaluate/release。
+1. **不可移植到任意仓库**：证据系统依赖本仓库的目录结构、`bundle_sha256`、私有产物路径。换到任何其它仓库，这套不能直接用——它不是 library，是一个紧贴单一领域的工程。R8 Task A2 用第二个 toy 域实证了 `core → devops_ops` 分层成立，但仍然需要该域实现自己的 domain/build/evaluate/release。
 2. **没有协作能力**：MLflow / W&B 有团队 dashboard、权限、协作流。本项目是单仓库、单人、append-only 台账，没有多用户概念。封存 holdout 两段式授权是单机进程内机制，不防多人共谋。
 3. **没有可视化**：MLflow / W&B 有 UI。本项目只有 HTML 报告 + Markdown 台账，没有交互式 dashboard。
 4. **数据版本化弱于 DVC**：本项目用 manifest + 内容哈希，但不像 DVC 那样有 pipeline 重现（`dvc repro`）。本项目的 pipeline 重现靠 `verify_qualification_chain.py` 一条命令，不是声明式 DAG。
@@ -69,9 +69,9 @@ W&B Artifacts + DVC pipeline + Evidently drift 检测，新增了什么、牺牲
 - `mlflow.log_param` 记录 `model_revision` / `code_commit` / `inference_engine` 等运行条件
 
 **这桥接不替代**：导出去的 MLflow run 仍然只有"记指标"的能力，没有"配对可比性 +
-发布判定"的能力。面试官用 MLflow UI 看指标，用本项目看判定。
+发布判定"的能力。MLflow 用 UI 看指标，本项目用 release 命令看判定。
 
-## 一句话口径（面试用）
+## 一句话口径
 
 > 我没有重造 MLflow / W&B / DVC。它们都解决"记什么、跟踪什么、版本化什么"；
 > 我解决的是"该不该上线"——配对证据 + 版本化门禁 + 封存 holdout 台账。

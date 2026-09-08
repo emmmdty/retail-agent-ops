@@ -98,7 +98,7 @@ skip 数差 1（ffprobe），是环境差异不是代码差异。
   授权状态与 R8 D2 运行清单）。
 - CI 通过只说明「在 commit `596eee8` 的代码与冻结依赖下，CPU 质量门与
   qualification 全链路在 GitHub 托管 runner 上可复现」，**不**说明模型可上线、
-  不说明候选泛化、不说明发布门禁阈值合理——那些是 `RESUME_EVIDENCE.md` 的口径。
+  不说明候选泛化、不说明发布门禁阈值合理——那些是结果文档的口径。
 - 后续若 CI 出现失败，本文件追加新行；**不删改首次运行这一行**（历史不得改写）。
 
 ## 2026-09-06：GPU 执行阶段收口后的 CI 记录（两次失败 + 恢复全绿）
@@ -126,8 +126,8 @@ GPU 执行阶段（C2/D1/E2/D4）的大量提交期间，CI 出现两次失败�
 
 **值得说的**：这两次失败不是回归，是**发布证据链的守卫在 CI 上真实工作**——
 「passed + skipped 必须等于收集总数」的算术守卫把一次数字不一致的提交拦在了
-main 的历史里可见的位置，随后被下一个 commit 修复。这与 RESUME_EVIDENCE
-「判定系统在本地之外可复现」的声称一致。
+main 的历史里可见的位置，随后被下一个 commit 修复。这正是
+「判定系统在本地之外可复现」的声称在起作用。
 
 **仍未处理（记录在案）**：Node.js 20 deprecation annotation（`actions/checkout@v4`
 / `astral-sh/setup-uv@v5` 被 runner 强制升 Node.js 24）——仍是 annotation 不是

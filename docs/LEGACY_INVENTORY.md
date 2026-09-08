@@ -51,7 +51,7 @@
 
 ## 命名边界
 
-产品、简历、公开文档、**分发名与 CLI 入口**统一为 RetailAgentOps / `retail-agent-ops`
+产品、公开文档、**分发名与 CLI 入口**统一为 RetailAgentOps / `retail-agent-ops`
 （分发名于 2026-08-09 从 `veritool-rl` 改为 `retail-agent-ops`）。
 
 Python 导入名与历史报告仍是 `veritool_rl`/`VeriTool-RL`：已提交产物记录了产出它们的

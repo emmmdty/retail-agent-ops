@@ -86,7 +86,7 @@ def _minimal_payload() -> dict[str, Any]:
 
 
 def test_extract_metrics_pulls_all_core_indicators() -> None:
-    """核心指标必须全部提取——面试官用 MLflow UI 看的就是这些。"""
+    """核心指标必须全部提取——MLflow UI 看的就是这些。"""
     metrics = extract_metrics(_minimal_payload())
 
     for key in METRIC_KEYS:
@@ -131,7 +131,7 @@ def test_extract_params_pulls_all_run_conditions() -> None:
 
 
 def test_extract_params_includes_model_and_adapter() -> None:
-    """模型与 adapter 信息必须提取——面试官第一句就问"用了什么模型"。"""
+    """模型与 adapter 信息必须提取——最基本的问题先回答。"""
     params = extract_params(_minimal_payload())
 
     assert params["model_repo"] == "Qwen/Qwen3-4B"

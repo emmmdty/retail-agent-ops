@@ -1,4 +1,4 @@
-"""验证求职工程定位和 Agent 接管文档不会静默漂移。"""
+"""验证工程文档协议不会静默漂移。"""
 
 import os
 import re
@@ -18,7 +18,7 @@ def _read(path: str) -> str:
 def _existing(names: tuple[str, ...] | list[str]) -> list[str]:
     """文档分层（NOTICE.md「文档分层」节）的运行时投影。
 
-    2026-09-08 收尾起，个人求职材料与 agent 运维记忆（RESUME_EVIDENCE/
+    2026-09-08 收尾起，作者个人材料与 agent 运维记忆（RESUME_EVIDENCE/
     INTERVIEW_PREP/CLAUDE/PROJECT_LOG 等）只在作者机器上存在。凡是被
     `git rm --cached` 转入本地层的文档缺席时，公开子集继续受检——CI 上
     不因分层放松公开文档的任何约束，作者机器上则全额行使。
@@ -29,7 +29,7 @@ def _existing(names: tuple[str, ...] | list[str]) -> list[str]:
 def test_required_handoff_documents_exist() -> None:
     """公开必需文档随仓库分发；本地工作文档在作者机器上必须非空。
 
-    2026-09-08 收尾分层：个人求职材料与 agent 运维记忆（AGENTS/CLAUDE/task_plan/
+    2026-09-08 收尾分层：作者个人材料与 agent 运维记忆（AGENTS/CLAUDE/task_plan/
     findings/progress/PROJECT_LOG/CAREER_CONTEXT/INTERVIEW_PREP/RESUME_EVIDENCE/
     PRODUCT_BRIEF/HANDOFF/handoffs/archive）转为**本地不分发**（NOTICE.md「文档分层」
     节）。公开必需集在任何 clone 上都必须存在；本地集仅在作者机器上行使检查。
@@ -512,7 +512,7 @@ def test_ci_evidence_doc_has_provenance() -> None:
     """CI 真跑的证据必须落盘且带出处——「CI 跑绿了」这条声称的可审计背书。
 
     2026-08-20 首次真跑。证据文档必须含：run URL、commit SHA、conclusion=success、
-    首次运行日期。缺任一字段 = 把一个未审计的声称放进了简历证据链。
+    首次运行日期。缺任一字段 = 把一个未审计的声称放进了证据链。
     """
     evidence = _read("docs/CI_EVIDENCE.md")
     assert "https://github.com/emmmdty/retail-agent-ops/actions/runs/" in evidence
@@ -570,7 +570,6 @@ def test_holdout_ledger_is_the_single_source_of_truth() -> None:
         "docs/SYSTEM_CARD.md",
         "docs/MODEL_CARD.md",
         "docs/MODEL_CARD_sft-006.md",
-        "docs/RESUME_EVIDENCE.md",
         "docs/REPO_MAP.md",
     )):
         assert "HOLDOUT_LEDGER.md" in _read(name), f"{name} 必须引用封存 holdout 台账"
@@ -1181,135 +1180,6 @@ def test_no_active_doc_predicts_which_observation_comes_next() -> None:
     )
 
 
-#: §3 的定稿 bullet 里，**谈到这些主题的句子必须同时给出两侧读数**。
-#:
-#: 键是**主题**不是字面量。上一版按字面量配对（写了 `117/120` 就要有 `113/120`），
-#: 2026-08-18 外部审阅第八轮用两种改写各破一次且全仓全绿：
-#: 「封存 120 条上只错了 3 条」与「封存 120 条上任务成功率约 98%」——
-#: 都绕开了字面量，也都把较差的那次运行挖掉了。
-#:
-#: 按主题配对拦得住改写，因为**改写躲不开主题词**：要吹这个结果就得提它。
-#: 代价是主题词本身仍是人写的（见本条测试 docstring 里的边界说明）。
-_TOPIC_PAIRINGS: tuple[tuple[str, tuple[str, ...], tuple[str, ...], str], ...] = (
-    (
-        "封存 120 条的候选读数",
-        ("封存 120", "封存的 120", "sealed 120"),
-        ("113/120", "113–117/120", "2 与 7", "2 次与 7 次", "2 次和 7 次", "2 and 7"),
-        "同配置两次运行是 117/120 与 113/120、违规 2 与 7，只报好的那次就是挑数字",
-    ),
-    (
-        "分布外封存分片的读数",
-        ("封存分片", "措辞池上", "phrasing bank"),
-        ("0.9833",),
-        "两份独立素材上是 1.0000 与 0.9833，单点满分不成立",
-    ),
-)
-
-
-def _resume_bullet_variants() -> dict[str, str]:
-    """把 §3 的两版定稿 bullet 各自切出来。
-
-    **按变体切、不按文件切**：一版不能借另一版的免责声明过关。
-    """
-    text = _read("docs/RESUME_EVIDENCE.md")
-    section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
-    variants: dict[str, str] = {}
-    for chunk in re.split(r"^### ", section, flags=re.MULTILINE)[1:]:
-        head = chunk.splitlines()[0].strip()
-        variants[head] = chunk
-    assert variants, "§3 里找不到任何一版定稿 bullet"
-    return variants
-
-
-def test_the_resume_bullets_never_quote_a_reading_without_its_companion() -> None:
-    """§3 里**谈到某个结果的句子**，必须同时给出它不好看的那一半。
-
-    §3 是要贴到简历上、要在面试里念出口的那一段，是全仓风险最高的文字。
-
-    **这条按主题匹配，不按字面量。** 上一版按字面量配对，被外部审阅用
-    「只错了 3 条」和「约 98%」两种改写各破一次——两句都把较差的那次运行挖掉了，
-    而全仓当时全绿。改写躲得开数字，躲不开主题词。
-
-    **边界（写在这里，不写成"穷举"）**：主题词是人列的，因此一个完全不提
-    「封存 120」而暗示同一件事的写法仍能绕过。这条挡的是**可预见的挑数字**，
-    不是任意改写；剩下那部分由 §2 的不可写清单与人工审阅承担。
-    """
-    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
-        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
-    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
-        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
-    for name, chunk in _resume_bullet_variants().items():
-        for topic, mentions, companions, why in _TOPIC_PAIRINGS:
-            if not any(mention in chunk for mention in mentions):
-                continue
-            assert any(companion in chunk for companion in companions), (
-                f"{name} 谈到了{topic}，却没有给出 {list(companions)} 中的任何一个——{why}"
-            )
-
-
-def test_the_resume_bullets_only_use_numbers_documented_elsewhere() -> None:
-    """**§3 里出现的每一个数字，都必须在同一份文件的别处有出处。**
-
-    这条替代掉的是一张字面量配对表。2026-08-17 外部审阅第七轮把方案 B 改成
-    「任务成功率 **97.5%**、政策违规降到个位数」——97.5% 就是 117/120（两次运行里
-    较好的那次），113/120 与「7 次」被挖掉，而**全仓 1093 条测试无一变红**：
-    配对表只认它列过的字面量，换个写法就绕过去了。
-
-    这一条不认任何形状。规则是**溯源**：`RESUME_EVIDENCE.md` 自己在 §3 开头写着
-    「两版都只用 §1 的数字」——把那句散文变成可执行的约束。
-    一个新造的、别处没有出处的数字（97.5%、"个位数"折算出的任何值）当场红。
-
-    **边界（不写"穷举"）**：它挡的是**新造一个数**（97.5%、约 98%）。
-    它挡不住引用一个别处确实存在、但用在这里是挑数字的数——「只错了 3 条」里的 3
-    就是这样过关的（0–999 里有 198 个整数在本文件别处出现过）。
-    那一半由上面的主题配对规则承担，两条合起来也不是完备的。
-    """
-    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
-        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
-    text = _read("docs/RESUME_EVIDENCE.md")
-    section = text.split("## 3. 简历 bullet")[1].split("\n## ")[0]
-    elsewhere = text.replace(section, "")
-
-    pattern = re.compile(r"\d+(?:\.\d+)?(?:/\d+)?%?")
-    undocumented = sorted({token for token in pattern.findall(section) if token not in elsewhere})
-    assert undocumented == [], (
-        f"§3 的定稿 bullet 用了在本文件别处找不到出处的数字：{undocumented}。"
-        f"简历只能引用 §1 已经建立了证据链的读数——新造一个数（哪怕它是别的数换算来的）"
-        f"就是在绕过取数口径"
-    )
-
-
-def test_the_resume_bullets_never_use_a_phrasing_the_project_forbids() -> None:
-    """§2 的「不可写」清单**直接绑到** §3。
-
-    清单第一列里带引号的那些句子是机器完全可读的字符串表，
-    把它绑到 §3 是十几行的事——而 2026-08-17 外部审阅第六轮能把
-    「120/120 证明模型泛化」「候选可以上线」原样塞进定稿 bullet 而全仓测试全绿。
-
-    **注意这条能挡的边界**：它挡的是**逐字**复用被禁的说法，挡不住改写。
-    改写那一半由上面的读数配对检查与人工审阅负责。两条都不是完备的，
-    但"完全没有机械约束"与"挡得住逐字复用"之间的差别是实打实的。
-    """
-    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
-        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
-    listed = _read("docs/RESUME_EVIDENCE.md").split("## 2. 明确不可写的表述")[1].split("\n## ")[0]
-    forbidden = {
-        match.group(1).strip()
-        for match in re.finditer(r"^\|\s*[\"“]([^\"”]+)[\"”]", listed, re.MULTILINE)
-    }
-    assert len(forbidden) >= 15, f"只解析出 {len(forbidden)} 条不可写表述，清单解析大概率坏了"
-
-    for name, chunk in _resume_bullet_variants().items():
-        used = sorted(phrase for phrase in forbidden if phrase in chunk)
-        assert used == [], f"{name} 用了 §2 明令不可写的表述：{used}"
-
-
-#: 「候选在封存 120 条上**不是满分**」这个事实的语义匹配。
-#:
-#: 此前两处直接钉字面量 `"117/120"`——那是 LOG-20260817-06 记的失败模式：
-#: 读数一旦改成区间（现在是「113–117/120，同配置两次运行」），
-#: 测试就会强制一个已经不完整的旧数字。现在断言的是**语义**：
-#: 文中必须给出一个分母 120、分子小于 120 的读数。
 _NOT_A_PERFECT_SEALED_SCORE = re.compile(r"(?<!\d)(\d{1,3})(?:–(\d{1,3}))?/120")
 
 
@@ -1349,43 +1219,6 @@ def _collected_test_count() -> int:
     return int(match.group(1))
 
 
-def test_the_overturned_judgement_count_matches_the_table() -> None:
-    """「被自己实验推翻的 N 个判断」这个数必须等于那张表实际有几行。
-
-    2026-08-17 外部审阅第五轮发现这里同时存在**四个**不同的值：标题写"七个"、
-    表里 8 行、面试话术写"五次"、定稿简历 bullet 写"五个"。
-    一个"我很诚实地记录了自己被推翻多少次"的卖点，自己数不清楚，
-    是最容易被面试官一句话戳破的地方。
-
-    **绑到表本身**，因此加一行就必须改标题，改不了就红。
-    """
-    if not (ROOT / "docs/RESUME_EVIDENCE.md").is_file():
-        pytest.skip("docs/RESUME_EVIDENCE.md 为本地不分发文档，本 clone 上无此文件")
-    text = _read("docs/RESUME_EVIDENCE.md")
-
-    heading = re.search(r"### 1\.\d+ 被自己实验推翻的 \*\*(\d+)\*\* 个判断", text)
-    assert heading is not None, "被自己实验推翻的标题没有写出可核对的条数"
-    declared = int(heading.group(1))
-
-    section_start = text.find(heading.group(0))
-    section = text[section_start:].split("\n### ")[0]
-    rows = [
-        line
-        for line in section.splitlines()
-        if line.startswith("|") and not line.startswith("|---") and "推翻方式" not in line
-    ]
-    assert declared == len(rows), f"§1.4 标题写 {declared} 个，表里有 {len(rows)} 行"
-
-    # 文中其它处引用同一个数时也必须一致——散落的复述正是上一轮漂移的来源。
-    for pattern in (
-        r"被自己的实验推翻 \*\*(\d+)\*\* 个判断",
-        r"被自己的实验推翻了 (\d+) 次",
-    ):
-        for match in re.finditer(pattern, text):
-            assert int(match.group(1)) == declared, (
-                f"§1.4 声称 {declared} 个，但另一处写 {match.group(1)}：{match.group(0)}"
-            )
-
 
 def test_no_active_doc_restates_the_sealed_holdout_observation_count() -> None:
     """观测次数只能出现在台账里——**用那个从台账现算的判别式扫全部活动文档**。
@@ -1424,8 +1257,6 @@ def test_the_go_is_never_quoted_without_the_ood_reading() -> None:
         "README.en.md",
         "docs/HOLDOUT_LEDGER.md",
         "docs/MODEL_CARD_sft-006.md",
-        "docs/RESUME_EVIDENCE.md",
-        "docs/INTERVIEW_PREP.md",
         "docs/REBUILD_VERIFICATION.md",
     )):
         text = _read(name)
@@ -1539,11 +1370,7 @@ def test_there_is_exactly_one_five_minute_script() -> None:
     现在讲稿只在 `INTERVIEW_PREP.md`，`DEMO.md` 只保留演示流程。
     """
     demo = _read("docs/DEMO.md")
-    if (ROOT / "docs/INTERVIEW_PREP.md").is_file():
-        prep = _read("docs/INTERVIEW_PREP.md")
-        assert "## 1. 五分钟讲解（约 750 字，按段落计时）" in prep
     assert "已迁出本文件" in demo
-    assert "INTERVIEW_PREP.md" in demo
     # DEMO 不得再自带时间轴段落（那是讲稿的形状）
     for timeline_marker in ("0:00–0:40", "2:40–4:00", "4:00–5:00"):
         assert timeline_marker not in demo, f"DEMO.md 又长回了一份讲稿：{timeline_marker}"
@@ -1563,11 +1390,11 @@ def test_the_documented_test_count_matches_reality() -> None:
     # 而它报出来的却像是"文档数字对不上"（2026-08-17 外部审阅第六轮在 clone 上撞到）。
     actual = _collected_test_count()
 
-    for name in ("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md"):
+    for name in ("README.md", "README.en.md"):
         text = _read(name)
         # 三种写法都要覆盖：`**N tests passed**`、`**N** tests passed`、以及
-        # **中文的 `**N** 项测试`**——最后这种此前没被覆盖，于是定稿简历 bullet 里的
-        # 「936 项测试」一直停在一个旧值上，而那是最会被雇主读到的一句话
+        # **中文的 `**N** 项测试`**——最后这种此前没被覆盖，于是定稿对外结论汇总里的
+        # 「936 项测试」一直停在一个旧值上，而那是最常被读到的一句话
         # （2026-08-17 外部审阅指出）。
         documented = re.findall(
             r"\*\*(\d+)\*\*? tests passed|\*\*(\d+) tests passed\*\*|\*\*(\d+)\*\* 项测试",
@@ -1586,15 +1413,15 @@ def test_the_author_environment_baseline_never_appears_without_the_clean_clone_o
     """写"N tests passed 全绿"的地方，必须同时写干净 clone 上的真实基线。
 
     2026-08-17 外部审阅第六轮把仓库 clone 到独立目录跑了一遍：**6 failed**，
-    而 README 与定稿简历 bullet 写着"全绿"。数字本身没造假（作者环境确实全过），
-    但**没有任何一处披露这个差异**——面试官拿到仓库的第一个动作就是 clone + pytest。
+    而 README 与对外结论汇总写着"全绿"。数字本身没造假（作者环境确实全过），
+    但**没有任何一处披露这个差异**——读者拿到仓库的第一个动作就是 clone + pytest。
 
     那 6 条已经修掉（缺产物改为 skip 并说明原因、一条硬编码 venv 路径的真 bug 已改），
     现在干净 clone 是 0 failed。**但"两个环境跑出不同数字"这件事本身仍然要说**，
     这条测试就是防止那句披露在下一次改文档时被顺手删掉。
     """
     collected = _collected_test_count()
-    for name in _existing(("README.md", "README.en.md", "CLAUDE.md", "docs/RESUME_EVIDENCE.md")):
+    for name in _existing(("README.md", "README.en.md")):
         text = _read(name)
         if not re.search(
             r"\*\*\d+\*\*? tests passed|\*\*\d+ tests passed\*\*|\*\*\d+\*\* 项测试", text
@@ -1602,7 +1429,7 @@ def test_the_author_environment_baseline_never_appears_without_the_clean_clone_o
             continue
         assert "干净 clone" in text or "clean clone" in text, (
             f"{name}: 写了作者环境的测试基线，却没有给出干净 clone 上的基线。"
-            f"两者不同是事实，藏起来会在面试官 clone 的三分钟内被撞见"
+            f"两者不同是事实，藏起来会在clone 后的三分钟内被撞见"
         )
 
         # **披露的数字必须算术自洽**：passed + skipped 必须等于收集到的总数。
@@ -1641,7 +1468,6 @@ def test_the_two_teacher_batches_are_never_conflated() -> None:
     for name in _existing((
         "README.md",
         "README.en.md",
-        "docs/RESUME_EVIDENCE.md",
         "docs/SYSTEM_CARD.md",
         "docs/INTERVIEW_PREP.md",
         "docs/EXECUTION_PLAN.md",
@@ -1707,7 +1533,7 @@ def test_the_numbers_guide_covers_every_suspiciously_perfect_number() -> None:
 
     # 不得只解释好消息
     assert "反过来" in guide
-    for name in ("README.md", "docs/RESUME_EVIDENCE.md"):
+    for name in _existing(("README.md",)):
         assert "READING_THE_NUMBERS" in _read(name), f"{name} 未指向读数指南"
 
 
@@ -1721,10 +1547,8 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         "README.md",
         "README.en.md",
         "docs/GENERALIZATION_FIX.md",
-        "docs/RESUME_EVIDENCE.md",
         "docs/READING_THE_NUMBERS.md",
         "docs/EXECUTION_PLAN.md",
-        "CLAUDE.md",
     )):
         text = _read(name)
         # **极性必须是「提到收益 -> 断言代价在场」。**
@@ -1740,7 +1564,7 @@ def test_the_generalisation_fix_is_never_quoted_without_its_cost() -> None:
         # **代价必须是量化的读数，不是"政策违规"这四个字。**
         # 2026-08-17 外部审阅第五轮指出：旧的 `cost_markers` 里有「政策违规」，
         # 而这四个字在这些文档里到处都是，于是断言退化成"文件里出现过这个词"——
-        # 它给了作者"有测试兜着"的错觉，而定稿简历 bullet 里恰恰出现了
+        # 它给了作者"有测试兜着"的错觉，而对外结论汇总里恰恰出现了
         # 只报较好那次读数的写法，**这条测试全程是绿的**。
         # 现在要求的是**具体的坏数字**：安全代价的两次读数、或分布外那一类的退化值。
         cost_markers = (
@@ -1893,7 +1717,6 @@ def test_r6_states_the_current_release_boundary() -> None:
         "README.md",
         "docs/GENERALIZATION_FIX.md",
         "docs/EXECUTION_PLAN.md",
-        "docs/RESUME_EVIDENCE.md",
     )):
         text = _read(name)
         assert "封存 120 条 holdout 本轮**没有观测**" not in text, name

@@ -7,13 +7,13 @@
 ## 背景
 
 旧 VeriTool-RL 路线以研究型后训练、多个 seed 和算法消融为主。用户的当前目标是在三个月内为
-Agent 求职交付可运行工程项目，而不是继续产出论文；共享 4× RTX 4090 也不能作为持续独占资源。
+Agent 交付可运行工程项目，而不是继续产出论文；共享 4× RTX 4090 也不能作为持续独占资源。
 现有 MiniRetail、BFCL、QLoRA 和 provenance 资产有用，但无法单独回答真实团队为何采用。
 
 ## 决策
 
 项目对外名改为 RetailAgentOps，产品闭环固定为零售工具 Agent 的 `build -> evaluate -> release ->
-serve`。默认以单卡、一个开发 seed 完成迭代，用独立重建验证最终简历数字；偏好优化只有在失败证据
+serve`。默认以单卡、一个开发 seed 完成迭代，用独立重建验证最终对外数字；偏好优化只有在失败证据
 满足触发条件后才进入计划。创建根 `AGENTS.md` 作为 Codex 主入口，`CLAUDE.md` 保持兼容。
 
 ## 结果

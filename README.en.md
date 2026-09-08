@@ -171,7 +171,7 @@ Summary below — **every row carries its conditions**.
 | Independent rebuild verification (retrain with a different seed) | dev **58/60 – 60/60** (three same-config runs) | Zero-trained base **54/60**; same-seed reruns **do not produce bit-identical weights** (training is the only non-bitwise-reproducible stage), so no single point is quoted |
 | Independent transfer check (hand-written, never used for selection) | 0.5833 → **0.8667** | The same change dropped `partial_refund` from 1.00 to 0.00 |
 | Teacher data collection | Accept rate **98.5–99.2%** | Formal batch cost **~$0.0559** (with pre-collection enum assert, zero rework) |
-| Engineering baseline | **1569 tests passed** (author machine, private artifacts present) | **1520 passed / 49 skipped / 0 failed on a clean clone** (verified at the v7 close); skips all need artifacts not distributed with the repo. Ruff / `ruff format --check` / mypy / `uv lock --check` / public-release audit pass on both machines and CI |
+| Engineering baseline | **1565 tests passed** (author machine, private artifacts present) | **1513 passed / 52 skipped / 0 failed on a clean clone** (re-verified at the wrap-up); skips all need artifacts not distributed with the repo. Ruff / `ruff format --check` / mypy / `uv lock --check` / public-release audit pass on both machines and CI |
 | BFCL legacy track | **163/200** → **167/200** | A project-defined fixed single-turn AST subset; CI crosses 0; **not** the official full benchmark or a leaderboard result |
 
 **How to read this table**: three `NO-GO`s are not failures — round one proved "difficulty

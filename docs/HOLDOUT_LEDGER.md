@@ -1,7 +1,7 @@
 # 封存 holdout 观测台账
 
 **本文件是封存 holdout 观测次数与状态的唯一事实源。**其它任何文档（`README.md`、
-`docs/SYSTEM_CARD.md`、`docs/MODEL_CARD*.md`、`docs/DEMO.md`、`docs/RESUME_EVIDENCE.md`）
+`docs/SYSTEM_CARD.md`、`docs/MODEL_CARD*.md`、`docs/DEMO.md`）
 一律**引用本文件**，不得复述次数或判定——同一个数字在五个文件里各写一遍，必然漂移，
 2026-08-15 的评审就是从这里发现三处文档仍把观测次数写成过期值的。
 （本文件自 2026-08-16 起也在 `test_no_active_doc_restates_a_stale_observation_count`

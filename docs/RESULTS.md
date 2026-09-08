@@ -4,13 +4,13 @@
 细节、每个数字的取得方式与它旁边那个不好看的数放在这里。
 
 **观测次数与逐次读数的唯一事实源是 [`HOLDOUT_LEDGER.md`](./HOLDOUT_LEDGER.md)；
-简历取数口径见 [`RESUME_EVIDENCE.md`](./RESUME_EVIDENCE.md)。**
+**
 
 ---
 
 
 > 观测次数与逐次读数的唯一事实源是 [`docs/HOLDOUT_LEDGER.md`](docs/HOLDOUT_LEDGER.md)；
-> 简历取数口径见 [`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md)。本节是摘录。
+> 本节是摘录。
 
 ### 封存 120 条 holdout（Qwen3-4B）
 

@@ -118,13 +118,8 @@ def test_the_rebuild_doc_states_what_it_does_not_claim() -> None:
 
 def test_spec_gate_six_is_no_longer_the_open_one() -> None:
     """SPEC §6 第 6 条一旦做掉，活动文档不得再把它列为"未做"。"""
-    for name in ("README.md", "docs/RESUME_EVIDENCE.md"):
-        path = REPO_ROOT / name
-        if not path.is_file():
-            # RESUME_EVIDENCE.md 2026-09-08 起为本地不分发（NOTICE.md「文档分层」节）；
-            # README.md 的对应约束在任何 clone 上都必须成立。
-            continue
-        text = path.read_text(encoding="utf-8")
+    for name in ("README.md",):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
         if "独立重建" not in text:
             continue
         assert "REBUILD_VERIFICATION" in text, f"{name}: 提到独立重建就必须指向复验记录"
