@@ -179,7 +179,12 @@ def test_the_pending_observation_is_declared_before_it_runs() -> None:
     现在断言的是**结构**而不是措辞：判读规则一节里至少有三个加粗的结果分支。
     结果叫什么名字（GO / NO-GO / 复现 / 不复现 / …）由当轮决定，
     "必须预先写明三种以上结果"这条纪律不由当轮决定。
+
+    2026-09-08 收尾分层：`task_plan.md` 转为本地不分发（NOTICE.md「文档分层」节）
+    ——作者机器上继续行使；干净 clone 上跳过。
     """
+    if not (REPO_ROOT / "task_plan.md").is_file():
+        pytest.skip("task_plan.md 为本地不分发的工作文档，本 clone 上无此文件")
     plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
 
     section = re.search(r"^###+ 判读规则.*?$(.*?)^###? ", plan, re.MULTILINE | re.DOTALL)
@@ -205,7 +210,13 @@ def test_every_declared_run_directory_is_actually_declared() -> None:
     **边界**：命名空间若与旧轮次共用一个父目录（R6 的 `reports/.../r6/` 下就住着
     上一轮的 `train-export-006`），这条会把旧产物也要求进计划。本轮起每轮用自己的
     前缀（`r8`、`ood-v2.3`）来避免，这是约定而非机器保证。
+
+    2026-09-08 收尾分层：`task_plan.md` 转为本地不分发（NOTICE.md「文档分层」节）
+    ——本测试只在作者机器上行使（报告目录也只在作者机器上存在，CI clone 上两
+    条件同为空，天然自洽）。
     """
+    if not (REPO_ROOT / "task_plan.md").is_file():
+        pytest.skip("task_plan.md 为本地不分发的工作文档，本 clone 上无此文件")
     plan = (REPO_ROOT / "task_plan.md").read_text(encoding="utf-8")
 
     declared = {

@@ -186,3 +186,19 @@ remote `origin = https://github.com/emmmdty/retail-agent-ops.git`（2026-08-20 �
 无 submodule、无 linked worktree、无 Git alternates、无跨仓库软链接；`data/external_repos/gorilla`
 是自包含的 BFCL 固定 checkout（见 `data/external_repos/BFCL_PIN.txt`）。
 删除原工作区不会影响本项目的任何命令。
+
+## 8. 文档分层（2026-09-08 收尾起）
+
+`docs/` 与仓库根的 Markdown 分两层（边界由 `.gitignore` + `audit_public_release.py`
+强制，理由见 [`NOTICE.md`](./NOTICE.md)「文档分层」节）：
+
+- **公开层（随仓库分发）**：本文件、`SPEC.md`、`HOLDOUT_LEDGER.md`（观测台账，唯一
+  事实源）、`PITFALLS.md`（教训库）、`RESULTS.md`、`EXECUTION_PLAN.md`（阶段状态
+  唯一事实源）、全部技术/评测/方法论文档（`SYSTEM_CARD`/`MODEL_CARD*`/`RESULTS`/
+  `READING_THE_NUMBERS`/`OOD_EVALUATION`/`REBUILD_VERIFICATION`/`POLICY_BOUNDARY`/
+  `GENERALIZATION_FIX`/`GATE_SCHEMA_V11_RECOMPUTE`/`FAULT_MATRIX` 等）、`adr/`、
+  演示视频 `media/demo.mp4`。
+- **本地层（仅作者机器）**：个人求职材料（`CAREER_CONTEXT`/`RESUME_EVIDENCE`/
+  `INTERVIEW_PREP`/`PRODUCT_BRIEF`）与 agent 运维记忆（`AGENTS.md`/`CLAUDE.md`/
+  `HANDOFF.md`/`task_plan.md`/`findings.md`/`progress.md`/`PROJECT_LOG.md`/
+  `handoffs/`/`archive/`）。工程结论不因此缺失——它们全部以公开文档承载。

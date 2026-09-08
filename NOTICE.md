@@ -31,7 +31,21 @@
 包括负结果。任何人可以用自己的模型与数据重跑同一条链路；无法做的是"重放我这一次的
 具体轨迹"——那需要私有产物，而那些产物本来就不该公开。
 
-## 3. Benchmark 声明边界
+## 3. 文档分层（2026-09-08 收尾起）
+
+本仓库的文档分两层，`audit_public_release.py` 与 `.gitignore` 强制这条边界：
+
+| 层 | 内容 | 分发 |
+|---|---|---|
+| **公开层** | `README.md` / `README.en.md`、`SPEC.md`、`docs/` 下的全部技术、评测与方法论文档（含 `HOLDOUT_LEDGER.md` 观测台账、`PITFALLS.md` 教训库、`RESULTS.md` 结论、`REPO_MAP.md` 目录职责、`adr/` 决策记录）、演示视频、代码、测试、配置、公开 manifest | **随仓库分发** |
+| **本地层** | 个人求职材料（`CAREER_CONTEXT.md`、`RESUME_EVIDENCE.md`、`INTERVIEW_PREP.md`、`PRODUCT_BRIEF.md`）与 agent 运维记忆（`AGENTS.md`、`CLAUDE.md`、`HANDOFF.md`、`task_plan.md`、`findings.md`、`progress.md`、`PROJECT_LOG.md`、`handoffs/`、`archive/`） | **仅作者本地**，`.gitignore` 覆盖 |
+
+本地层存在的理由：(a) 求职与面试材料是私人写作，不属于作品集本身；(b) agent 工作记忆
+与 GPU 运维留痕包含个人工作流细节，对复现没有任何帮助。**工程结论、读数与判定的完整
+证据链全部在公开层**——观测台账、结果、教训与阶段状态都是公开文档；本分层不隐藏任何
+结论，只隐藏私人叙事。
+
+## 4. Benchmark 声明边界
 
 - 本项目的主结论**全部**来自内部冻结的 RetailOps 任务集，那不是任何公开榜单。
 - BFCL 相关读数（Qwen3-1.7B 固定 200 条单轮 AST 子集，Base/SFT 163/200 与 167/200）

@@ -16,21 +16,37 @@ def _read(path: str) -> str:
 
 
 def test_required_handoff_documents_exist() -> None:
-    required = {
-        "AGENTS.md",
-        "docs/CAREER_CONTEXT.md",
-        "docs/PRODUCT_BRIEF.md",
+    """公开必需文档随仓库分发；本地工作文档在作者机器上必须非空。
+
+    2026-09-08 收尾分层：个人求职材料与 agent 运维记忆（AGENTS/CLAUDE/task_plan/
+    findings/progress/PROJECT_LOG/CAREER_CONTEXT/INTERVIEW_PREP/RESUME_EVIDENCE/
+    PRODUCT_BRIEF/HANDOFF/handoffs/archive）转为**本地不分发**（NOTICE.md「文档分层」
+    节）。公开必需集在任何 clone 上都必须存在；本地集仅在作者机器上行使检查。
+    """
+    public_required = {
+        "README.md",
+        "README.en.md",
+        "NOTICE.md",
+        "SPEC.md",
         "docs/EXECUTION_PLAN.md",
-        "docs/HANDOFF.md",
-        "docs/LEGACY_INVENTORY.md",
+        "docs/HOLDOUT_LEDGER.md",
+        "docs/REPO_MAP.md",
+        "docs/RESULTS.md",
+        "docs/PITFALLS.md",
+    }
+    missing = sorted(path for path in public_required if not (ROOT / path).is_file())
+    assert missing == [], f"公开必需文档缺失（它们必须随仓库分发）：{missing}"
+
+    local_working = [
+        "AGENTS.md",
         "task_plan.md",
         "findings.md",
         "progress.md",
-    }
-
-    missing = sorted(path for path in required if not (ROOT / path).is_file())
-
-    assert missing == []
+    ]
+    for path in local_working:
+        if not (ROOT / path).is_file():
+            continue
+        assert (ROOT / path).stat().st_size > 0, f"{path} 存在但为空"
 
 
 def test_active_plan_has_goal_execution_and_acceptance_for_every_phase() -> None:
@@ -49,10 +65,11 @@ def test_retail_ops_v1_contract_and_holdout_boundary_are_governed() -> None:
     implementation = (
         ROOT / "docs/archive/superpowers/plans/2026-07-20-retailops-v1-r1-vertical-slice.md"
     )
-    assert design.is_file()
-    assert implementation.is_file()
-    assert "RetailOps v1" in design.read_text(encoding="utf-8")
-    assert "RetailOps v1" in implementation.read_text(encoding="utf-8")
+    # 归档文档 2026-09-08 起为本地不分发层（NOTICE.md「文档分层」节）：
+    # 作者机器上继续行使归档一致性检查；干净 clone 上跳过归档部分。
+    if design.is_file() and implementation.is_file():
+        assert "RetailOps v1" in design.read_text(encoding="utf-8")
+        assert "RetailOps v1" in implementation.read_text(encoding="utf-8")
 
     for path in (ROOT / "domains/retail_ops/v1").rglob("*"):
         if path.is_file():
@@ -84,7 +101,12 @@ def test_the_declared_phase_matches_the_phase_status_source() -> None:
     所以那些断言**结构上不可能变红**；`AGENTS.md` 那几条则只是把措辞焊死。
     唯一保留的例外是下面那对——它防的是"只写前半句"，属于
     「好消息必须带坏消息」那一类，而不是「这句话必须在场」。
+
+    2026-09-08 收尾分层：`AGENTS.md` 转为本地不分发（NOTICE.md「文档分层」节）——
+    作者机器上继续行使；干净 clone 上跳过（公开侧的阶段事实源是 EXECUTION_PLAN.md）。
     """
+    if not (ROOT / "AGENTS.md").is_file():
+        pytest.skip("AGENTS.md 为本地不分发的工作文档，本 clone 上无此文件")
     agents = _read("AGENTS.md")
 
     phase = re.search(r"当前阶段：`([^`]+)`", agents)
@@ -1460,6 +1482,11 @@ def test_the_english_readme_agrees_with_the_chinese_one() -> None:
         "0.7333",  # 第二份上的零训练基座
         "60/60",  # 重建候选的 dev
         "0.8667",  # 独立迁移检查总分
+        # 2026-09-08 收尾：v1.3 十二门口径（246 条）的头条读数同样双语受保护。
+        "0.9959",  # v6 口径封存读数（解析器修复后）
+        "0.9797",  # v7 口径封存读数（最终判定那次）
+        "0.8333",  # OOD 绝对门历史首过
+        "0.250",  # 探针远端塌方点（−7；近边界与远端的分级必须成对出现）
     )
     for number in shared_numbers:
         assert number in zh, f"README.md 缺少关键数字 {number}"
